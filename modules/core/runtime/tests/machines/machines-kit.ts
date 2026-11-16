@@ -3,7 +3,7 @@ import { expect } from 'vitest';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
-import { word, type Rt } from '@digi/regression/runtime/fx-live.ts';
+import { bounded, word, type Rt } from '@digi/regression/runtime/fx-live.ts';
 import { halfword } from '@digi/regression/runtime/fx-track-ui.ts';
 
 /** Helpers of the machine fixture tests on a run-time machine: what the firmware shows after `machines.dks` has acted on the rows the loader made. */
@@ -20,6 +20,25 @@ export const tableSymbols = (device: Device) => [
   'params.count',
   ...(device === 'dn2' ? ['pages.rows', 'pages.count'] : []),
 ];
+
+/**
+ * Digitone II 1.12 ColdFire SRAM addresses. No `devices/fw` anchor or `devices/ports/dn2-1.12.toml` entry holds them (searched), so they are named here; source: finding 02
+ * (docs/findings/02-machines-and-parameters.md: "Where the engine parameter words are" for the TX frame, "Changing the machine twice" for the audio mirror) and finding 06 ("DN2 voice slots").
+ */
+/** The audio side's copy of track 1's sound: the first byte is the selected machine type. */
+export const DN2_AUDIO_MIRROR_112 = 0x8000487c;
+/** The TX frame the ColdFire sends to the DSP. */
+export const DN2_TX_FRAME_112 = 0x80005e60;
+/** TX frame word 0x94: the type halfword of track 1 is its upper half. */
+export const DN2_TX_TYPE_TRACK1_112 = DN2_TX_FRAME_112 + 0x94;
+/** The TX frame halfword of Sound word `slot` (25..65, the mirror index) of voice slot `voice`: `0xda + 0x92 v + 2 (slot - 25)` (finding 06). */
+export const dn2VoiceWordAddress = (voice: number, slot: number) => DN2_TX_FRAME_112 + 0xda + 0x92 * voice + 2 * (slot - 25);
+
+/** The engine's word of `slot` in the TX frame block of voice slot `voice`; it follows the Sound word only while the voice's key is held. */
+export const voiceWord = (session: Session, voice: number, slot: number) => halfword(session, dn2VoiceWordAddress(voice, slot));
+
+/** Press or release TRIG 1 without a tap (a note sounds while it is down). */
+export const holdTrig = (rt: Rt, down: boolean) => bounded(() => rt.session.client.inputButton(button('TRIG 1'), down));
 
 export const ENCODERS = ['ENC A', 'ENC B', 'ENC C', 'ENC D', 'ENC E', 'ENC F', 'ENC G', 'ENC H'] as const;
 

@@ -5,14 +5,19 @@ import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 import { pickSine, REDRAW, word, type Rt } from '@digi/regression/runtime/fx-live.ts';
 import { decodeTables, dynType } from '@digi/regression/runtime/project-kit.ts';
 import {
+  DN2_AUDIO_MIRROR_112,
+  DN2_TX_TYPE_TRACK1_112,
   ENCODERS,
   expectLoaded,
+  holdTrig,
   namedKnobs,
+  soundWord,
   soundWords,
   tableSymbols,
   turnChangesNothing,
   turnChangesOneWord,
   turnPastLimit,
+  voiceWord,
 } from './machines-kit.ts';
 
 /**
@@ -25,8 +30,9 @@ import {
  * see docs/plans/ledgers/smoke-machines-cells.md. SHARC for the module's DSP part.
  */
 const ID = 'test/dyn-dn2';
-const AUDIO_MIRROR_DN2_112 = 0x8000487c; // SRAM, first byte: the selected machine type
-const TX_TYPE_TRACK1_DN2_112 = 0x80005ef4; // SRAM, TX frame word 0x94: the type halfword of track 1 in the upper half (the old cell of `test/dn2-clone` read it)
+
+/** The voice slot of the second note since the boot (the TRIG tap of the type check was the first). */
+const HELD_VOICE = 1;
 
 interface ParamRow {
   mirror: number;
@@ -88,19 +94,20 @@ describeOn('dn2', `DN2 ${FIRMWARE.dn2} machines.dks: the own page of a run-time 
     const empty = page.knobs.flatMap((k, knob) => (k === 0 ? [knob] : []));
     expect(empty.length, 'the page leaves knobs empty').toBeGreaterThan(0);
 
-    // FUNC+SRC, five DOWN (the place of the first run-time machine, as in the round-trip test), YES, YES; a TRIG sends the type to the audio side
+    // FUNC+SRC, five DOWN from FM TONE (the list is FM TONE, FM DRUM, WAVETONE, SWARMER, MIDI, then the first run-time machine; the hint of the round-trip test), YES, YES;
+    // a TRIG sends the type to the audio side. The TRIG press is the first note since the boot: it uses voice slot 0 (round robin from 0, finding 06)
     const type = await dynType(session, run.plan, ID, 'dyn_pluck');
     expect(type, 'a run-time type (the range of core/dynreg)').toBeGreaterThanOrEqual(16);
     await pickSine(rt, 5);
     await rt.ui.tap('TRIG 1', { until: { drained: true } });
-    const mirror = await pollUntil(rt.clock, () => word(session, AUDIO_MIRROR_DN2_112), (w) => w >>> 24 === type, {
+    const mirror = await pollUntil(rt.clock, () => word(session, DN2_AUDIO_MIRROR_112), (w) => w >>> 24 === type, {
       withinMs: 3000,
       message: 'the audio mirror holds the committed type',
       intervalMs: 50,
     });
     expect(mirror >>> 24, 'the audio mirror holds the committed type').toBe(type);
     // an own_dsp machine sends its own type to the DSP: the track's halfword of the TX frame (`mf_frametype`; the removed clone cell saw FM TONE's type 0 there)
-    const tx = await pollUntil(rt.clock, () => word(session, TX_TYPE_TRACK1_DN2_112), (w) => w >>> 16 === type, {
+    const tx = await pollUntil(rt.clock, () => word(session, DN2_TX_TYPE_TRACK1_112), (w) => w >>> 16 === type, {
       withinMs: 3000,
       message: 'the TX frame carries the machine type of track 1',
       intervalMs: 50,
@@ -129,6 +136,22 @@ describeOn('dn2', `DN2 ${FIRMWARE.dn2} machines.dks: the own page of a run-time 
       const edit = await turnChangesOneWord(rt, ENCODERS[k.knob]!);
       expect(edit.index, `${k.name} edits the Sound word of its slot`).toBe(k.slot);
       expect(edit.after, `${k.name} moved up`).toBeGreaterThan(edit.before);
+    }
+
+    // a held note: the engine word of the voice (TX frame block of voice slot 1, the second note since the boot) follows the Sound word of the knob that is turned
+    const alpha = layout[0]!;
+    await holdTrig(rt, true);
+    try {
+      await turnChangesOneWord(rt, ENCODERS[alpha.knob]!);
+      const both = await pollUntil(
+        rt.clock,
+        async () => ({ sound: await soundWord(session, alpha.slot), engine: await voiceWord(session, HELD_VOICE, alpha.slot) }),
+        (w) => w.sound === w.engine,
+        { withinMs: 3000, message: 'the held voice engine word follows the Sound word of Dyn Alpha', intervalMs: 50 },
+      );
+      expect(both.engine, 'the engine word of the held voice is the edited Sound word').toBeGreaterThan(rows['Dyn Alpha']!.default);
+    } finally {
+      await holdTrig(rt, false);
     }
 
     // the ranges clamp: Beta at its top, Gamma at its bottom and top (the values of the old proof: 0x3f00, 0x100, 0x7f00); further events change nothing
