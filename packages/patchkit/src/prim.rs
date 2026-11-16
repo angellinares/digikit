@@ -549,7 +549,12 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
     }
     for r in &act.regs {
         if let Some(why) = &r.def.refuse_entries
-            && let Some(e) = r.entries.first()
+            && let Some(e) = r.entries.iter().find(|e| {
+                !r.def
+                    .refuse_entries_except
+                    .iter()
+                    .any(|x| x == e.owner.id())
+            })
         {
             return Err(err!(
                 "{}: registry {} takes no patch-time entry ({why}); {} adds `{}`",
