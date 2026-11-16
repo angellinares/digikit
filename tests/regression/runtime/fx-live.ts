@@ -16,7 +16,6 @@ import {
   type Device,
   type RuntimeBaseline,
 } from '@digi/test-support';
-import { RpcError } from '@digi/control-client';
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type TestRuntime } from '../support.ts';
 import { record } from './artifacts.ts';
@@ -497,14 +496,11 @@ export async function evidence(
   const file = path.join(artifacts, `${tag}.overlay.bin`);
   const overlay = await rpc(session, 'card.overlay', { path: file });
   overlays.push(file);
-  // A case that never started the tap (for example one a test replaced by a reload before it played anything) has no PCM
-  // evidence: the other checks still run, and the audible and finite checks apply only to a tap that ran.
-  const pcm = await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' }).catch(
-    (error: unknown) => {
-      if (error instanceof RpcError && /pcm\.tap was not started/.test(error.message)) return undefined;
-      throw error;
-    },
-  );
+  // A case in which no tap ran (for example one a test replaced by a reload before it played anything) has no PCM
+  // evidence: guard, overlay and fault checks still run. After a recorded tap start, a failing report fails the case.
+  const pcm = session.pcmTapStarted
+    ? await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' })
+    : undefined;
   record(artifacts, `${tag}-closing`, { guard, overlay, pcm, status: await bounded(() => session.status()) });
   await bounded(() => expectNoGuardHits(session));
   if (pcm) {

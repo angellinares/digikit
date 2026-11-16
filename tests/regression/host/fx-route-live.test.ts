@@ -264,6 +264,9 @@ for (const { afterEpoch, loaderResult } of [
     });
     const session = {
       expectNoFault: vi.fn(),
+      get pcmTapStarted() {
+        return pcmStarted;
+      },
       options: { device: 'dt2', firmware: '1.17' },
       loadResult: { syx_sha256: plan.output!.syx_sha256 },
       preparedRuntimeImage: {

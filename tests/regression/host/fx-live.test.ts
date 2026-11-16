@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RpcError } from '@digi/control-client';
 import { button, type Session } from '@digi/test-support';
 import { expect, test, vi } from 'vitest';
 import { withWaitApi, type PatchedSession } from '../support.ts';
@@ -47,6 +46,7 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
   let hits = 0;
   const expectNoFault = vi.fn();
   const session = {
+    pcmTapStarted: true,
     client: {
       guardReport: vi.fn(async () => ({ total: hits, hits: [] })),
       call: vi.fn(async (method: string) =>
@@ -75,27 +75,30 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
   }
 });
 
-test('a case whose tap never started still gets guard and fault evidence, but no PCM checks; other tap errors fail', async () => {
+test('a case with no tap run gets guard, overlay and fault evidence and no PCM report; after a tap start a failing report fails', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-fx-evidence-'));
-  let tapError: Error = new RpcError(-32602, 'pcm.tap was not started');
   const expectNoFault = vi.fn();
+  const call = vi.fn(async (method: string) => {
+    if (method === 'pcm.tap') throw new Error('report failed');
+    return { sectors: 0 };
+  });
+  const guardReport = vi.fn(async () => ({ total: 0, hits: [] }));
   const session = {
-    client: {
-      guardReport: vi.fn(async () => ({ total: 0, hits: [] })),
-      call: vi.fn(async (method: string) => {
-        if (method === 'pcm.tap') throw tapError;
-        return { sectors: 0 };
-      }),
-    },
+    pcmTapStarted: false,
+    client: { guardReport, call },
     status: vi.fn(async () => ({ mode: 'paused' })),
     expectNoFault,
   } as unknown as Session;
   const runtime = { session } as PatchedSession;
+  const overlays: string[] = [];
   try {
-    await expect(evidence(runtime, directory, 'idle', [])).resolves.toBeUndefined();
+    await expect(evidence(runtime, directory, 'idle', overlays)).resolves.toBeUndefined();
+    expect(guardReport).toHaveBeenCalled();
+    expect(call).toHaveBeenCalledWith('card.overlay', expect.anything());
+    expect(call).not.toHaveBeenCalledWith('pcm.tap', expect.anything());
     expect(expectNoFault).toHaveBeenCalledWith('idle');
-    tapError = new RpcError(-32000, 'no DSP audio session');
-    await expect(evidence(runtime, directory, 'broken', [])).rejects.toThrow('no DSP audio session');
+    (session as unknown as { pcmTapStarted: boolean }).pcmTapStarted = true;
+    await expect(evidence(runtime, directory, 'broken', overlays)).rejects.toThrow('report failed');
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
