@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { expect } from 'vitest';
+import { pollEmulated } from '@digi/regression/runtime/waits.ts';
 import { AUDIBLE, RATE, allFinite, captureNote, expectSplitPair, onset, peak, setSmp, tone, until } from './shot-support.ts';
 import { dn2Tests, planePages, type Dn2 } from './shot-dn2-support.ts';
 
@@ -27,13 +28,11 @@ dn2Tests('DN2 supersede and SMP entry choice', 'shot-dn2-supersede', ['t', 'l', 
       expect(await api.select(file('l'), 1)).toBe(0);
       marks.selectL = await clock();
       // wait for about 20 pages of L, then replace it
-      let p = p0;
-      const t0 = Date.now();
-      while (p.pages - p0.pages < 20) {
-        if (Date.now() - t0 > 60_000) throw new Error('L did not start');
-        p = await pool();
-        await new Promise((r) => setTimeout(r, 40));
-      }
+      const p = await pollEmulated(c.session, pool, (v) => v.pages - p0.pages >= 20, {
+        emulatedMs: 60_000,
+        message: 'L did not start',
+        intervalMs: 40,
+      });
       info.pagesBeforeY = p.pages - p0.pages;
       expect(await api.select(file('y'), 1)).toBe(0);
       marks.selectY = await clock();

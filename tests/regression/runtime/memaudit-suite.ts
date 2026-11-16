@@ -9,7 +9,7 @@ import { bootInfo } from './card-kit.ts';
 import { CARD_SYMBOLS, cardRig, RT, type CardRig, type CardSpec } from './card-rig.ts';
 import { pausedProtocol } from './debug-kit.ts';
 import { FIRMWARE, FULL_TIER, selectDevices, skipEmptyHalf } from './devices.ts';
-import { advance } from './fx-live.ts';
+import { SETTLE } from './fx-live.ts';
 import {
   arenaBounds,
   bytesChanged,
@@ -202,7 +202,7 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
               allow_pc: plan.code.map(({ lo, hi }) => ({ lo, hi })),
             });
             try {
-              await driveAuditUi(session, machines, spec.sweep, !spec.stray);
+              await driveAuditUi(runtime, machines, spec.sweep, !spec.stray);
               const { total, hits } = await guardHits(session, modules, plan.code);
               const after = await moduleBlocks(session, modules);
               const changed = Object.fromEntries(
@@ -245,7 +245,7 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
           test('a cold boot of the same card with the write watch on: the load and init of the modules store nothing outside their blocks', async (ctx) => {
             if (!cardSpec || !guard) return ctx.skip('the drive test did not get as far as arming the guard');
             const runtime = await h.load('load-pass', cardSpec);
-            await advance(runtime.session, 300);
+            await runtime.ui.wait({ ms: 300, why: SETTLE });
             const stores = loggedStores(h.artifacts);
             expect(
               stores.map((s) => `pc 0x${s.pc.toString(16)} addr 0x${s.addr.toString(16)} size ${s.size}`),

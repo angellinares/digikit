@@ -5,9 +5,9 @@ import { promisify } from 'node:util';
 import zlib from 'node:zlib';
 import { DkError, fileHashHex } from '@digi/dk-session';
 import { LOAD_STATUS, STATUS } from '../../../packages/dk-session/src/gen_proto.ts';
-import { repoRoot, type Device, type Session } from '@digi/test-support';
+import { emulatorClock, repoRoot, waitClock, type Device, type Session } from '@digi/test-support';
 import { cardStore } from './device-data.ts';
-import { advance, rpc, word } from './fx-live.ts';
+import { rpc, word } from './fx-live.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 import { cardOverlay, encodeOverlay, layOver, linkCard, mergeOverlays, overlayFile } from './write-safety.ts';
 
@@ -339,7 +339,7 @@ export async function bootInfoLoaded(session: Session, plan: RuntimePlan, ms = 5
   for (let i = 0; i < ms / 100; i++) {
     const info = await bootInfo(session, plan);
     if (!info.results.includes(1)) return info;
-    await advance(session, 100);
+    await waitClock(emulatorClock(session), 100);
   }
   return bootInfo(session, plan);
 }
@@ -374,7 +374,7 @@ export async function postRaw(session: Session, plan: RuntimePlan, cmd: number, 
   const seq0 = await word(session, mb + MB_SEQ);
   await pokeWord(session, mb + MB_CMD, cmd);
   for (let i = 0; i < 200; i++) {
-    await advance(session, 20);
+    await waitClock(emulatorClock(session), 20);
     if ((await word(session, mb + MB_CMD)) === 0 && (await word(session, mb + MB_SEQ)) !== seq0) break;
   }
   return (await word(session, mb + MB_RESULT)) | 0;

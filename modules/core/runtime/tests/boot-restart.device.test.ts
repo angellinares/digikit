@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { bootInfoLoaded, CMD as MAILBOX, currentRecord, pokeWord, setSelection } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { FULL_TIER } from '@digi/regression/runtime/devices.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { dynType, voiceRows } from '@digi/regression/runtime/project-kit.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
@@ -37,9 +37,8 @@ cardRigs(
         const mods = MODULES[h.device].map((id, i) => h.mod(id, `m${i}`));
         const paths = mods.map((m) => m.name);
         // The card holds the modules in its store but selects none.
-        const { session } = await h.boot(
-          await h.card({ modules: mods, selection: [], stableBlocks: STABLE_BLOCKS }),
-        );
+        const rt = await h.boot(await h.card({ modules: mods, selection: [], stableBlocks: STABLE_BLOCKS }));
+        const { session } = rt;
         await h.ready();
         const b0 = await bootInfoLoaded(session, h.plan);
         expect(b0, 'a card with an empty selection boots with no module').toMatchObject({
@@ -60,7 +59,7 @@ cardRigs(
         const restart = async () => {
           await pokeWord(session, planSymbol(h.plan, 'DKRT_MAILBOX'), MAILBOX.RESTART);
           await h.waitReset();
-          await advance(session, SETTLE_MS);
+          await rt.ui.wait({ ms: SETTLE_MS, why: SETTLE });
           return bootInfoLoaded(session, h.plan);
         };
 

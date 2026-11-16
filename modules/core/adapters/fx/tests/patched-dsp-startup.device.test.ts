@@ -3,12 +3,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { repoRoot, resolveInputs } from '@digi/test-support';
+import { repoRoot, resolveInputs, withinRuntimeDeadline } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { describeOn } from '@digi/regression/runtime/devices.ts';
 import { withSession } from '@digi/regression/support.ts';
 import type { RuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { optInPatchkit } from '@digi/regression/runtime/patchkit.ts';
+import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 const binary = process.env.DIGI_PATCHED_STARTUP_EMUD;
 const patchkit = optInPatchkit();
@@ -17,18 +18,11 @@ const root = repoRoot();
 const exec = promisify(execFile);
 const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+/** Wall bound for a dead link or a hung owned daemon (RuntimeDeadlineError names no label, so the label prefixes the failure). */
 async function bounded<T>(operation: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms} ms`)), ms);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
+  return withinRuntimeDeadline(Date.now() + ms, () => operation).catch((error) => {
+    throw new Error(`${label}: ${String(error)}`, { cause: error });
+  });
 }
 
 // The patched DSP is core/dsp-link (its ColdFire code changes MAIN) with core/fx. Opt in with immutable prebuilt daemon/patchkit binaries and existing stock
@@ -83,9 +77,12 @@ describeOn('dt2', 'DT2 1.17 changed-DSP startup and cached restore', () => {
       const frame = before.dsp_frames;
       if (typeof frame !== 'number' || !Number.isSafeInteger(frame))
         throw new Error('startup status must expose an integer DSP frame count');
-      await expect
-        .poll(async () => (await rpc<Status>('status')).dsp_frames, { timeout: 10000, interval: 50 })
-        .toBeGreaterThan(frame);
+      await expectPollEmulated(
+        session,
+        async () => (await rpc<Status>('status')).dsp_frames,
+        (value) => expect(value).toBeGreaterThan(frame),
+        { emulatedMs: 10_000, intervalMs: 50, message: 'the DSP frame count advances' },
+      );
       await bounded(session.expectNoFault(phase), 5000, 'no-fault check');
       evidence[`${phase}AfterStatus`] = await rpc<Status>('status');
     };

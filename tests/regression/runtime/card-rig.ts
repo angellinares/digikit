@@ -7,7 +7,14 @@ import { DkSession, EmuUsbTransport, frame, parseReply } from '@digi/dk-session'
 import { RpcError, type InitialButton } from '@digi/control-client';
 import { resolveInputs, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
 import { describe, expect } from 'vitest';
-import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
+import {
+  expectNoGuardHits,
+  withReusablePatchedSession,
+  type PatchedSession,
+  type RuntimeCase,
+  type TestRuntime,
+  withWaitApi,
+} from '../support.ts';
 import {
   bootInfo,
   bootInfoLoaded,
@@ -21,7 +28,7 @@ import {
 } from './card-kit.ts';
 import { cachedCard, cachedCardId, cardKey, fileSha } from './card-cache.ts';
 import { uploadStore } from './device-data.ts';
-import { advance, bounded, options, rpc } from './fx-live.ts';
+import { bounded, options, rpc, SETTLE } from './fx-live.ts';
 import { drainInputs, withPausedFxProtocol } from './fx-session.ts';
 import { emulatorDk, pollEmulated } from './waits.ts';
 import { record } from './artifacts.ts';
@@ -139,14 +146,14 @@ export interface CardRig {
   first(): Promise<RuntimeCase>;
   /** Wait for the runtime's UI and pause (the test steps time itself). */
   settle(
-    runtime: PatchedSession & { epoch?: number },
+    runtime: TestRuntime & { epoch?: number },
     afterEpoch?: number,
     options?: { emulatedMs?: number },
-  ): Promise<PatchedSession>;
+  ): Promise<TestRuntime>;
   /** Poll until the UI loop was reached (and the boot is safe mode when `safe`); returns the boot's fields. */
   ready(safe?: boolean): Promise<Awaited<ReturnType<typeof bootInfo>>>;
   /** A protocol restart (the card and its guest writes stay); returns the runtime of the new boot, settled. */
-  restart(runtime: PatchedSession): Promise<PatchedSession>;
+  restart(runtime: PatchedSession): Promise<TestRuntime>;
   /** Run protocol calls on the paused daemon (the transport steps the emulator). */
   usb<T>(runtime: PatchedSession, run: (dk: DkSession) => Promise<T>): Promise<T>;
   /** The card the guest left: `base` (default the card booted last) with the overlay of its writes laid over a copy (Python `card_after`). */
@@ -360,13 +367,13 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     options = {},
   ) => {
     if (o.plain) {
-      await advance(runtime.session, 300);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       await rpc(runtime.session, 'run.mode', { mode: 'paused' });
       return runtime;
     }
     if (o.hold) {
       // Python `settle_ms` (SETTLE_MS, 300 emulated ms), then `wait_dsp`: up to 5 s until no module is still LOADING (its DSP part follows the ColdFire part)
-      await advance(runtime.session, 300);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       await bootInfoLoaded(runtime.session, prepared.plan);
     }
     await expectRuntimeUi(runtime.session, prepared.plan, artifacts, {
@@ -454,7 +461,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       const dk = emulatorDk(session);
       // This controller can answer throughout the guest reset: settle proves the fresh ready epoch/UI hook.
       cap = undefined;
-      return settle({ session, dk, close: runtime.close }, before);
+      return settle(withWaitApi({ session, dk, close: runtime.close }), before);
     },
     usb: (runtime, run) => withPausedFxProtocol(runtime, run),
     after: (tag = `after-${++seq}`, base = image) => afterCard(tag, base),
@@ -529,7 +536,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       await expectRuntimeUi(runtime.session, prepared.plan, artifacts, { afterEpoch: runtime.epoch - 1 });
       await drainInputs(runtime.session);
       await rpc(runtime.session, 'run.mode', { mode: 'paused' });
-      await advance(runtime.session, 300);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       if (previous && previous !== path.dirname(next)) fs.rmSync(previous, { recursive: true, force: true });
       clone = next;
       // Wall-time wait: a stepping transport advances the emulator itself, with a 60 s timeout.

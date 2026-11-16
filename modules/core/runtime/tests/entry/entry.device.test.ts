@@ -10,7 +10,8 @@ import { prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { E_SET_NOKEY } from '@digi/regression/runtime/project-kit.ts';
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { linkedRuntimeNeed, runtimeVersion } from '@digi/regression/runtime/upload-kit.ts';
-import { pollEmulated, waitEmulated, waitForBootEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
+import { emulatorClock, waitClock } from '@digi/test-support';
+import { pollEmulated, waitForBootEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 /**
  * The entry point `dk_module` and the service imports (docs/plans/sdk.md section 5; the fixture test/entry-demo uses only the new contract).
@@ -63,13 +64,13 @@ async function expectEntryPoint({ session, dk }: PatchedSession): Promise<void> 
     emulatedMs: 30_000,
     message: 'the UI loop never called tick',
   });
-  await waitEmulated(session, 1000);
+  await waitClock(emulatorClock(session), 1000); // a second of ticks: no observable condition beyond the first tick
   const later = await report();
   expect(later.ticks, 'tick runs on every UI pass').toBeGreaterThan(running.ticks);
   expect(later.tickSpan, 'dk_time_blocks advances between the first and the last tick').toBeGreaterThan(0);
 
   expect((await dk.request(WRITE, Uint8Array.of(0x5a))).status, 'the write is queued').toBe(0);
-  await waitEmulated(session, 500);
+  await waitClock(emulatorClock(session), 500); // the tick that runs the queued write has no event
   const written = await report();
   expect(written.pending, 'tick ran the queued write').toBe(0);
   expect([written.put, written.back, written.value], 'dk_settings_put, then dk_settings_get in tick').toEqual([0, 1, 0x5a]);
