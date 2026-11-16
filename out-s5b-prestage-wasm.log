@@ -1,0 +1,12 @@
+$ node tools/nx/nx.mjs run patchkit:wasm
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   1 task: 1 succeeded, 1 cached
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      56ms
+  Cache:             1/1 hit (100%)
+  Critical path:     1ms (1 task)
+  Recoverable time:  <1ms

@@ -1,0 +1,12 @@
+$ node tools/nx/nx.mjs run-many -t lint,fmt-check,rust-fmt,typecheck,python-checks
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   11 tasks: 11 succeeded, 7 cached
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      8.2s
+  Cache:             7/11 hit (64%)
+  Critical path:     8.1s (1 task)
+  Recoverable time:  <1ms

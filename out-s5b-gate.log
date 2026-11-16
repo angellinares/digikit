@@ -1,0 +1,12 @@
+$ node tools/nx/nx.mjs run-many -t test-device,test-conformance,build-objects,smoke,fast-roots,objects-check,catalog-check,check-generated,rust-tests -p core/fx core/dsp-voice core/dsp-stereo-proof core/dynfx core/fxpages core/runtime-tests core/dynreg core/digikit-menu core/introblank core/runtime-lfo-tests digikit/remote gate-smoke gate-fast-roots patchkit gate-rust-modules sdk dksharc
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   198 tasks: 198 succeeded, 1 cached
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      30m 39s
+  Cache:             1/198 hit (1%)
+  Critical path:     25m 18s (11 tasks)
+  Recoverable time:  5m 20s (17% of the run)

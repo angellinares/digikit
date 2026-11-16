@@ -1,0 +1,52 @@
+Sun 15 Nov 2026 21:22:36 AEDT
+== shot Sun 15 Nov 2026 21:22:36 AEDT
+$ node tools/nx/nx.mjs run digikit/shot:test-device
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   59 tasks: 59 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      22m 19s
+  Cache:             0/59 hit (0%)
+  Critical path:     22m 17s (4 tasks)
+  Recoverable time:  <1ms
+
+  Recommendations:
+    - Speed up or split the longest tasks on the critical path:
+        digi-control:daemons                       14m 6s
+        digikit/shot:test-device--shot-dt2--dt2    8m 12s
+exit 0 Sun 15 Nov 2026 21:44:58 AEDT
+== conf
+$ node tools/nx/nx.mjs run-many -t test-conformance
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   51 tasks: 51 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      17m 39s
+  Cache:             0/51 hit (0%)
+  Critical path:     17m 38s (2 tasks)
+  Recoverable time:  <1ms
+
+  Recommendations:
+    - Speed up or split the longest tasks on the critical path:
+        digikit/usb-fast:test-conformance    14m 55s
+exit 0 Sun 15 Nov 2026 22:02:40 AEDT
+== objs
+$ node tools/nx/nx.mjs run patchkit:objects-check
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   2 tasks: 2 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      10.3s
+  Cache:             0/2 hit (0%)
+  Critical path:     10.3s (2 tasks)
+  Recoverable time:  <1ms
+exit 0 Sun 15 Nov 2026 22:02:53 AEDT

@@ -6,19 +6,19 @@ Line format: `device test | assertion | -> host test` or `KEPT: reason`. TS file
 
 ## card-safety.device.test.ts
 
-Deleted after the host tests pass: "a card with our store keeps working", torn cases 2, 3 and 4 (header A torn with B whole, header A torn with B blank, selection copy A torn).
+Deleted: "a card with our store keeps working", torn cases 2, 3 and 4 (header A torn with B whole, header A torn with B blank, selection copy A torn).
 
 | Device test | Assertion | Host test |
 | --- | --- | --- |
-| a card with our store keeps working | the check says ours, first non-blank NONE, hash 0, nothing refused | FP `a_valid_selection_record_makes_the_area_ours_without_scanning_it` (state, `first_nonblank`, five reads, no claim) |
+| a card with our store keeps working | the check says ours, nothing refused | FP `a_valid_selection_record_makes_the_area_ours_without_scanning_it` (state, `first_nonblank`, five reads, no claim) |
 | a card with our store keeps working | a selection write and an upload still work (no refusal, no claim) | FP same test (a data write after the check: OK, `claims` 0); `card.rs` `our_card_allows_every_write_in_range` |
-| a card with our store keeps working | `bootInfo` count 1, loaded 1, safe 0 | KEPT elsewhere: every module load device test (`module-load`, `capacity`) asserts the loaded count |
+| a card with our store keeps working | `bootInfo` count 1, loaded 1, safe 0 | KEPT: `safe-mode.device.test.ts` "REC released" (count 1, loaded 1, safe 0; lines 155, 160-161) |
 | torn 2: header A torn by the claim's second write, B whole | state ours | FP `the_card_state_after_a_torn_claim_or_selection_write` (case "header A torn, B whole") |
-| torn 2 | an upload commits | KEPT: `upload.device.test.ts` and `upload-faults.device.test.ts` commit on a store; torn 1 below keeps the upload after a claim repair |
+| torn 2 | an upload commits | `sdk/src/store/tests.rs:607-627` (host, a store with a valid header B and a lagging A); `upload-faults.device.test.ts:77` (full-tier device cut "after header B, before A") |
 | torn 3: header A torn, B blank | foreign, first non-blank sector 0 | FP same test (case "header A torn, B blank") |
 | torn 3 | BEGIN and CLEAR answer E_INUSE, nothing written | FP `a_foreign_card_names_its_first_nonblank_sector_and_hash_and_refuses_selection_and_range` (E_CARD_RO for every write, nothing on the card); the E_INUSE mapping stays device-tested in "foreign bytes in the range make the card read-only" |
 | torn 4: selection copy A torn, rest blank | state blank | FP same torn test (case "selection copy A torn") |
-| torn 4 | the next selection writes both copies | `selection.rs` `selection_set_never_writes_first_to_the_only_valid_copy` and `the_choice_over_every_pair_of_copy_states` (the first write and the pair), `card.rs` `blank_card_write_of_a_marker_sector_marks_ours_without_a_claim` |
+| torn 4 | the next selection writes both copies | KEPT: `card-safety.device.test.ts:82-85` (selection write on a blank card writes both copies; a card with torn copy A and the rest blank is a blank card, FP torn test). Nothing on the host runs `selection_set` |
 
 New host cases with no device twin (they cover what the kept tests assert through the real adapter): every refused write outside the range is counted (`every_write_outside_the_store_is_refused_for_range_and_counted_whatever_its_size`, the eight sizes of "a blank card works as before"); a foreign card names its sector and hash and refuses selection, probe and range writes; a claim cut after its first write leaves a card the next check calls ours (`a_claim_cut_after_its_first_write_leaves_a_card_the_next_boot_calls_ours`, the host side of "an upload on a blank card claims the range first").
 
@@ -26,7 +26,7 @@ KEPT on the device (real boundaries): "a blank card works as before ..." (card-w
 
 ## settings-copies.device.test.ts
 
-Deleted after the host tests pass: table rows `higher` and `both` of "copies/$name". Row `torn` stays: it reads the boot event, the error flag, the value and the next write through the real card.
+Deleted: table rows `higher` and `both` of "copies/$name". Row `torn` stays: it reads the boot event, the error flag, the value and the next write through the real card.
 
 | Device row | Assertion | Host test |
 | --- | --- | --- |
@@ -39,12 +39,12 @@ Deleted after the host tests pass: table rows `higher` and `both` of "copies/$na
 
 ## safe-mode.device.test.ts
 
-Deleted after the host tests pass: cases `A new / B old`, `A old / B new` and `A torn / B torn` of "power cut, A x / B y" (full tier only). Case `A torn / B old` stays (torn CRC through the real boot, fallback to B, no module loaded at seq 1). The smoke cases (REC held and released) and the other files' tests are not changed.
+Deleted: cases `A new / B old` and `A torn / B torn` of "power cut, A x / B y" (full tier only). Cases `A torn / B old` and `A old / B new` stay (torn CRC through the real boot, fallback to B, no module loaded at seq 1). The smoke cases (REC held and released) and the other files' tests are not changed.
 
 | Device case | Assertion | Host test |
 | --- | --- | --- |
-| A new / B old | boot uses A, seq 2, copy 0, all modules load | `selection.rs` `a_torn_copy_is_bad_and_the_boot_takes_the_valid_one_with_the_higher_seq` (use, 2, 0) and `the_choice_over_every_pair_of_copy_states` |
-| A old / B new | boot uses B, seq 2, copy 1 | same torn test (use, 2, 1) |
+| A new / B old | boot uses A, seq 2, copy 0, all modules load | `selection.rs` `a_torn_copy_is_bad_and_the_boot_takes_the_valid_one_with_the_higher_seq` (use, 2, 0) and `the_choice_over_every_pair_of_copy_states`; loading from copy A is kept by "one copy written by the runtime" |
+| A old / B new | KEPT | the only device case that loads modules from a copy-B record |
 | A torn / B torn | no valid copy: loaded 0, seq 0, copy 0 | same torn test (empty) |
 | all | modules load from the chosen record | KEPT: case `A torn / B old` (loaded 0 at seq 1 shows the boot follows the choice) and "one copy written by the runtime ..." (loaded all, copy 0) |
 
