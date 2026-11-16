@@ -1,0 +1,26 @@
+{
+  "effects": [
+    {
+      "id": "gain",
+      "knobs": [
+        {
+          "default": 0,
+          "display": 1,
+          "max": 63,
+          "min": -64,
+          "name": "Bias",
+          "short": "BIAS"
+        }
+      ],
+      "mix": 127,
+      "tab": "GBP",
+      "title": "Test Gain Bipolar"
+    }
+  ],
+  "machines": [],
+  "module": "test/dyn-fx-gain-bipolar",
+  "params": {
+    "dn2": [],
+    "dt2": []
+  }
+}

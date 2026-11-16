@@ -164,7 +164,7 @@ Runs alongside R12.
 
 **Step 2, four test-only lanes.**
 
-1. FX contract suite; freqshift drops its adapter legs (about 40 min per full tier).
+1. FX contract suite; freqshift drops its adapter legs (about 40 min per full tier). Written, not yet run: `core/dynfx` `fx-contract` (replaces `fx-chain` and `fx-reuse`), `core/fxpages` `fx-bipolar` on the new fixture `test/dyn-fx-gain-bipolar` (replaces the adapter legs of freqshift), and the `FX_SERVICE_IN_IMAGE` switch for the R12-5 case without an fx service. Old files go after the new ones pass on both devices and a review signs the ledger [ledgers/t2-fx-contract.md](ledgers/t2-fx-contract.md).
 2. Machine equiv moves to rig sound checks (about 7 min). The rig references are new pins, reviewed once. Then the analog, bd, pd and pluck PCM pins go. The dynreg DN2 pin stays.
 3. usb-fast mode matrix cut (about 5 min). The upload case stays on DN2 only.
 4. Card-safety, settings and safe-mode duplicates move to host tests (about 2 min).
