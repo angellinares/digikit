@@ -21,6 +21,8 @@ enum Ev {
     Init(usize, u32),
     Fini(usize, u32),
     Add(usize),
+    /// `add` with the service row of a file.
+    AddRow(usize, *const dkrt_abi::service::ServiceRow),
     Remove(usize),
     AbiOk(u32),
 }
@@ -34,7 +36,14 @@ enum Init {
     NeedsUsbBulk,
     /// Declares what the header table of a service says: (declare tag, first word, entry offset in the image) for a hook or an export, as `init` of a service does.
     Declare(&'static [(u16, u32, u32)]),
+    /// A service file: declares `TEST_ROW`.
+    DeclaresRow,
 }
+
+struct Nothing;
+impl<C: dkrt_abi::core_api::CoreApi> dkrt_abi::service::Service<C> for Nothing {}
+/// The row a service file declares in these tests; `svc-test` is a `[[service]]` that no runtime row owns.
+static TEST_ROW: dkrt_abi::service::ServiceRow = dkrt_abi::service::ServiceRow::of::<Nothing, crate::core_api::RealCore>("svc-test", &[]);
 
 struct FakeImages {
     files: BTreeMap<Vec<u8>, Vec<u8>>,
@@ -125,6 +134,8 @@ impl Images for FakeImages {
         self.log.push(Ev::Init(rec, init));
         match self.init {
             Init::Ok => OK,
+            // (`ctx` is the context address as a u32: not a host pointer)
+            Init::DeclaresRow => crate::collect::dk_service_declare_row(core::ptr::addr_of_mut!(crate::entry::DKRT_CTXS[rec]) as *mut u8, &TEST_ROW),
             Init::Fails(e) => e,
             Init::NeedsUsbBulk => {
                 stub_missing("core/usb-bulk");
@@ -168,8 +179,10 @@ impl Registry for FakeRegistry {
         self.abi
     }
     unsafe fn add(&mut self, rec: usize, row: Option<&dkrt_abi::service::ServiceRow>) -> i32 {
-        assert!(row.is_none());
-        self.log.push(Ev::Add(rec));
+        self.log.push(match row {
+            None => Ev::Add(rec),
+            Some(r) => Ev::AddRow(rec, r as *const _),
+        });
         self.add_result
     }
     unsafe fn remove(&mut self, rec: usize) {
@@ -525,6 +538,66 @@ fn a_service_import_is_linked_for_a_service_file_only() {
         assert_eq!(l.load(PATH.as_ptr()), E_IMPORT);
         assert_eq!(l.m.allocs, 0);
         assert_eq!(l.missing()[0], 0);
+    }
+}
+
+/// A service file of a table with a provides pair only (no hook, no export): `init` declares just its row.
+fn row_service_file() -> Vec<u8> {
+    use dkneeds::keys::{name_hash, Pair, Table};
+    static PROVIDES: std::sync::OnceLock<[Pair; 1]> = std::sync::OnceLock::new();
+    let table = Table { provides: PROVIDES.get_or_init(|| [Pair { a: name_hash(SVC), b: 0x000802 }]), ..Default::default() };
+    service_file(&table, 0)
+}
+
+#[test]
+fn the_row_a_service_file_declares_is_added_at_the_commit() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let rec = MAX_MODULES;
+        let mut l = loader_of(Init::DeclaresRow, row_service_file());
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), OK);
+        assert_eq!(l.r.log, vec![Ev::AddRow(rec, &TEST_ROW)]);
+        // (a provider record has no run-time unload: its row goes with a failed load, below)
+        // a module declares no row: `init` cannot, the import is not in its table
+        let mut l = loader(Init::Ok);
+        assert_eq!(l.load(PATH.as_ptr()), OK);
+        assert_eq!(l.r.log, vec![Ev::Add(0)]);
+    }
+}
+
+#[test]
+fn a_row_the_registry_refuses_undoes_the_load() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let rec = MAX_MODULES;
+        let mut l = loader_of(Init::DeclaresRow, row_service_file());
+        l.r.add_result = E_PLAN_OWNER;
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_PLAN_OWNER);
+        assert!(l.m.live.is_empty());
+        assert_eq!(l.r.log, vec![Ev::AddRow(rec, &TEST_ROW), Ev::Remove(rec)]);
+    }
+}
+
+#[test]
+fn the_real_registry_puts_the_row_into_the_service_table_and_takes_it_out() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let mut r = RealRegistry;
+        let fixed = crate::gen_services::STATIC;
+        assert_eq!(services().rows.len(), fixed);
+        assert_eq!(r.add(0, None), OK);
+        assert_eq!(r.add(2, Some(&TEST_ROW)), OK);
+        let t = services();
+        assert_eq!(t.rows.len(), fixed + 1);
+        assert!(core::ptr::eq(t.rows[fixed], &TEST_ROW));
+        // the in-crate prefix and its failed mask are as before, and one row has one owner
+        assert_eq!(t.failed, services().failed);
+        assert_eq!(r.add(3, Some(&TEST_ROW)), E_PLAN_OWNER);
+        // (`RealRegistry::remove` also runs the registry's own remove, which the cleanup tests count: the row part alone here)
+        crate::svc_rows::remove(3);
+        assert_eq!(services().rows.len(), fixed + 1);
+        crate::svc_rows::remove(2);
+        assert_eq!(services().rows.len(), fixed);
     }
 }
 

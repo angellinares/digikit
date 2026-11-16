@@ -527,7 +527,7 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
 /// `modules/core/runtime/src/rs/src/gen_services.rs`: the static table of the in-crate services (`[[service]]`).
 fn rust_services(sdk: &Sdk) -> String {
     let mut s = format!("// {HEADER}\n\n");
-    s.push_str("use crate::core_api::{RealCore, REAL_CORE};\nuse dkrt_abi::service::{RowPtrs, ServiceRow, ServiceTable};\n\n");
+    s.push_str("use crate::core_api::{RealCore, REAL_CORE};\nuse dkrt_abi::service::{rows_with_tail, RowPtrs, ServiceRow, ServiceTable};\n\n");
     s.push_str("/// The in-crate services in the order the core calls them (`[[service]]` of sdk/sdk.toml), each with the record kinds it owns.\n");
     let rows: Vec<(&ServiceDecl, &String)> = sdk
         .service
@@ -547,7 +547,18 @@ fn rust_services(sdk: &Sdk) -> String {
     }
     let _ = write!(
         s,
-        "];\n\n/// The number of in-crate services: the static prefix of the table.\npub const STATIC: usize = {n};\n\nstatic ROWS: RowPtrs<{n}> = RowPtrs::of(&SERVICES);\n\npub const TABLE: ServiceTable = ServiceTable::new(&ROWS.0, &REAL_CORE);\n"
+        "];\n\n/// The number of in-crate services: the static prefix of the table.\npub const STATIC: usize = {n};\n\n"
+    );
+    let order = sdk
+        .service
+        .iter()
+        .map(|d| format!("{:?}", d.name))
+        .collect::<Vec<_>>();
+    let _ = write!(
+        s,
+        "/// The name of every `[[service]]`, in file order: the ordinal of a service. The rows a `.dks` adds follow the in-crate rows sorted by it (`svc_rows.rs`).\npub const ORDER: [&str; {}] = [{}];\n\n/// The length of the row table: the in-crate rows, then room for `PROVIDER_MAX` rows of loaded service files.\npub const ROWS_LEN: usize = STATIC + dkrt_sdk::PROVIDER_MAX;\n\n/// The row table: the in-crate rows first, then the loaded ones (written by `svc_rows.rs` only; the null tail is not part of any table).\npub static mut ROWS: [*const ServiceRow; ROWS_LEN] = rows_with_tail(&SERVICES);\n\nstatic HEAD: RowPtrs<{n}> = RowPtrs::of(&SERVICES);\n\n/// The table of the in-crate rows alone (the declare check and `is_runtime_service`).\npub const TABLE: ServiceTable = ServiceTable::new(&HEAD.0, &REAL_CORE);\n",
+        order.len(),
+        order.join(", ")
     );
     s
 }

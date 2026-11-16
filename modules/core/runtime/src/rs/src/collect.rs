@@ -1298,8 +1298,7 @@ pub fn counts_of(c: &Collect, p: &Profile) -> (u32, u32, u32) {
 /// Whether what `init` declared (`dk_service_declare_*`, addresses in the loaded image at `base`) is what the header table carries (declare-check-commit):
 /// the same kinds with the same lengths and handlers, slots, hooks, exports and resources. A module that declares nothing and has no such entries passes.
 pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
-    // the row is no entry of the table
-    let mut d = c.decl.without_row();
+    let mut d = c.decl;
     let mut i = 0;
     while i < d.n {
         let DeclItem { tag, a, b, c: e } = d.items[i];

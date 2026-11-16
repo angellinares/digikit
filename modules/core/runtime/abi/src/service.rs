@@ -192,7 +192,7 @@ impl Declare {
     pub const EXPORT: u16 = 7;
     pub const RESOURCE: u16 = 8;
     /// The `ServiceRow` a service file declares (`dk_service_declare_row`): the row's address, low word in `a` and (a 64-bit host) high word in `b`. The header
-    /// table has no such entry: the commit takes this item out before it compares the declarations with the table (`without_row`).
+    /// table has no such entry: `same_as` leaves it out when it compares the declarations with the table.
     pub const ROW: u16 = 9;
 
     pub const fn new() -> Declare {
@@ -244,23 +244,19 @@ impl Declare {
         }
         None
     }
-    /// The declarations without the `ROW` item: the items the header table can hold.
-    pub fn without_row(&self) -> Declare {
-        let mut d = Declare::new();
-        d.full = self.full;
-        let mut i = 0;
-        while i < self.n {
-            let it = self.items[i];
-            if it.tag != Declare::ROW {
-                d.add(it.tag, it.a, it.b, it.c);
-            }
-            i += 1;
-        }
-        d
-    }
     /// Whether `other` holds the same items (in any order): what a module declared in `init` against what its header table says.
+    ///
+    /// The `ROW` item of `self` (a service file's own row) has no entry in a header table and is left out.
     pub fn same_as(&self, other: &Declare) -> bool {
-        if self.full || other.full || self.n != other.n {
+        let mut rows = 0;
+        let mut r = 0;
+        while r < self.n {
+            if self.items[r].tag == Declare::ROW {
+                rows += 1;
+            }
+            r += 1;
+        }
+        if self.full || other.full || self.n - rows != other.n {
             return false;
         }
         let has = |d: &Declare, x: DeclItem| {
@@ -275,7 +271,14 @@ impl Declare {
         };
         let mut i = 0;
         while i < self.n {
-            if !has(other, self.items[i]) || !has(self, other.items[i]) {
+            if self.items[i].tag != Declare::ROW && !has(other, self.items[i]) {
+                return false;
+            }
+            i += 1;
+        }
+        i = 0;
+        while i < other.n {
+            if !has(self, other.items[i]) {
                 return false;
             }
             i += 1;
@@ -728,6 +731,19 @@ impl<const N: usize> RowPtrs<N> {
     }
 }
 
+/// The pointers to `rows` followed by null pointers up to `M` entries (`M >= N`): the table of a core that adds the rows of loaded service files after its own.
+pub const fn rows_with_tail<const N: usize, const M: usize>(
+    rows: &'static [ServiceRow; N],
+) -> [*const ServiceRow; M] {
+    let mut a = [core::ptr::null::<ServiceRow>(); M];
+    let mut i = 0;
+    while i < N {
+        a[i] = &rows[i] as *const ServiceRow;
+        i += 1;
+    }
+    a
+}
+
 /// The table of services, in the order the core calls them: the walks below run the rows in table order (removal runs the other way). It is the
 /// same type for every core; `core` is the `&C` that each row's thunks cast back.
 #[derive(Clone, Copy)]
@@ -1103,12 +1119,19 @@ mod tests {
         d.row(row);
         assert_eq!(d.n, 2);
         assert_eq!(d.row_ptr(), Some(row));
-        // without the row the declarations are the kind alone, and the original keeps its row
-        let kinds = d.without_row();
-        assert_eq!((kinds.n, kinds.row_ptr()), (1, None));
-        assert!(kinds.matches_kinds(&[(90, 24)]));
+        // the table has the kind alone: the declarations with a row are the same as it
+        let mut table = Declare::new();
+        table.kind(90, 24);
+        assert!(d.same_as(&table));
+        // a table that has more, or another kind, is not the same
+        let mut more = table;
+        more.slot(1, 0);
+        assert!(!d.same_as(&more));
+        let mut other = Declare::new();
+        other.kind(91, 24);
+        assert!(!d.same_as(&other));
+        // and the walk of a static service's kinds does not take a row for a kind
         assert!(!d.matches_kinds(&[(90, 24)]));
-        assert_eq!(d.row_ptr(), Some(row));
     }
 
     #[test]

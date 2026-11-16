@@ -104,27 +104,27 @@ impl Images for RealImages {
     }
 }
 
-/// The runtime's own registry: the machine, parameter and page rows. It has no row of a service file yet.
+/// The runtime's own registry: the machine, parameter and page rows of a module's records, and the service row of a service file (`svc_rows.rs`).
 pub struct RealRegistry;
 
 impl Registry for RealRegistry {
     fn abi_ok(&self, fingerprint: u32) -> bool {
         fingerprint == 0 || fingerprint == dkrt_abi::service::SVC_ABI
     }
-    unsafe fn add(&mut self, _rec: usize, row: Option<&ServiceRow>) -> i32 {
+    unsafe fn add(&mut self, rec: usize, row: Option<&ServiceRow>) -> i32 {
         match row {
             None => dkrt_sdk::OK,
-            Some(_) => dkrt_sdk::E_NO_REGISTRY,
+            Some(row) => crate::svc_rows::add(rec, row),
         }
     }
     unsafe fn remove(&mut self, rec: usize) {
-        // the rows of the registry belong to module records; a provider record has none (its service row is R12-4)
-        if rec >= crate::MAX_MODULES {
-            return;
+        // the registry rows of a module record first (the service's own `remove` runs over the table with its row in), then the service row
+        if rec < crate::MAX_MODULES {
+            #[cfg(test)]
+            crate::cleanup_tests::registry_remove(rec as u8 + 1);
+            #[cfg(not(test))]
+            crate::registry::remove(rec as u8 + 1);
         }
-        #[cfg(test)]
-        crate::cleanup_tests::registry_remove(rec as u8 + 1);
-        #[cfg(not(test))]
-        crate::registry::remove(rec as u8 + 1);
+        crate::svc_rows::remove(rec);
     }
 }

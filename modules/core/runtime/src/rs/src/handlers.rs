@@ -18,10 +18,10 @@ pub type ServiceTable = dkrt_abi::service::ServiceTable;
 /// The rows whose declare check failed (`check_declarations`): bit `i` for row `i`.
 static mut FAILED: u32 = 0;
 
-/// The in-crate services, in the order the core calls them (`[[service]]` of sdk/sdk.toml: samples, machines, fx), with the mask of the ones that failed
-/// their declare check.
+/// The services in the order the core calls them: the in-crate ones (`[[service]]` of sdk/sdk.toml with `rust =`: samples, machines, fx, lfo), then the rows of
+/// loaded service files (`svc_rows.rs`), with the mask of the in-crate ones that failed their declare check.
 pub fn services() -> ServiceTable {
-    ServiceTable { failed: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(FAILED)) }, ..crate::gen_services::TABLE }
+    crate::svc_rows::table(ServiceTable { failed: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(FAILED)) }, ..crate::gen_services::TABLE })
 }
 
 /// Declare-check-commit of the in-crate services (the runtime's init): each service declares its kinds, the runtime compares them with the generated

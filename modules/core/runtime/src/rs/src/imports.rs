@@ -28,7 +28,7 @@ pub struct Import {
 pub struct Imports(pub [Import; dkrt_sdk::api::BUILTIN_NAMES.len()]);
 unsafe impl Sync for Imports {}
 
-pub(crate) const fn nm(s: &[u8]) -> [u8; 32] {
+const fn nm(s: &[u8]) -> [u8; 32] {
     let mut o = [0u8; 32];
     let mut i = 0;
     while i < s.len() {

@@ -576,8 +576,9 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         if !col::decl_matches(c, keys, base) {
             return E_DECL_KIND;
         }
-        // a module declares no service row; `fail` takes whatever was added down again
-        let r = self.r.add(rec, None);
+        // a service file declares its row in `init` (`dk_service_declare_row`); a module declares none. `fail` takes whatever was added down again
+        let row = c.decl.row_ptr().map(|p| &*p);
+        let r = self.r.add(rec, row);
         if r != OK {
             return r;
         }

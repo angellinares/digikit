@@ -57,6 +57,7 @@ mod worker;
 mod health;
 mod imports;
 mod svc_imports;
+mod svc_rows;
 mod mailbox;
 mod plan;
 mod platform;
