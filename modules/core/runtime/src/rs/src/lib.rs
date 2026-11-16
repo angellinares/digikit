@@ -34,7 +34,6 @@ mod dsp;
 mod link;
 pub mod entry;
 mod gen_abi_check;
-mod image;
 mod loader;
 pub mod params;
 pub mod registry;

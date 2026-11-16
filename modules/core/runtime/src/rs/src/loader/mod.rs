@@ -23,7 +23,8 @@ const H_REG_SIZE: usize = dkneeds::H_REG_SIZE as usize;
 const H_DSP_OFF: usize = dkneeds::H_DSP_OFF as usize;
 const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 
-use crate::image::{self, in_file};
+mod image;
+use image::in_file;
 
 /// Validate and load the `.dkm` at `path`. See `dkrt_load`. The tables are checked after every attempt, and none starts once a check has
 /// failed (`invariants::check`).
