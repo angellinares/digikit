@@ -149,7 +149,11 @@ impl Manifest {
     pub fn provided_service(&self) -> Result<Option<crate::dkm::Provided>> {
         let id = &self.module.id;
         if self.module.role != Some(ModuleRole::Service) {
-            if self.module.service.is_some() || !self.exports.is_empty() || !self.hooks.is_empty() || !self.fills.is_empty() {
+            if self.module.service.is_some()
+                || !self.exports.is_empty()
+                || !self.hooks.is_empty()
+                || !self.fills.is_empty()
+            {
                 return Err(err!(
                     "{id}: `service` in [module], [[export]], [[hook]] and [[fill]] belong to a module with `role = \"service\"`"
                 ));
@@ -219,7 +223,9 @@ impl Manifest {
         let mut fills: Vec<(String, String)> = vec![];
         for f in &self.fills {
             if f.slot.is_empty() || f.entry.is_empty() {
-                return Err(err!("{id}: [[fill]] needs a `slot` and an `entry`, both not empty"));
+                return Err(err!(
+                    "{id}: [[fill]] needs a `slot` and an `entry`, both not empty"
+                ));
             }
             if fills.iter().any(|(n, _)| *n == f.slot) {
                 return Err(err!("{id}: [[fill]] {:?} is declared twice", f.slot));
@@ -227,7 +233,11 @@ impl Manifest {
             fills.push((f.slot.clone(), f.entry.clone()));
         }
         if fills.len() > dkneeds::SLOTS_MAX as usize {
-            return Err(err!("{id}: {} [[fill]] entries, over the {} a service file fills", fills.len(), dkneeds::SLOTS_MAX));
+            return Err(err!(
+                "{id}: {} [[fill]] entries, over the {} a service file fills",
+                fills.len(),
+                dkneeds::SLOTS_MAX
+            ));
         }
         Ok(Some(crate::dkm::Provided {
             service: service.clone(),

@@ -583,8 +583,8 @@ pub mod api {
         "dk_debug_speed_flags",
     ];
 
-    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.
-    pub const BUILTIN_NAMES: [&str; 81] = [
+    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`, and not provided by a service file.
+    pub const BUILTIN_NAMES: [&str; 79] = [
         "memcpy",
         "memset",
         "memcmp",
@@ -627,8 +627,6 @@ pub mod api {
         "dk_hash32_update",
         "dk_hash32_finish",
         "dk_intro_take",
-        "dk_param_get",
-        "dk_param_set",
         "dk_module_ctx_add_machine",
         "dk_module_ctx_add_fx",
         "dk_record_add",

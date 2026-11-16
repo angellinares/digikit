@@ -175,6 +175,10 @@ struct Import {
     /// A test-only import (of a test-only service): not in the runtime's table, the public headers or the docs.
     #[serde(default)]
     test: bool,
+    /// The import is a function of a service file (`[[export]]` of a `.dks`): the runtime's table has no entry for it, and a module resolves it at load from the provider's
+    /// exports (`dk_param_get` of `machines.dks`).
+    #[serde(default)]
+    provided: bool,
 }
 /// The opaque handle types, services and call contexts of the service imports: `[handle]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
@@ -2382,9 +2386,9 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
     s.push_str("    ];\n");
     let own: Vec<_> = imps
         .iter()
-        .filter(|(im, _)| im.requires.is_none())
+        .filter(|(im, _)| im.requires.is_none() && !im.provided)
         .collect();
-    s.push_str("\n    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.\n");
+    s.push_str("\n    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`, and not provided by a service file.\n");
     let _ = writeln!(s, "    pub const BUILTIN_NAMES: [&str; {}] = [", own.len());
     for (im, _) in &own {
         let _ = writeln!(s, "        {:?},", im.name);

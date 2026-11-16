@@ -207,15 +207,24 @@ fn digitone_ii_clone_gets_type_5() {
             .iter()
             .map(|h| h["anchor"].as_str().unwrap().to_string())
             .collect();
+        // the image keeps the dispatch hook, the list entry and the frame type stub; the other hooks are the machines service file's (R12-6)
         for h in [
             "cf.machine.fn.dispatch",
+            "cf.machine.fn.list.entry",
+            "cf.machine.site.frametype",
+        ] {
+            assert!(hooks.iter().any(|x| x == h), "{file}: no hook on {h}");
+        }
+        for h in [
             "cf.machine.site.group",
             "cf.machine.site.type_reader.load",
             "cf.machine.site.owner_type_load",
-            "cf.machine.site.frametype",
             "cf.machine.fn.type_page.count",
         ] {
-            assert!(hooks.iter().any(|x| x == h), "{file}: no hook on {h}");
+            assert!(
+                !hooks.iter().any(|x| x == h),
+                "{file}: the image hooks {h}, which machines.dks takes"
+            );
         }
     }
 }
