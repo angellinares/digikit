@@ -162,6 +162,8 @@ pub unsafe extern "C" fn dkrt_boot() {
         }
         // a safe boot loads no module: show the safe-mode screen in place of the stock intro (no storage access, built here on the main-OS task)
         crate::intro::show_safe(reason);
+        // no provider loads and the installer writes nothing: every hook site stays stock
+        loader::set_safe();
         let mut k = 0;
         while k < SEL_MAX {
             b.results[k] = E_SAFE_MODE;
@@ -180,8 +182,12 @@ pub unsafe extern "C" fn dkrt_boot() {
     // goes live now and its DSP part follows over the UI-loop passes (`LOADING` in the report until then).
     // the type numbers of every machine of the selection, before the first load (reads the files; the staging buffer is free)
     assign::plan(&r);
-    // the boot plan over the header tables that read gave: the order to load in, and a module the plan refuses is not loaded
-    let planned = loader::plan_selection(r.count as usize);
+    // the boot plan over the header tables that read gave, with the providers the search found for the hard needs the runtime does not meet: the order to
+    // load in, and a module the plan refuses is not loaded
+    let mut planned = loader::plan_selection(r.count as usize);
+    // the providers load before any module; a module that needs one that did not load is refused before the module stage
+    loader::load_providers(&planned);
+    loader::settle(&mut planned, r.count as usize);
     let mut k = 0;
     while k < r.count as usize {
         states().planned(k, planned.verdicts[k]);
@@ -236,6 +242,32 @@ pub unsafe fn report_module(k: usize, path: *const u8, res: i32, missing: &[u8; 
             [k as u32, dlog::word_of(m.as_ptr(), 0, NEEDS_LEN), dlog::word_of(m.as_ptr(), 4, NEEDS_LEN), dlog::word_of(m.as_ptr(), 8, NEEDS_LEN), 0],
         );
     }
+}
+
+/// The result `res` of the load of the provider file at the store path `path` (`services/<name>.dks`) that provides the service `hash`: log only. The event is
+/// `MOD_LOAD` with the provider index (`loader::PROVIDER_IDX`, not a selection index) and the service hash as the last word; the boot record and `LOADS` do not
+/// change.
+pub unsafe fn report_provider(path: &[u8], res: i32, hash: u32) {
+    let mut at = 0;
+    let mut i = 0;
+    while i < path.len() {
+        if path[i] == b'/' {
+            at = i + 1;
+        }
+        i += 1;
+    }
+    let mut name = [0u8; 8];
+    let mut j = 0;
+    while j < 8 && at + j < path.len() {
+        name[j] = path[at + j];
+        j += 1;
+    }
+    let bad = if res == OK { dlog::INFO } else { logk::F_ERROR };
+    dlog::ev(
+        logk::MOD_LOAD,
+        bad,
+        [loader::PROVIDER_IDX, res as u32, dlog::word_of(name.as_ptr(), 0, 8), dlog::word_of(name.as_ptr(), 4, 8), hash],
+    );
 }
 
 /// The DSP part of the module loaded for selection index `idx` is over with result `r` (called by the DSP loader).

@@ -1,16 +1,29 @@
 //! The role of a `.dkm` or `.dks` file (docs/plans/runtime-and-services.md section 13.2): the role word of the header and what the header table may hold for it.
-//! `RoleSteps` are the steps that differ by role, chosen from the role word: a module has none, a service (`.dks`) has the stubs R12-3 and R12-4 fill.
+//! `RoleSteps` are the steps that differ by role, chosen from the role word: a module has none, a service (`.dks`) checks, keeps its table, publishes its exports and
+//! installs its hooks (the row of the service is R12-4).
 //! The service search (`discover.rs`) uses `role_of` and `role_ok`; the loader runs the steps.
-#![allow(dead_code)]
-use super::{Images, Loader, Registry};
-use dkneeds::keys::{tag, Keys};
+use super::exports::EXPORTS_MAX;
+use super::image::Head;
+use super::{Images, Loader, ProvRec, Registry, SLOTS_MAX};
+use dkneeds::keys::{tag, BindRef, Keys};
 use dkrt_abi::platform::Platform;
-use dkrt_sdk::{E_CONTRACT, E_FORMAT, OK};
+use dkrt_sdk::{E_CONTRACT, E_FORMAT, E_NOMEM, OK};
 
-/// The steps of one role. `check` runs after the header parse and before anything is allocated (`file` is the staged file); `activate` after the commit; `undo`
-/// when a later step fails or the record goes away. A step has what it needs in the Loader and its seams.
+/// What a role step may need of the file besides the record: the staged file (valid until `init` runs) and where its table and image are.
+#[derive(Clone, Copy)]
+pub struct PlaceArgs {
+    pub file: *const u8,
+    pub keys_off: u32,
+    pub keys_len: u32,
+    pub image_size: u32,
+}
+
+/// The steps of one role, in the order the loader runs them. `check` runs after the header parse and before anything is allocated (`file` is the staged
+/// file); `place` after the image is copied and before `init` (it copies what `init` could overwrite in the staging buffer); `activate` after the commit,
+/// the last thing a load does; `undo` when a later step fails or the record goes away. A step has what it needs in the Loader and its seams.
 pub struct RoleSteps<P: Platform, M: Images, R: Registry> {
-    pub check: unsafe fn(&mut Loader<P, M, R>, file: *const u8) -> i32,
+    pub check: unsafe fn(&mut Loader<P, M, R>, file: *const u8, head: &Head) -> i32,
+    pub place: unsafe fn(&mut Loader<P, M, R>, rec: usize, args: &PlaceArgs) -> i32,
     pub activate: unsafe fn(&mut Loader<P, M, R>, rec: usize) -> i32,
     pub undo: unsafe fn(&mut Loader<P, M, R>, rec: usize),
 }
@@ -33,14 +46,17 @@ impl<P: Platform, M: Images, R: Registry> RoleSteps<P, M, R> {
     }
 
     /// A module has no step of its own.
-    pub const MODULE: Self = RoleSteps { check: no_check, activate: no_activate, undo: no_undo };
+    pub const MODULE: Self = RoleSteps { check: no_check, place: no_place, activate: no_activate, undo: no_undo };
 
-    /// A service. The check asks the registry about the ABI fingerprint of header word 0x3c (R12-4 step 2 gives the refusal its own code); the other steps are stubs
-    /// until R12-3 (install the hooks) and R12-4 (publish the row).
-    pub const SERVICE: Self = RoleSteps { check: service_check, activate: no_activate, undo: no_undo };
+    /// A service (a provider record): the check refuses an unknown ABI, a DSP section, a bad table and a hook site that is not stock, all before anything is
+    /// allocated; place keeps the table; activate publishes the exports and installs the hooks, last; undo withdraws and frees.
+    pub const SERVICE: Self = RoleSteps { check: service_check, place: service_place, activate: service_activate, undo: service_undo };
 }
 
-unsafe fn no_check<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: *const u8) -> i32 {
+unsafe fn no_check<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: *const u8, _: &Head) -> i32 {
+    OK
+}
+unsafe fn no_place<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: usize, _: &PlaceArgs) -> i32 {
     OK
 }
 unsafe fn no_activate<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: usize) -> i32 {
@@ -48,12 +64,148 @@ unsafe fn no_activate<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, 
 }
 unsafe fn no_undo<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: usize) {}
 
-unsafe fn service_check<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, file: *const u8) -> i32 {
-    if l.r.abi_ok(crate::rd32(file.add(dkneeds::H_RESERVED as usize))) {
-        OK
-    } else {
-        E_CONTRACT
+/// The table of the staged file, or the refusal.
+unsafe fn table_of<'a>(file: *const u8, off: u32, len: u32) -> Result<Keys<'a>, i32> {
+    Keys::parse(core::slice::from_raw_parts(file.add(off as usize), len as usize)).map_err(|_| E_FORMAT)
+}
+
+/// The `BIND` items of `keys` into `out`; their count.
+fn binds_of<'a>(keys: &Keys<'a>, out: &mut [BindRef<'a>; BIND_MAX]) -> usize {
+    let mut n = 0;
+    while n < BIND_MAX {
+        match keys.bind(n) {
+            Some(b) => out[n] = b,
+            None => break,
+        }
+        n += 1;
     }
+    n
+}
+
+const BIND_MAX: usize = dkneeds::BIND_MAX as usize;
+const NO_BIND: BindRef<'static> = BindRef { site: 0, addr: 0, len: 0, tramp: 0, stock: &[] };
+
+/// The data word of slot `id` in the image: the slot mechanism (fill after the commit, clear at IPL 7) is in the installer; the image has no slot words yet
+/// (the first is in R12-6, with the machines), so no id resolves and a provider that declares a slot is refused.
+fn slot_addr(_id: u32) -> Option<u32> {
+    None
+}
+
+unsafe fn service_check<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, file: *const u8, head: &Head) -> i32 {
+    if !l.r.abi_ok(crate::rd32(file.add(dkneeds::H_RESERVED as usize))) {
+        return E_CONTRACT;
+    }
+    // a provider's DSP section waits for R12-8 (the DSP part of a service)
+    if crate::rd32(file.add(super::H_DSP_SIZE)) != 0 {
+        return E_FORMAT;
+    }
+    let (off, len) = (crate::rd32(file.add(super::H_REG_OFF)), crate::rd32(file.add(super::H_REG_SIZE)));
+    let size = crate::rd32(file.add(dkneeds::H_SIZE as usize));
+    if !super::in_file(off, len, size) {
+        return E_FORMAT;
+    }
+    let keys = match table_of(file, off, len) {
+        Ok(k) => k,
+        Err(e) => return e,
+    };
+    if let Err(e) = role_ok(1, &keys) {
+        return e;
+    }
+    if keys.bind_count() > BIND_MAX || keys.count(tag::EXPORTS) > EXPORTS_MAX {
+        return E_FORMAT;
+    }
+    // every hook site holds the stock bytes the bind recorded: checked here, before `init` runs, and again under the mask at the install
+    let mut binds = [NO_BIND; BIND_MAX];
+    let n = binds_of(&keys, &mut binds);
+    match l.installer.check(&l.p, &binds[..n], 0, head.image_size) {
+        Ok(()) => OK,
+        Err(e) => e,
+    }
+}
+
+/// The provider index of record `rec`.
+fn index_of(rec: usize) -> usize {
+    rec - crate::MAX_MODULES
+}
+
+unsafe fn service_place<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, rec: usize, a: &PlaceArgs) -> i32 {
+    let idx = index_of(rec);
+    l.provs[idx] = ProvRec::EMPTY;
+    l.provs[idx].image_size = a.image_size;
+    let keys = match table_of(a.file, a.keys_off, a.keys_len) {
+        Ok(k) => k,
+        Err(e) => return e,
+    };
+    // the exports are image offsets
+    let mut i = 0;
+    while let Some(w) = keys.words(tag::EXPORTS, i) {
+        if w.1 >= a.image_size {
+            return E_FORMAT;
+        }
+        i += 1;
+    }
+    if keys.bind_count() == 0 && keys.count(tag::EXPORTS) == 0 && keys.count(tag::SLOTS) == 0 {
+        return OK;
+    }
+    // the staged file is overwritten while `init` reads from the store: BIND, EXPORTS and SLOTS are kept in an arena block (the whole table)
+    let blk = match l.m.alloc(a.keys_len) {
+        Some(b) => b,
+        None => return E_NOMEM,
+    };
+    core::ptr::copy_nonoverlapping(a.file.add(a.keys_off as usize), blk.ptr, a.keys_len as usize);
+    l.provs[idx].block = Some(blk);
+    l.provs[idx].len = a.keys_len;
+    OK
+}
+
+unsafe fn service_activate<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, rec: usize) -> i32 {
+    let idx = index_of(rec);
+    let pr = l.provs[idx];
+    let blk = match pr.block {
+        Some(b) => b,
+        None => return OK,
+    };
+    let base = super::records::module(rec).base;
+    let keys = match Keys::parse(core::slice::from_raw_parts(blk.ptr, pr.len as usize)) {
+        Ok(k) => k,
+        Err(_) => return E_FORMAT,
+    };
+    let mut i = 0;
+    while let Some(w) = keys.words(tag::EXPORTS, i) {
+        if let Err(e) = l.exports.publish(rec, w.0, base.wrapping_add(w.1)) {
+            return e;
+        }
+        i += 1;
+    }
+    let mut binds = [NO_BIND; BIND_MAX];
+    let nb = binds_of(&keys, &mut binds);
+    let mut slots = [(0u32, 0u32); SLOTS_MAX];
+    let mut ns = 0;
+    let mut s = 0;
+    while let Some(w) = keys.words(tag::SLOTS, s) {
+        s += 1;
+        match slot_addr(w.0) {
+            Some(addr) if ns < SLOTS_MAX => {
+                slots[ns] = (addr, base.wrapping_add(w.2));
+                ns += 1;
+            }
+            _ => return E_FORMAT,
+        }
+    }
+    // the hooks go in last: nothing after this can fail, so a live site is never taken down again
+    match l.installer.install(&l.p, rec as u8, &binds[..nb], base, pr.image_size, &slots[..ns]) {
+        Ok(()) => OK,
+        Err(e) => e,
+    }
+}
+
+unsafe fn service_undo<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, rec: usize) {
+    let idx = index_of(rec);
+    l.exports.withdraw(rec);
+    if let Some(b) = l.provs[idx].block {
+        l.m.free(b.addr);
+    }
+    l.provs[idx] = ProvRec::EMPTY;
 }
 
 /// The role word of a file: 0 a module, 1 a service (`.dks`). `head` is the first 64 bytes of the file; the word is big endian, like every header field.

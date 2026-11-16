@@ -309,7 +309,7 @@ struct Extra;
 impl<C: CoreApi> Service<C> for Extra {
     unsafe fn declare(d: &mut Declare) {
         d.kind(72, 8);
-        d.slot(1, 0);
+        d.slot(1, 0, 0);
     }
 }
 struct Silent;

@@ -249,7 +249,7 @@ fn check_needs(env: &Env, t: &Keys, provs: &[Option<Keys>], pdone: &[bool; PROVI
             i += 1;
         }
         if !found {
-            return Some(Reason::NeedMissing);
+            return Some(Reason::NeedMissing(service));
         }
         if !met {
             return Some(Reason::NeedVersion);
@@ -506,6 +506,53 @@ fn judge(
     }
 }
 
+/// The first hard need of `t` that only a provider which failed to load could have met: its service hash. `loaded[i]` is true when provider `i` loaded.
+/// A need no provider provides is not here: the plan refused it already. One rule for modules and providers (`settle` and the provider loop of the boot).
+pub fn failed_need(services: &ServiceTable, t: &Keys, provs: &[Option<Keys>], loaded: &[bool]) -> Option<u32> {
+    let mut ni = 0;
+    while let Some(n) = t.words(tag::NEEDS, ni) {
+        ni += 1;
+        if n.2 & 1 == 0 || is_runtime_service(n.0, services) {
+            continue;
+        }
+        let mut offered = false;
+        let mut met = false;
+        let mut i = 0;
+        while i < provs.len() {
+            if let Some(ti) = &provs[i] {
+                if provided_version(ti, n.0).is_some() {
+                    offered = true;
+                    if loaded[i] {
+                        met = true;
+                    }
+                }
+            }
+            i += 1;
+        }
+        if offered && !met {
+            return Some(n.0);
+        }
+    }
+    None
+}
+
+/// The settle step of the boot: after the providers loaded (`loaded[i]`: provider `i` is live), a module the plan accepted whose hard need only a failed
+/// provider could meet is refused with `NeedMissing(hash)`. Pure: nothing runs and nothing is written but the verdicts. The resources the plan reserved for
+/// such a module stay counted for the modules after it (the plan is not redone).
+pub fn settle(services: &ServiceTable, plan: &mut Plan, mods: &[Option<Keys>], provs: &[Option<Keys>], loaded: &[bool]) {
+    let mut k = 0;
+    while k < plan.n.min(mods.len()) {
+        if plan.verdicts[k].is_accepted() {
+            if let Some(t) = &mods[k] {
+                if let Some(h) = failed_need(services, t, provs, loaded) {
+                    plan.verdicts[k] = Verdict::Refused(Reason::NeedMissing(h));
+                }
+            }
+        }
+        k += 1;
+    }
+}
+
 /// Plan a selection without providers: `mods[k]` is the header table of selection index `k`.
 pub fn plan(env: &Env, mods: &[Option<Keys>]) -> Plan {
     plan_with(env, mods, &[])
@@ -538,7 +585,7 @@ pub fn plan_with(env: &Env, mods: &[Option<Keys>], provs: &[Option<Keys>]) -> Pl
     while pat < np {
         let j = porder[pat] as usize;
         p.provider_order[pat] = j as u8;
-        let v = if pcyclic[j] { Verdict::Refused(Reason::NeedMissing) } else { judge_provider(env, provs, j, &pdone, &mut caps[..k]) };
+        let v = if pcyclic[j] { Verdict::Refused(Reason::NeedMissing(0)) } else { judge_provider(env, provs, j, &pdone, &mut caps[..k]) };
         p.provider_verdicts[j] = v;
         pdone[j] = v.is_accepted();
         pat += 1;
@@ -549,7 +596,7 @@ pub fn plan_with(env: &Env, mods: &[Option<Keys>], provs: &[Option<Keys>]) -> Pl
     let mut at = 0;
     while at < n {
         let j = p.order[at] as usize;
-        let v = if cyclic[j] { Verdict::Refused(Reason::NeedMissing) } else { judge(env, mods, provs, j, &done, &pdone, &mut caps[..k]) };
+        let v = if cyclic[j] { Verdict::Refused(Reason::NeedMissing(0)) } else { judge(env, mods, provs, j, &done, &pdone, &mut caps[..k]) };
         p.verdicts[j] = v;
         done[j] = v.is_accepted();
         at += 1;
@@ -635,7 +682,7 @@ mod tests {
         let consumer = Table { needs: &[Need { service: svc, min_version: 0x000800, hard: true }], ..KEEP };
         // without a provider the need is missing; an optional need is not looked at
         let p = run(&[Some(bytes(&consumer))]);
-        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(svc)));
         assert_eq!(p.verdicts[0].result(), E_MISSING);
         let soft = Table { needs: &[Need { service: svc, min_version: 0x000800, hard: false }], ..KEEP };
         assert_eq!(run(&[Some(bytes(&soft))]).verdicts[0], Verdict::Accepted);
@@ -673,8 +720,8 @@ mod tests {
         let y = Table { needs: &[need(1, 0)], provides: &[Pair { a: 2, b: 0 }], ..KEEP };
         let user = Table { needs: &[need(1, 0)], ..KEEP };
         let p = run_p(&[Some(bytes(&user))], &[Some(bytes(&x)), Some(bytes(&y))]);
-        assert_eq!(p.provider_verdicts[..2], [Verdict::Refused(Reason::NeedMissing); 2]);
-        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+        assert_eq!(p.provider_verdicts[..2], [Verdict::Refused(Reason::NeedMissing(0)); 2]);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(1)));
     }
 
     #[test]
@@ -682,7 +729,7 @@ mod tests {
         let consumer = Table { needs: &[need(name_hash("lfo_bus"), 0)], ..KEEP };
         let other = Table { provides: &[Pair { a: name_hash("other"), b: 0 }], ..KEEP };
         let p = run_p(&[Some(bytes(&consumer))], &[Some(bytes(&other))]);
-        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(name_hash("lfo_bus"))));
         assert_eq!(p.verdicts[0].result(), E_MISSING);
     }
 
@@ -737,8 +784,37 @@ mod tests {
         let consumer = Table { needs: &[need(svc, 0)], ..KEEP };
         let exporter = Table { exports: &[Pair { a: svc, b: 0x40 }], ..KEEP };
         let p = run(&[Some(bytes(&consumer)), Some(bytes(&exporter))]);
-        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing), Verdict::Accepted]);
+        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing(svc)), Verdict::Accepted]);
         assert_eq!(p.order[..2], [0, 1]);
+    }
+
+    #[test]
+    fn settle_refuses_the_dependents_of_a_provider_that_did_not_load() {
+        fn parse(tables: &[Vec<u8>]) -> Vec<Option<Keys<'_>>> {
+            tables.iter().map(|b| Some(Keys::parse(b).unwrap())).collect()
+        }
+        let (a, b) = (name_hash("a"), name_hash("b"));
+        let user_a = Table { needs: &[need(a, 0)], ..KEEP };
+        let user_b = Table { needs: &[need(b, 0)], ..KEEP };
+        let user_rt = Table { needs: &[need(name_hash("runtime"), 0)], ..KEEP };
+        let prov_a = Table { provides: &[Pair { a, b: 0 }], ..KEEP };
+        let prov_b = Table { provides: &[Pair { a: b, b: 0 }], ..KEEP };
+        let (mt, pt) = ([bytes(&user_a), bytes(&user_b), bytes(&user_rt)], [bytes(&prov_a), bytes(&prov_b)]);
+        let (mods, provs) = (parse(&mt), parse(&pt));
+        let c = caps();
+        let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
+        let env = Env { services, runtime: 0x000800, caps: &c };
+        let mut p = plan_with(&env, &mods, &provs);
+        assert_eq!(p.verdicts[..3], [Verdict::Accepted; 3]);
+        // both loaded: nothing changes
+        settle(&services, &mut p, &mods, &provs, &[true, true]);
+        assert_eq!(p.verdicts[..3], [Verdict::Accepted; 3]);
+        // provider b failed: only the module that needs b is refused, with b's hash in the detail
+        settle(&services, &mut p, &mods, &provs, &[true, false]);
+        assert_eq!(p.verdicts[..3], [Verdict::Accepted, Verdict::Refused(Reason::NeedMissing(b)), Verdict::Accepted]);
+        assert_eq!(p.verdicts[1].result(), E_MISSING);
+        assert_eq!(failed_need(&services, mods[1].as_ref().unwrap(), &provs, &[true, false]), Some(b));
+        assert_eq!(failed_need(&services, mods[0].as_ref().unwrap(), &provs, &[true, false]), None);
     }
 
     #[test]
@@ -748,7 +824,7 @@ mod tests {
         let consumer = Table { needs: &[need(svc, 0)], ..KEEP };
         let p = run_p(&[Some(bytes(&consumer))], &[Some(bytes(&five))]);
         assert_eq!(p.provider_verdicts[0], Verdict::Refused(Reason::Fit(CAPK_MACHINE_ROWS)));
-        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(svc)));
         assert_eq!(p.verdicts[0].result(), E_MISSING);
     }
 
@@ -777,7 +853,7 @@ mod tests {
         let a = Table { kinds: &[KindDecl { kind: 90, len: 16, entry: 8 }], keys: &[KeyGroup { kind: 91, keys: &ks }], ..KEEP };
         let b = Table { kinds: &[KindDecl { kind: 91, len: 16, entry: 8 }], keys: &[KeyGroup { kind: 90, keys: &ks }], ..KEEP };
         let p = run(&[Some(bytes(&a)), Some(bytes(&b))]);
-        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing); 2]);
+        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing(0)); 2]);
     }
 
     #[test]

@@ -15,9 +15,8 @@ use dkneeds::keys::{
 };
 use std::path::{Path, PathBuf};
 
-/// Most `BIND` items of one service. A patchkit constant, not an `sdk.toml` limit: no runtime array is sized with it (the runtime reads the
-/// items from the table).
-pub const BIND_MAX: usize = 24;
+/// Most `BIND` items of one service (`[limits.format] bind_max` of sdk/sdk.toml; the runtime sizes its copy with it).
+pub const BIND_MAX: usize = dkneeds::BIND_MAX as usize;
 
 /// One bound hook, for the report.
 #[derive(Clone, Debug)]

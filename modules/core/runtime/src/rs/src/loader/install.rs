@@ -8,8 +8,8 @@ use dkneeds::keys::BindRef;
 use dkrt_abi::platform::Platform;
 use dkrt_sdk::*;
 
-/// Installed sites at most: machines 21 + fx 9 + margin.
-pub const SITES_MAX: usize = 48;
+/// Installed sites at most (`[limits.format] install_sites` of sdk/sdk.toml): machines 21 + fx 9 and room.
+pub const SITES_MAX: usize = dkneeds::INSTALL_SITES as usize;
 
 /// `jmp.l` and `nop`, as big-endian words.
 const JMP_L: u16 = 0x4ef9;

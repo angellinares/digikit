@@ -382,6 +382,8 @@ struct FormatLimits {
     table_magic: u32,
     table_version: u32,
     provider_max: u32,
+    bind_max: u32,
+    install_sites: u32,
 }
 /// The value of a `[format] consts` entry (the header offsets), 0 if it is missing.
 fn header_const(sdk: &Sdk, name: &str) -> u32 {
@@ -411,6 +413,8 @@ fn format_limits(sdk: &Sdk) -> Vec<(&'static str, u32)> {
         ("TABLE_MAGIC", f.table_magic),
         ("TABLE_VERSION", f.table_version),
         ("PROVIDER_MAX", f.provider_max),
+        ("BIND_MAX", f.bind_max),
+        ("INSTALL_SITES", f.install_sites),
         ("MAX_VOICES", sdk.limits.max.machine_rows as u32),
         ("MAX_FX", sdk.limits.max.fx_slots as u32),
     ]

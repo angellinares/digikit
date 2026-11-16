@@ -635,8 +635,8 @@ name = "dk_service_declare_slot"
 service = "runtime"
 since = "0.8.0"
 context = "init"
-sig = "i32 (dk_module_ctx *ctx, u32 slot, u32 flags)"
-doc = "A service module declares a plug-in point (slot) it takes. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL."
+sig = "i32 (dk_module_ctx *ctx, u32 slot, u32 flags, const void *entry)"
+doc = "A service module declares a plug-in point (slot) it takes, with the function that fills it. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL."
 
 [[import]]
 name = "dk_service_declare_hook"
@@ -1171,6 +1171,15 @@ since = "0.8.2"
 context = "any"
 sig = "i32 ()"
 doc = "Test only: returns 42 from the svc-test provider."
+test = true
+
+[[import]]
+name = "dk_svctest_hits"
+service = "svc-test"
+since = "0.8.2"
+context = "any"
+sig = "u32 ()"
+doc = "Test only: how often the provider's hook ran (the last step of the firmware's SETTINGS list rebuild)."
 test = true
 
 [[import]]
@@ -1717,7 +1726,9 @@ arena_hdr = 16      # the arena's block header
 table_magic = 1145787458  # 0x444b5442 "DKTB": the first word of the header table of a `.dkm` (packages/dkneeds/src/keys.rs); another word is a file of the 0.7 format
 table_version = 2   # the newest version of the header table a reader accepts (1 and 2; a writer uses 2 only for a table with PROVIDES or BIND; a change is a MINOR of the runtime)
 provider_max = 6    # provider slots of the boot plan (the services that provide; separate from the module records, SEL_MAX)
-collect_bytes = 7206  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
+bind_max = 24       # BIND items (hook sites) of one provider file (`patchkit bind` refuses more)
+install_sites = 48  # hook sites installed at once over all providers (the installer's table: machines 21 + fx 9 and room)
+collect_bytes = 7486  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
 
 # The layout of the `.dkm` file and of its DSP section: byte offsets (big endian words), entry sizes and magics that the packer (packages/patchkit
 # dkm.rs, dkmdsp.rs), the reader of the DSP container (packages/dksharc dkds.rs), dkneeds and the runtime (loader.rs, dsp, services) share. `patchkit gen`

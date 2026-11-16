@@ -129,7 +129,7 @@ impl DeclItem {
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Declare {
-    /// (table tag, first word, second word, third word): `kind(kind, len)` (and the handler entry of a module), `slot(id, flags)`, `hook(site, entry)`,
+    /// (table tag, first word, second word, third word): `kind(kind, len)` (and the handler entry of a module), `slot(id, flags, entry)`, `hook(site, entry)`,
     /// `export(name hash, entry)`, `resource(id, limit)`; an unused word is 0.
     pub items: [DeclItem; Declare::MAX],
     pub n: usize,
@@ -138,7 +138,8 @@ pub struct Declare {
 }
 
 impl Declare {
-    pub const MAX: usize = 12;
+    /// Most declarations of one `init`: the machines service takes 21 hooks and a few slots and exports.
+    pub const MAX: usize = 32;
     pub const KIND: u16 = 4;
     pub const SLOT: u16 = 5;
     pub const HOOK: u16 = 6;
@@ -165,8 +166,8 @@ impl Declare {
     pub fn kind(&mut self, kind: u32, len: u32) {
         self.add(Declare::KIND, kind, len, 0);
     }
-    pub fn slot(&mut self, slot: u32, flags: u32) {
-        self.add(Declare::SLOT, slot, flags, 0);
+    pub fn slot(&mut self, slot: u32, flags: u32, entry: u32) {
+        self.add(Declare::SLOT, slot, flags, entry);
     }
     pub fn hook(&mut self, site: u32, entry: u32) {
         self.add(Declare::HOOK, site, entry, 0);

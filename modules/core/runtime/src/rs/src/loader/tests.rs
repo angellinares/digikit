@@ -32,6 +32,8 @@ enum Init {
     Fails(i32),
     /// Asks for the service `core/usb-bulk` and returns `E_MISSING`.
     NeedsUsbBulk,
+    /// Declares what the header table of a service says: (declare tag, first word, entry offset in the image) for a hook or an export, as `init` of a service does.
+    Declare(&'static [(u16, u32, u32)]),
 }
 
 struct FakeImages {
@@ -94,7 +96,7 @@ impl Images for FakeImages {
         self.live.remove(at);
         self.log.push(Ev::Free(addr));
     }
-    unsafe fn enter_init(&mut self, rec: usize, init: u32, _: *const Ctx) -> i32 {
+    unsafe fn enter_init(&mut self, rec: usize, init: u32, ctx: *const Ctx) -> i32 {
         self.log.push(Ev::Init(rec, init));
         match self.init {
             Init::Ok => OK,
@@ -102,6 +104,23 @@ impl Images for FakeImages {
             Init::NeedsUsbBulk => {
                 stub_missing("core/usb-bulk");
                 E_MISSING
+            }
+            Init::Declare(items) => {
+                // `init` is at image offset 0: its address is the base. The context pointer of the loader is 32 bits: on the host the test takes the real one.
+                let _ = ctx;
+                let ctx = core::ptr::addr_of_mut!(crate::entry::DKRT_CTXS[rec]) as *mut u8;
+                // only a provider declares (a module in the same boot declares nothing)
+                let items: &[(u16, u32, u32)] = if rec >= MAX_MODULES { items } else { &[] };
+                for &(tag, word, entry) in items {
+                    let at = (init + entry) as usize as *const u8;
+                    let r = if tag == dkrt_abi::service::Declare::HOOK {
+                        crate::collect::dk_service_declare_hook(ctx, word, at)
+                    } else {
+                        crate::collect::dk_service_declare_export(ctx, word, at)
+                    };
+                    assert_eq!(r, OK);
+                }
+                OK
             }
         }
     }
@@ -202,6 +221,7 @@ unsafe fn loader(init: Init) -> Fake {
 
 unsafe fn loader_of(init: Init, file: Vec<u8>) -> Fake {
     *st() = core::mem::zeroed();
+    records::reset();
     *dsp::ds() = core::mem::zeroed();
     dsp::init_once();
     CALLED_NEED = [0; NEEDS_LEN];
@@ -368,29 +388,300 @@ fn an_import_of_a_module_that_is_not_there_names_it_and_allocates_nothing() {
     }
 }
 
+/// A service file (role 1) of `table` (a v2 header table), with `dsp` as its DSP section size word.
+fn service_file(table: &dkneeds::keys::Table, dsp: u32) -> Vec<u8> {
+    let mut v = module_file();
+    let keys_off = v.len() - 8;
+    v.truncate(keys_off);
+    let mut t = vec![0u8; dkneeds::keys::table_size(table)];
+    dkneeds::keys::write_table(table, &mut t).unwrap();
+    v.extend_from_slice(&t);
+    put(&mut v, dkneeds::H_REG_SIZE, t.len() as u32);
+    put(&mut v, dkneeds::H_ROLE, 1);
+    put(&mut v, dkneeds::H_DSP_SIZE, dsp);
+    seal(&mut v);
+    v
+}
+
+const SITE: u32 = 0x400a_5eac;
+const STOCK: [u8; 6] = [0x20, 0x52, 0x48, 0x78, 0x00, 0x02];
+const SVC: &str = "svc-test";
+
+/// The table of a service `SVC` that exports `ping` (image offset 8) and binds one hook at `SITE` (handler at 4, trampoline at 16).
+fn svc_table<'a>(bind: &'a [dkneeds::keys::Bind<'a>]) -> dkneeds::keys::Table<'a> {
+    use dkneeds::keys::{name_hash, Pair, Table};
+    static PROVIDES: std::sync::OnceLock<[Pair; 1]> = std::sync::OnceLock::new();
+    static EXPORTS: std::sync::OnceLock<[Pair; 1]> = std::sync::OnceLock::new();
+    static HOOKS: std::sync::OnceLock<[Pair; 1]> = std::sync::OnceLock::new();
+    Table {
+        provides: PROVIDES.get_or_init(|| [Pair { a: name_hash(SVC), b: 0x000802 }]),
+        exports: EXPORTS.get_or_init(|| [Pair { a: name_hash("dk_svctest_ping"), b: 8 }]),
+        hooks: HOOKS.get_or_init(|| [Pair { a: name_hash("hook.a"), b: 4 }]),
+        bind,
+        ..Default::default()
+    }
+}
+
+fn svc_bind(stock: &[u8]) -> Vec<dkneeds::keys::Bind<'_>> {
+    vec![dkneeds::keys::Bind { site: dkneeds::keys::name_hash("hook.a"), addr: SITE, tramp: 16, stock }]
+}
+
+/// What `init` of that service declares: its hook (entry 4) and its export (entry 8).
+fn svc_init() -> Init {
+    use dkneeds::keys::name_hash;
+    let items: Vec<(u16, u32, u32)> =
+        vec![(dkrt_abi::service::Declare::HOOK, name_hash("hook.a"), 4), (dkrt_abi::service::Declare::EXPORT, name_hash("dk_svctest_ping"), 8)];
+    Init::Declare(Box::leak(items.into_boxed_slice()))
+}
+
+/// A loader over a service file in the provider record `j`: the stock bytes are at the site.
+unsafe fn provider_loader(file: Vec<u8>, init: Init) -> Fake {
+    let l = loader_of(init, file);
+    l.p.put_code(SITE, &STOCK);
+    l
+}
+
+fn site_bytes(l: &Fake, n: usize) -> Vec<u8> {
+    let mut out = vec![0u8; n];
+    unsafe { l.p.read_code(SITE, &mut out) };
+    out
+}
+
 #[test]
-fn a_service_file_runs_the_service_steps_and_a_module_runs_none() {
+fn a_provider_loads_into_its_own_record_publishes_its_exports_and_installs_its_hooks_last() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
-        let mut svc = module_file();
-        put(&mut svc, dkneeds::H_ROLE, 1);
-        put(&mut svc, dkneeds::H_RESERVED, 0xabcd_0123);
-        seal(&mut svc);
-        let mut l = loader_of(Init::Ok, svc.clone());
-        assert_eq!(l.load(PATH.as_ptr()), OK);
-        assert_eq!(*l.r.asked.borrow(), vec![Ev::AbiOk(0xabcd_0123)]);
-        assert_eq!(l.roles[0], 1);
-        // an ABI the registry refuses stops the load before anything is allocated
-        let mut l = loader_of(Init::Ok, svc);
-        l.r.abi = false;
-        assert_eq!(l.load(PATH.as_ptr()), E_CONTRACT);
+        let bind = svc_bind(&STOCK);
+        let mut l = provider_loader(service_file(&svc_table(&bind), 0), svc_init());
+        assert_eq!(l.load_provider(PATH.as_ptr(), 1), OK);
+        let rec = MAX_MODULES + 1;
+        let base = records::module(rec).base;
+        assert_eq!((records::module(rec).used, l.roles[rec], st().loads), (1, 1, 0), "a provider is no module of the count");
+        assert_eq!(st().modules[0].used, 0, "no module record is taken");
+        // the export resolves to base + 8; the site jumps to base + 16 (4ef9 and the address, big endian)
+        assert_eq!(l.exports.resolve(dkneeds::keys::name_hash("dk_svctest_ping")), Some(base + 8));
+        let t = base + 16;
+        assert_eq!(site_bytes(&l, 6), [0x4e, 0xf9, (t >> 24) as u8, (t >> 16) as u8, (t >> 8) as u8, t as u8]);
+        assert_eq!(l.installer.count(), 1);
+        // the install is the last step: it comes after the init of the provider
+        let init = l.m.log.iter().position(|e| matches!(e, Ev::Init(..))).unwrap();
+        assert!(init < l.m.log.len());
+        assert!(l.p.calls.borrow().contains(&crate::fake_platform::Call::Mask), "the install runs under the mask");
+        // the table copy stays for the record
+        assert!(l.provs[1].block.is_some());
+    }
+}
+
+#[test]
+fn a_hook_site_that_is_not_stock_refuses_the_provider_before_anything_is_allocated() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        let mut l = provider_loader(service_file(&svc_table(&bind), 0), svc_init());
+        l.p.put_code(SITE + 3, &[0x99]);
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_HOOK_STOCK);
+        assert_eq!(l.m.allocs, 0, "the check runs before the image is placed");
+        assert!(!l.m.log.iter().any(|e| matches!(e, Ev::Init(..))));
+        assert_eq!(site_bytes(&l, 6), [0x20, 0x52, 0x48, 0x99, 0x00, 0x02]);
+        assert_eq!((l.installer.count(), l.exports.count()), (0, 0));
+    }
+}
+
+#[test]
+fn a_provider_whose_init_fails_leaves_no_export_no_site_and_no_block() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        let mut l = provider_loader(service_file(&svc_table(&bind), 0), Init::Fails(E_INIT));
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_INIT);
+        assert!(l.m.live.is_empty(), "the image and the table copy are free");
+        assert_eq!(records::module(MAX_MODULES).used, 0);
+        assert_eq!((l.installer.count(), l.exports.count()), (0, 0));
+        assert_eq!(site_bytes(&l, 6), STOCK);
+        assert!(!l.p.calls.borrow().iter().any(|c| matches!(c, crate::fake_platform::Call::Write { .. } | crate::fake_platform::Call::Mask)), "no site was written");
+    }
+}
+
+#[test]
+fn a_declaration_that_differs_from_the_table_refuses_the_provider_and_the_site_stays_stock() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        // init declares nothing: the HOOKS and EXPORTS of the table are not repeated
+        let mut l = provider_loader(service_file(&svc_table(&bind), 0), Init::Ok);
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_DECL_KIND);
+        assert!(l.m.live.is_empty());
+        assert_eq!((l.installer.count(), l.exports.count()), (0, 0));
+        assert_eq!(site_bytes(&l, 6), STOCK);
+    }
+}
+
+#[test]
+fn a_provider_in_safe_mode_installs_nothing() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        let mut l = provider_loader(service_file(&svc_table(&bind), 0), svc_init());
+        l.installer.set_armed(false);
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), OK);
+        assert_eq!(site_bytes(&l, 6), STOCK);
+        assert_eq!(l.installer.count(), 0);
+    }
+}
+
+#[test]
+fn a_provider_with_a_dsp_section_is_refused_until_the_dsp_part_of_a_service_exists() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        let mut l = provider_loader(service_file(&svc_table(&bind), 64), svc_init());
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_FORMAT);
         assert_eq!(l.m.allocs, 0);
-        assert!(l.r.log.is_empty());
-        // a module (role 0) asks nothing
+    }
+}
+
+#[test]
+fn a_service_file_loads_only_as_a_provider_and_a_module_file_only_as_a_module() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        let svc = service_file(&svc_table(&bind), 0);
+        let mut l = provider_loader(svc.clone(), svc_init());
+        assert_eq!(l.load(PATH.as_ptr()), E_FORMAT);
+        assert_eq!(l.m.allocs, 0);
+        let mut l = loader(Init::Ok);
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_FORMAT);
+        // a provider whose ABI the registry refuses stops before anything is allocated; the module asks nothing
+        let mut svc2 = svc;
+        put(&mut svc2, dkneeds::H_RESERVED, 0xabcd_0123);
+        seal(&mut svc2);
+        let mut l = provider_loader(svc2, svc_init());
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), OK);
+        assert_eq!(*l.r.asked.borrow(), vec![Ev::AbiOk(0xabcd_0123)]);
         let mut l = loader(Init::Ok);
         assert_eq!(l.load(PATH.as_ptr()), OK);
         assert!(l.r.asked.borrow().is_empty());
-        assert_eq!(l.roles[0], 0);
+        let mut svc3 = service_file(&svc_table(&bind), 0);
+        put(&mut svc3, dkneeds::H_RESERVED, 1);
+        seal(&mut svc3);
+        let mut l = provider_loader(svc3, svc_init());
+        l.r.abi = false;
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_CONTRACT);
+        assert_eq!(l.m.allocs, 0);
+    }
+}
+
+#[test]
+fn a_module_import_that_the_runtime_lacks_resolves_to_a_published_export_and_not_before() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        // word at 12 holds 4 (plus the import)
+        let mut file = module_file_with(&[(12, 1 << 24)], &[b"dk_svctest_ping"]);
+        file[IMAGE_OFF + 15] = 4;
+        seal(&mut file);
+        let mut l = loader_of(Init::Ok, file);
+        assert_eq!(l.load(PATH.as_ptr()), E_IMPORT, "no provider is loaded yet");
+        l.exports.publish(MAX_MODULES, dkneeds::keys::name_hash("dk_svctest_ping"), 0x7000).unwrap();
+        assert_eq!(l.load(PATH.as_ptr()), OK);
+        let mem = &l.m.live.last().unwrap().1;
+        let words = core::slice::from_raw_parts(mem.as_ptr() as *const u8, 32);
+        assert_eq!(rd32(words.as_ptr().add(12)), 0x7000 + 4);
+    }
+}
+
+/// A module file (role 0) whose header table is `table`, with the relocation `(12, import 0)` of the import `dk_svctest_ping`.
+fn consumer_file(table: &dkneeds::keys::Table) -> Vec<u8> {
+    let mut v = module_file_with(&[(12, 1 << 24)], &[b"dk_svctest_ping"]);
+    let keys_off = v.len() - 8;
+    v.truncate(keys_off);
+    let mut t = vec![0u8; dkneeds::keys::table_size(table)];
+    dkneeds::keys::write_table(table, &mut t).unwrap();
+    v.extend_from_slice(&t);
+    put(&mut v, dkneeds::H_REG_SIZE, t.len() as u32);
+    v[IMAGE_OFF + 15] = 4;
+    seal(&mut v);
+    v
+}
+
+/// A capacity with room for everything the tests take.
+fn wide_caps() -> Vec<DkrtCap> {
+    use dkrt_sdk::proto::*;
+    [CAPK_MODULES, CAPK_SELECTION, CAPK_MACHINE_ROWS, CAPK_PARAM_ROWS, CAPK_PAGE_ROWS, CAPK_ARENA]
+        .iter()
+        .map(|k| DkrtCap { kind: *k as u32, limit: 1 << 20, used: 0, largest: 1 << 20 })
+        .collect()
+}
+
+const SVC_PATH: &[u8] = b"services/svc-test.dks";
+
+/// A loader in the boot phase whose store holds the provider `svc` at `services/svc-test.dks` and whose selection is the one module `consumer` at `PATH`.
+unsafe fn staged_boot(svc: Vec<u8>, consumer: Vec<u8>) -> Fake {
+    let mut l = provider_loader(consumer.clone(), svc_init());
+    let mut at = SVC_PATH.to_vec();
+    l.m.files.insert(at.clone(), svc.clone());
+    at.clear();
+    l.p.storage.add_dir(dkrt_abi::storage::ROOT_STORE, b"services");
+    l.p.storage.add_file(dkrt_abi::storage::ROOT_STORE, SVC_PATH, &svc, 0, [0; 32]);
+    l.reset_plan();
+    l.capture(0, &consumer);
+    l
+}
+
+fn user_table() -> dkneeds::keys::Table<'static> {
+    static NEEDS: std::sync::OnceLock<[dkneeds::keys::Need; 1]> = std::sync::OnceLock::new();
+    dkneeds::keys::Table {
+        needs: NEEDS.get_or_init(|| [dkneeds::keys::Need { service: dkneeds::keys::name_hash(SVC), min_version: 0x000802, hard: true }]),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn the_boot_finds_the_provider_for_a_hard_need_loads_it_first_and_the_consumer_resolves_its_import() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let bind = svc_bind(&STOCK);
+        let mut l = staged_boot(service_file(&svc_table(&bind), 0), consumer_file(&user_table()));
+        let mut plan = l.plan_with_caps(1, &wide_caps());
+        assert_eq!((plan.n, plan.np), (1, 1), "the search found the provider");
+        assert_eq!(l.found.path(0), SVC_PATH);
+        l.load_providers(&plan);
+        assert_eq!(l.loaded[0], true);
+        let rec = MAX_MODULES;
+        assert_eq!(records::module(rec).used, 1);
+        l.settle(&mut plan, 1);
+        assert_eq!(plan.verdicts[0], dkrt_abi::plan::Verdict::Accepted);
+        // the module stage: the import is the provider's export
+        l.phase = Phase::Boot;
+        assert_eq!(l.load(PATH.as_ptr()), OK);
+        let mem = &l.m.live.last().unwrap().1;
+        let words = core::slice::from_raw_parts(mem.as_ptr() as *const u8, 32);
+        assert_eq!(rd32(words.as_ptr().add(12)), records::module(rec).base + 8 + 4);
+    }
+}
+
+#[test]
+fn no_search_without_an_unmet_need_and_a_failed_provider_refuses_its_dependents_with_the_hash() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        // a selection with no need: no listing, no provider, the plan as before
+        let mut l = staged_boot(service_file(&svc_table(&svc_bind(&STOCK)), 0), module_file());
+        let allocs = l.m.allocs;
+        let plan = l.plan_with_caps(1, &wide_caps());
+        assert_eq!((plan.np, l.m.allocs), (0, allocs), "nothing was searched");
+        // the provider's site is not stock: the provider fails, and its dependent is refused before the module stage
+        let bind = svc_bind(&STOCK);
+        let mut l = staged_boot(service_file(&svc_table(&bind), 0), consumer_file(&user_table()));
+        l.p.put_code(SITE, &[0u8; 6]);
+        let mut plan = l.plan_with_caps(1, &wide_caps());
+        assert_eq!(plan.np, 1);
+        l.load_providers(&plan);
+        assert_eq!((l.loaded[0], records::module(MAX_MODULES).used), (false, 0));
+        l.settle(&mut plan, 1);
+        let hash = dkneeds::keys::name_hash(SVC);
+        assert_eq!(plan.verdicts[0], dkrt_abi::plan::Verdict::Refused(dkrt_abi::plan::Reason::NeedMissing(hash)));
+        assert_eq!(plan.verdicts[0].result(), E_MISSING);
+        // the site stayed stock and the table holds no site
+        assert_eq!(l.installer.count(), 0);
     }
 }
 

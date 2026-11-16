@@ -43,6 +43,13 @@ pub unsafe fn set_menu(rec: usize, addr: u32) {
     }
 }
 
+/// Test only: every provider record unused.
+#[cfg(test)]
+pub unsafe fn reset() {
+    *addr_of_mut!(PROVIDER_RECS) = core::mem::zeroed();
+    *addr_of_mut!(PROVIDER_PATHS) = [[0; 64]; PROVIDER_MAX];
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -603,8 +603,9 @@ pub unsafe extern "C" fn dk_service_declare_kind(ctx: *mut u8, kind: u32, len: u
     // a handler is an image address: the header table carries its offset in the image
     declare(ctx, Declare::KIND, kind, len, handler as usize as u32)
 }
-pub unsafe extern "C" fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32) -> i32 {
-    declare(ctx, Declare::SLOT, slot, flags, 0)
+pub unsafe extern "C" fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32 {
+    // the entry is an image address: the header table carries its offset in the image
+    declare(ctx, Declare::SLOT, slot, flags, entry as usize as u32)
 }
 pub unsafe extern "C" fn dk_service_declare_hook(ctx: *mut u8, site: u32, entry: *const u8) -> i32 {
     declare(ctx, Declare::HOOK, site, entry as usize as u32, 0)
@@ -1282,6 +1283,8 @@ pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
         let DeclItem { tag, a, b, c: e } = d.items[i];
         // the entries that are addresses become image offsets, as the table has them
         d.items[i] = if tag == Declare::KIND {
+            DeclItem { tag, a, b, c: e.wrapping_sub(base) }
+        } else if tag == Declare::SLOT {
             DeclItem { tag, a, b, c: e.wrapping_sub(base) }
         } else if tag == Declare::HOOK || tag == Declare::EXPORT {
             DeclItem { tag, a, b: b.wrapping_sub(base), c: e }

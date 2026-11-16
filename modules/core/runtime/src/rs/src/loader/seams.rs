@@ -105,6 +105,10 @@ impl Registry for RealRegistry {
         }
     }
     unsafe fn remove(&mut self, rec: usize) {
+        // the rows of the registry belong to module records; a provider record has none (its service row is R12-4)
+        if rec >= crate::MAX_MODULES {
+            return;
+        }
         #[cfg(test)]
         crate::cleanup_tests::registry_remove(rec as u8 + 1);
         #[cfg(not(test))]

@@ -374,7 +374,7 @@ mod service_fixtures {
             assert_eq!((p.n, p.np), (1, 1), "{dev}");
             assert_eq!((p.provider_verdicts[0], p.verdicts[0]), (Verdict::Accepted, Verdict::Accepted), "{dev}");
             let p = plan_with(&env, &mods, &[]);
-            assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing), "{dev}");
+            assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(name_hash("svc-test"))), "{dev}");
             assert_eq!(p.verdicts[0].result(), E_MISSING, "{dev}");
         }
     }

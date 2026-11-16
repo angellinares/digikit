@@ -801,8 +801,8 @@ pub mod api {
     /// `dk_service_declare_kind`: A service module declares a record kind it owns: `len` is the whole record with its 8-byte header, `handler` the function that handles the records. The runtime compares every dk_service_declare_* call of `init` with the header table (KINDS, SLOTS, HOOKS, EXPORTS, RESOURCES entries) at the commit: a difference refuses the module with DK_E_DECL_KIND. Returns 0, or DK_E_DECL_FULL.
     pub type DkServiceDeclareKindFn = unsafe extern "C" fn(ctx: *mut u8, kind: u32, len: u32, handler: *const u8) -> i32;
 
-    /// `dk_service_declare_slot`: A service module declares a plug-in point (slot) it takes. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL.
-    pub type DkServiceDeclareSlotFn = unsafe extern "C" fn(ctx: *mut u8, slot: u32, flags: u32) -> i32;
+    /// `dk_service_declare_slot`: A service module declares a plug-in point (slot) it takes, with the function that fills it. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL.
+    pub type DkServiceDeclareSlotFn = unsafe extern "C" fn(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32;
 
     /// `dk_service_declare_hook`: A service module declares a hook site it takes, with the function that runs there. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL.
     pub type DkServiceDeclareHookFn = unsafe extern "C" fn(ctx: *mut u8, site: u32, entry: *const u8) -> i32;
