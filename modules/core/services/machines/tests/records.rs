@@ -373,3 +373,14 @@ fn the_machine_types_of_a_module_are_its_machine_rows_in_type_order() {
     assert_eq!(&out[..2], [first + 1, first + 5]);
     assert_eq!(types_of(&core, 7, &mut out), 0);
 }
+
+#[test]
+fn the_machine_types_are_a_row_method_of_the_service() {
+    let core = core();
+    core.reg_state().mach_owner[3] = 2;
+    let mut out = [0u8; 8];
+    let n = unsafe { <Machines as Service<FakeCore>>::machine_types_of(&core, 2, &mut out) };
+    assert_eq!(n, 1);
+    assert_eq!(out[0], dkrt_sdk::device::DYN_TYPE_FIRST as u8 + 3);
+    assert_eq!(unsafe { <Machines as Service<FakeCore>>::machine_types_of(&core, 5, &mut out) }, 0);
+}

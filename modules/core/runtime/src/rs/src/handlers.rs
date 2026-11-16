@@ -64,7 +64,7 @@ pub mod exports {
     }
     /// The machine type numbers of the machine rows module `owner` filled (`module_cmds`: the module list); returns how many.
     pub fn machine_types_of(owner: u8, out: &mut [u8; 8]) -> usize {
-        dkrt_svc_machines::records::types_of(&crate::core_api::REAL_CORE, owner, out)
+        unsafe { super::services().machine_types_of(owner, out) }
     }
     #[cfg(test)]
     pub(crate) use dkrt_svc_machines::nativepage::PageSet;

@@ -356,6 +356,10 @@ pub trait Service<C: CoreApi> {
     unsafe fn on_loaded(core: &C, rec: usize) {}
     /// The service's work of one UI-loop pass in `phase` (`tick_phase`).
     unsafe fn tick(core: &C, phase: u32) {}
+    /// The machine type numbers of the machine rows module `owner` (record number, 1 ..) filled, in type order, into `out`; how many (the default: none).
+    unsafe fn machine_types_of(core: &C, owner: u8, out: &mut [u8; 8]) -> u32 {
+        0
+    }
 
     /// Did module `rec` claim a voice row for machine type `ty`?
     unsafe fn has_voice(core: &C, rec: usize, ty: u32) -> bool {
@@ -440,6 +444,7 @@ pub struct ServiceRow {
     guard_state: unsafe extern "C" fn(*const c_void, u32, *mut GuardState) -> bool,
     on_loaded: unsafe extern "C" fn(*const c_void, usize),
     tick: unsafe extern "C" fn(*const c_void, u32),
+    machine_types_of: unsafe extern "C" fn(*const c_void, u8, *mut u8) -> u32,
     has_voice: unsafe extern "C" fn(*const c_void, usize, u32) -> bool,
     declare_voice:
         unsafe extern "C" fn(*const c_void, usize, u32, *const u32, u32, *mut i32) -> bool,
@@ -543,6 +548,13 @@ mod thunk {
     }
     pub unsafe extern "C" fn tick<C: CoreApi, S: Service<C>>(core: *const c_void, phase: u32) {
         S::tick(&*(core as *const C), phase)
+    }
+    pub unsafe extern "C" fn machine_types_of<C: CoreApi, S: Service<C>>(
+        core: *const c_void,
+        owner: u8,
+        out: *mut u8,
+    ) -> u32 {
+        S::machine_types_of(&*(core as *const C), owner, &mut *(out as *mut [u8; 8]))
     }
     pub unsafe extern "C" fn has_voice<C: CoreApi, S: Service<C>>(
         core: *const c_void,
@@ -684,6 +696,7 @@ impl ServiceRow {
             guard_state: thunk::guard_state::<C, S>,
             on_loaded: thunk::on_loaded::<C, S>,
             tick: thunk::tick::<C, S>,
+            machine_types_of: thunk::machine_types_of::<C, S>,
             has_voice: thunk::has_voice::<C, S>,
             declare_voice: thunk::declare_voice::<C, S>,
             declare_fx: thunk::declare_fx::<C, S>,
@@ -944,6 +957,19 @@ impl ServiceTable {
         }
     }
     #[inline]
+    /// The machine type numbers of the rows module `owner` filled, from the first service that has any (the machines service file); 0 when none is loaded.
+    #[inline]
+    pub unsafe fn machine_types_of(&self, owner: u8, out: &mut [u8; 8]) -> usize {
+        let mut i = 0;
+        while i < self.rows.len() {
+            let n = (self.row(i).machine_types_of)(self.core, owner, out.as_mut_ptr());
+            if n != 0 {
+                return n as usize;
+            }
+            i += 1;
+        }
+        0
+    }
     pub unsafe fn tick(&self, phase: u32) {
         let mut i = 0;
         while i < self.rows.len() {
