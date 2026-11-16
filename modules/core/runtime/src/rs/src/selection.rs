@@ -78,7 +78,11 @@ unsafe fn read_copy(i: u32) -> CopyRead {
     if block_read(sector, 512, secbuf()) != 0 {
         return CopyRead::ReadError;
     }
-    let b = &*(secbuf() as *const [u8; 512]);
+    parse_copy(&*(secbuf() as *const [u8; 512]))
+}
+
+/// A copy sector that was read: valid, or bad (magic, version, CRC or count).
+fn parse_copy(b: &[u8; 512]) -> CopyRead {
     match sel::decode(b) {
         Some(r) => CopyRead::Valid(r),
         None => CopyRead::Invalid,
@@ -257,6 +261,36 @@ mod choice_tests {
         ];
         for (a, b, want) in table {
             assert_eq!(summary(&choose(read(a), read(b))), want);
+        }
+    }
+
+    /// The boot's choice over two copy sectors as a power cut leaves them.
+    #[test]
+    fn a_torn_copy_is_bad_and_the_boot_takes_the_valid_one_with_the_higher_seq() {
+        let sector = |seq: u32, count: u32| {
+            let mut r = Record::empty();
+            r.seq = seq;
+            r.count = count;
+            let mut b = [0u8; 512];
+            sel::encode(&r, &mut b);
+            b
+        };
+        let new = sector(2, 0);
+        let old = sector(1, 0);
+        let mut torn = new;
+        torn[100] ^= 0xff;
+        let mut cut = new; // a cut inside the sector write: the second half still zero
+        cut[256..].fill(0);
+        // (copy A, copy B, what the boot uses: kind, seq, copy), the four cases of the device test
+        let cases = [
+            (new, old, ("use", 2, 0, true)),
+            (torn, old, ("use", 1, 1, false)),
+            (old, new, ("use", 2, 1, true)),
+            (torn, torn, ("empty", 0, 0, false)),
+            (cut, old, ("use", 1, 1, false)),
+        ];
+        for (a, b, want) in cases {
+            assert_eq!(summary(&choose(parse_copy(&a), parse_copy(&b))), want);
         }
     }
 
