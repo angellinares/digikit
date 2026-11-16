@@ -94,6 +94,10 @@
         "{projectRoot}/tsconfig.json",
         "{projectRoot}/site.config.mjs",
         "^production",
+        {
+          "dependentTasksOutputFiles": "apps/web/public/*.wasm",
+          "transitive": true
+        },
         "jsToolchain",
         "{workspaceRoot}/vitest.host.config.ts",
         "{workspaceRoot}/vitest.host.projects.json"
