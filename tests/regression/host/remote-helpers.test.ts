@@ -585,7 +585,10 @@ test('ABOUT bounds initial count, info and row reads, and preserves incomplete r
     if (stalled === 'initial-count') expect(tap).not.toHaveBeenCalled();
     else {
       const saved = fake.write.mock.calls.find(([file]) => file.endsWith('about-readiness.json'));
-      expect(JSON.parse(saved![1]), stalled).toMatchObject({ expired: true, rows: [] });
+      expect(JSON.parse(saved![1]), stalled).toMatchObject({
+        expired: true,
+        rows: stalled === 'incomplete' ? expect.arrayContaining(['BOOT: 1 OF 1 OK']) : [],
+      });
     }
   }
 }, 30_000);

@@ -76,9 +76,14 @@ export async function expectRuntimeAbout(
     runtimeRow = `RUNTIME ${fmtVersion((await dk.info()).runtime)}`;
     rows = await pollUntil(
       emulatorClock(session),
-      () => readAboutRows(session, plan),
+      async () => (rows = await readAboutRows(session, plan)),
       (r) => r.includes(runtimeRow!) && aboutIsComplete(r),
-      { withinMs: options.timeout ?? 10_000, message: 'ABOUT completely describes the live runtime', intervalMs: 500, retry: true },
+      {
+        withinMs: options.timeout ?? 10_000,
+        message: 'ABOUT completely describes the live runtime',
+        intervalMs: 500,
+        retry: true,
+      },
     );
     failed = false;
     return rows;
