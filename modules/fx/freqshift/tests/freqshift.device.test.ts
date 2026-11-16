@@ -37,12 +37,12 @@ for (const device of DEVICES) {
       const state = await inspectFxBoot(runtime, plan, [SINE, FX], artifacts, 'master-boot');
       context.rememberEpoch(state.epoch);
       await selectSine(runtime, profile);
-      const kit = pageKit(runtime.session, profile);
+      const kit = pageKit(runtime, profile);
       const ui = createFxKitUi(runtime, plan, profile, artifacts);
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await ui.fxPage(3);
       const raw = await kit.setRaw('ENC A', 0, 0x6800);
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       const row = (await rows(runtime.session, plan, slots))[0]!;
       expect(row[4], 'the SHIFT word of the row is the float of the knob').toBe(bits(shiftFloat(raw)));
       expect(row[17], 'no effect fault').toBe(0);

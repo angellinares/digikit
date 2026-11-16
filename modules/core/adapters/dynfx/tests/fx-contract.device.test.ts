@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { describe, expect, test } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import { withWaitApi, type TestRuntime } from '@digi/regression/support.ts';
 import {
   analysisJson,
   bounded,
@@ -43,7 +43,7 @@ for (const device of DEVICES) {
     const symbols = ['DKRT_BOOT', 'DKRT_ASSIGN', 'dynreg_info'];
     let plainPcm: string;
 
-    const capture = async (runtime: PatchedSession, context: ReturnType<typeof withPreparedFxSession>, tag: string) => {
+    const capture = async (runtime: TestRuntime, context: ReturnType<typeof withPreparedFxSession>, tag: string) => {
       const { session } = runtime;
       await rpc(session, 'run.mode', { mode: 'paused' });
       await rpc(session, 'pcm.tap', { action: 'start' });
@@ -144,7 +144,7 @@ for (const device of DEVICES) {
         wet.dk.cancelPending();
         const rebootDk = emulatorDk(wet.session);
         bindBootClock(rebootDk, wet.session);
-        const reboot = { session: wet.session, dk: rebootDk, close: wet.close };
+        const reboot = withWaitApi({ session: wet.session, dk: rebootDk, close: wet.close });
         try {
           // The boot wait counts emulated time (waitForBootEmulated), not wall time.
           await waitForBootEmulated(rebootDk, { emulatedMs: 90_000 });
