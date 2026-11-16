@@ -145,7 +145,7 @@ function fmt(v: number): string {
 
 /** Same major, minor not older; a need with no version (0) takes any. */
 function versionFits(have: number, min: number): boolean {
-  return min === 0 || have >>> 16 === min >>> 16 && have >>> 0 >= min >>> 0;
+  return min === 0 || (have >>> 16 === min >>> 16 && have >>> 0 >= min >>> 0);
 }
 
 function hex(h: number): string {
