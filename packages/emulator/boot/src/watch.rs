@@ -75,6 +75,8 @@ pub struct WatchConfig {
     pub allow_pc: Vec<(u32, u32)>,
     pub after: After,
     pub flush_check: bool,
+    /// `DIGI_CARD_TRACE=1`: one `card` event per card command (CMD12, CMD18, CMD23, CMD25, CMD8).
+    pub card_trace: bool,
     /// JSONL events; the summary goes next to it (`.summary.json`).
     pub out: Option<PathBuf>,
     /// Events written to the log; counting continues past it.
@@ -94,6 +96,7 @@ impl Default for WatchConfig {
             allow_pc: Vec::new(),
             after: After::Start,
             flush_check: false,
+            card_trace: false,
             out: None,
             limit: 100_000,
             stacks: Vec::new(),
@@ -152,6 +155,7 @@ impl WatchConfig {
             cfg.ranges = parse_ranges(&v).map_err(|e| format!("DIGI_WRITE_WATCH: {e}"))?;
         }
         cfg.flush_check = non_empty(std::env::var("DIGI_FLUSH_CHECK")).is_some_and(|v| v != "0");
+        cfg.card_trace = non_empty(std::env::var("DIGI_CARD_TRACE")).is_some_and(|v| v != "0");
         if let Some(v) = non_empty(std::env::var("DIGI_STACK_WATCH")) {
             cfg.stacks = parse_ranges(&v).map_err(|e| format!("DIGI_STACK_WATCH: {e}"))?;
         }
@@ -163,6 +167,7 @@ impl WatchConfig {
         }
         if cfg.ranges.is_empty()
             && !cfg.flush_check
+            && !cfg.card_trace
             && cfg.stacks.is_empty()
             && cfg.reads.is_empty()
         {
@@ -630,6 +635,16 @@ impl Watch {
             .iter()
             .map(|(&a, (n, pcs))| (a, *n, pcs.clone()))
             .collect()
+    }
+
+    /// A card command (`DIGI_CARD_TRACE`): `bytes` is the data transfer length, 0 for CMD12 and CMD23.
+    pub(crate) fn card(&mut self, cmd: u8, arg: u32, bytes: usize, icount: u64) {
+        self.tick(icount);
+        if self.started && self.cfg.card_trace {
+            self.report(format!(
+                "{{\"t\":\"card\",\"ic\":{icount},\"cmd\":{cmd},\"arg\":{arg},\"bytes\":{bytes}}}"
+            ));
+        }
     }
 
     pub(crate) fn dma(&mut self, src: &'static str, addr: u32, len: usize, icount: u64) {

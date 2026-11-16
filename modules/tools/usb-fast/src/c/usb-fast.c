@@ -31,6 +31,18 @@
  * it. No buffer: one file_write per DATA, from `frame`. The buffer is freed at END, abort, bus reset, send error and unload. The END hash check
  * guards the result.
  *
+ * Copy/write overlap (docs/plans/usb-fast-batch.md E5): a file larger than 512 KiB, with the 1 MiB reservation, stages in two halves of 512 KiB.
+ * A half that fills becomes the pending write and the stream goes on in the other half; the write is made from the step loop (ov_service) and the helper task
+ * of the runtime (dk_helper_run: pure compute, no import) copies the DATA bodies that the receive ring holds already into the other half while dk_files_write
+ * blocks the I/O task. pump() records those copies (a plan) instead of making them and keeps the receive buffers until the helper is collected; frames are
+ * finished in order, so the replies stay in order. The flushing DATA is answered at once; a failed write is sticky (acc_err) and shows on the next DATA or END.
+ * An E_BUSY write is tried again like any file call; after its tries the pending half is written by the next DATA or END before anything else.
+ *
+ * Batch commit (docs/plans/usb-fast-batch.md B): BEGIN flag DEFER (0x0002) creates the file with DK_FILE_DEFER: END verifies it as ever, but the file is only
+ * pending; one table commit names up to 16 files. The END reply body is hash4 | pending u16 | reserved u16: pending 0 means everything sent so far is committed.
+ * COMMIT (0x07) calls dk_files_commit; its reply body is pending u16 | reserved u16. The runtime also commits the pending files 1 s after the last file call, so an
+ * unplug or a host crash loses nothing that END reported verified. ABORT drops the open file only.
+ *
  * VERIFY is reserved: the reply is E_PROTO (the host verifies over SysEx: both devices are CPU bound there with tiny replies). */
 /* the code is placed as it is: no jump tables (data in the code) */
 #pragma GCC optimize("no-jump-tables")
@@ -61,12 +73,14 @@ typedef int32_t i32;
 #define NONCE_LEN 8u
 #define REPLY_FLAG 0x40u
 #define FLAG_REPLACE 0x0001u
+#define FLAG_DEFER 0x0002u
 #define CMD_INFO 1u
 #define CMD_BEGIN 2u
 #define CMD_DATA 3u
 #define CMD_END 4u
 #define CMD_ABORT 5u
 #define CMD_VERIFY 6u /* reserved: E_PROTO */
+#define CMD_COMMIT 7u
 #define BULK_VERSION 1u
 /* the largest body is a DATA request: offset u32 + data_max, plus the slack that BEGIN's path needs */
 #define FRAME_MAX (HDR + 4u + DATA_MAX + SLACK)
@@ -181,10 +195,20 @@ static int acc_is_res; /* acc_raw is the session's reservation (never freed by a
 static u8 *res_raw;
 static int res_fw;
 static u32 res_cap;
-static u32 acc_cap;  /* 0: no buffer */
+static u32 acc_cap;  /* 0: no buffer; with `ov`, the size of one half */
 static u32 acc_fill; /* bytes in it */
 static u32 acc_off;  /* file offset of its first byte */
-static i32 acc_err;  /* sticky status of a failed flush */
+/* Copy/write overlap (docs/plans/usb-fast-batch.md E5): `ov` = the reservation is two halves. `acc_buf` is the half the stream fills; a full half becomes the pending
+ * write (wbuf, wlen, woff) and the halves swap. The write goes out from the step loop (ov_service), and the copies of the frames already received go to the other
+ * half on the runtime's helper task (dk_helper_run) while dk_files_write blocks the I/O task. A DATA that fills a half replies at once (accepted); a failed write is
+ * sticky in acc_err, as before, and shows on the next DATA or END. */
+static int ov;
+static u8 *acc_oth; /* the half that is not being filled */
+static u8 *wbuf;    /* the pending write */
+static u32 wlen, woff;
+static int
+    w_giveup; /* the pending write stayed E_BUSY after its tries: the next DATA or END writes it first (acc_flush) */
+static i32 acc_err; /* sticky status of a failed flush */
 static u32 file_size;
 static u32 acc_limit =
     ACC_BIG; /* the largest buffer the next BEGIN asks for (a one-shot test knob, STATUS 'A' with UF_KNOBS; acc_open resets it) */
@@ -274,7 +298,9 @@ static void acc_release(void)
         else
             dk_free(acc_raw);
     }
-    acc_raw = acc_buf = 0;
+    acc_raw = acc_buf = acc_oth = wbuf = 0;
+    wlen = woff = 0;
+    ov = w_giveup = 0;
     acc_is_res = 0;
     acc_cap = acc_fill = acc_off = 0;
     acc_err = 0;
@@ -357,15 +383,155 @@ static void acc_open(u32 size)
     if (acc_raw) {
         acc_buf = (u8 *)(((u32)acc_raw + 15u) & ~15u);
         acc_cap = want;
+        /* a file larger than half of the 1 MiB reservation: two halves of 512 KiB, so that the next frames are copied while the first half is written (the
+         * 256 KiB tier keeps its one buffer: a 128 KiB write is slower per byte) */
+        if (acc_is_res && res_cap == ACC_BIG && want > ACC_BIG / 2u) {
+            acc_cap = ACC_BIG / 2u;
+            acc_oth = acc_buf + acc_cap;
+            ov = 1;
+        }
     }
 #if UF_KNOBS
     acc_got = acc_cap;
 #endif
 }
 
-/* One file_write of what the buffer holds. A status; on 0 the buffer is empty. */
+/* The copies of the overlap: dk_helper_run runs plan_job on the runtime's helper task while dk_files_write blocks the I/O task. */
+#define PLAN_SEGS 48u
+typedef struct {
+    u8 *dst;
+    const u8 *src;
+    u32 n;
+} plan_seg;
+static struct {
+    u32 n;
+    plan_seg s[PLAN_SEGS];
+} plan;
+static void *plan_rel
+    [PLAN_SEGS]; /* receive buffers whose bytes the plan reads: released after the helper is collected */
+static u32 plan_rel_n;
+static int plan_on;     /* pump() records the copies of DATA bodies instead of making them */
+static int cur_planned; /* a segment reads the receive buffer `cur` */
+static int plan_bad;    /* pump() met a bad header while planning: fatal_stream() after the write */
+
+/* Runs on the helper task: pure compute, no import. */
+static void plan_job(void *arg)
+{
+    (void)arg;
+    for (u32 i = 0; i < plan.n; i++)
+        copy(plan.s[i].dst, plan.s[i].src, plan.s[i].n);
+}
+
+static int pump(void);
+static void fatal_stream(void);
+static void lost_stream(i32 status);
+static void reply(u8 cmd, u8 seq, i32 status, const u8 *body, u32 n);
+
+/* Take the frames that are received already and carry a DATA body for the half that is being filled: pump() records their copies. A complete direct DATA frame is
+ * finished here (accepted: acc_fill, reply); any other frame is left in `frame` for the loop. Stops when the half is full, the reply queue nears full or the plan is full. */
+static void ov_plan_collect(void)
+{
+    plan.n = 0;
+    plan_rel_n = 0;
+    cur_planned = 0;
+    plan_on = 1;
+    while (rep_count < REPQ - 2u && acc_fill < acc_cap) {
+        int p = pump();
+        if (p < 0) {
+            plan_bad = 1;
+            break;
+        }
+        if (p == 0)
+            break;
+        if (frame[4] == CMD_DATA &&
+            direct) { /* the checks of dispatch() were made when pump() decided `direct` */
+            u32 n = total - (HDR + 4u);
+            u8 seq = frame[5];
+            acc_fill += n;
+            st_frames++;
+            frame_ready = 0;
+            have = total = 0;
+            dstage = direct = 0;
+            reply(CMD_DATA, seq, 0, 0, 0);
+            continue;
+        }
+        frame_ready = 1;
+        st_frames++;
+        break;
+    }
+    plan_on = 0;
+}
+
+/* The pending write, with the helper copying the next frames into the other half meanwhile when `with_plan`. A status; on 0 nothing is pending. E_BUSY keeps it. */
+static i32 ov_write(int with_plan)
+{
+    int helper = 0;
+    if (with_plan) {
+        ov_plan_collect();
+        if (plan.n) {
+            if (dk_helper_run(plan_job, 0) == 0)
+                helper = 1;
+            else
+                plan_job(0); /* the helper is busy or missing: copy here, before the write */
+        }
+    }
+#if UF_TRACE
+    u32 t0 = UF_NOW();
+#endif
+    i32 r = dk_files_write(files, handle, woff, wbuf, wlen);
+    if (helper)
+        dk_helper_wait();
+    for (u32 i = 0; i < plan_rel_n; i++)
+        dk_usb_bulk_release(ub, plan_rel[i]);
+    plan_rel_n = plan.n = 0;
+    cur_planned = 0;
+    if (plan_bad) {
+        plan_bad = 0;
+        fatal_stream();
+        return r;
+    }
+#if UF_TRACE
+    uf_write += UF_NOW() - t0;
+    uf_datas++;
+    if (r == 0)
+        uf_bytes += wlen;
+#endif
+    st_last_rc = (u32)r;
+    if (r == 0) {
+        wlen = 0;
+        flushed = 1;
+        sess_at = dk_time_blocks();
+    }
+    return r;
+}
+
+/* The full half becomes the pending write; the stream goes on in the other half. */
+static void ov_push(void)
+{
+    wbuf = acc_buf;
+    wlen = acc_fill;
+    woff = acc_off;
+    acc_off += acc_fill;
+    acc_fill = 0;
+    acc_buf = acc_oth;
+    acc_oth = wbuf;
+    w_giveup = 0;
+}
+
+/* One file_write of what the buffer holds (with `ov`: the pending half first, then the filling one). A status; on 0 the buffer is empty. */
 static i32 acc_flush(void)
 {
+    if (ov) {
+        if (wlen) {
+            i32 r = ov_write(0);
+            if (r != 0)
+                return r;
+        }
+        if (!acc_fill)
+            return 0;
+        ov_push();
+        return ov_write(0);
+    }
     if (!acc_fill)
         return 0;
 #if UF_TRACE
@@ -496,7 +662,8 @@ static int dispatch(void)
 #endif
         r = dk_files_create(files, dk_bytes_get32(body), (const char *)(body + 4),
                             dk_bytes_get32(body + p + 1), none ? 0 : h4,
-                            (flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0);
+                            ((flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0u) |
+                                ((flags & FLAG_DEFER) ? DK_FILE_DEFER : 0u));
 #if UF_TRACE
         uf_begin += UF_NOW() - t0;
         uf_wait_from = UF_NOW();
@@ -568,7 +735,9 @@ static int dispatch(void)
             r = 0;
             /* With buffering the runtime's 20 s idle expiry counts from the last flush: a host slower than ~50 KB/s gets E_STATE on the flushing DATA
              * (handled: the file is dropped, nothing partial is placed). */
-            if (acc_fill == acc_cap) { /* full: this DATA carries the flush */
+            if (!ov &&
+                acc_fill ==
+                    acc_cap) { /* full: this DATA carries the flush (with `ov` the loop writes the half: ov_service) */
                 r = acc_flush();
                 if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
                     return 1;
@@ -625,7 +794,8 @@ static int dispatch(void)
             reply(cmd, seq, acc_err, 0, 0);
             return 0;
         }
-        if (acc_fill) { /* the tail: the one write that may end in a part sector */
+        if (acc_fill ||
+            wlen) { /* the tail: the one write that may end in a part sector (with `ov`, a pending half first) */
             r = acc_flush();
             if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
                 return 1;
@@ -666,7 +836,34 @@ static int dispatch(void)
             handle = 0;
             acc_release();
         }
-        reply(cmd, seq, r, hash, r == 0 || r == DK_FILE_E_HASH ? 4u : 0u);
+        /* body: hash4 | pending u16 | reserved u16. `pending` is the files not yet named in the store (0: everything sent so far is committed); an old device sends
+         * the 4 bytes only, which the host reads as committed. */
+        if (r == 0 || r == DK_FILE_E_HASH) {
+            u8 body8[8] = {hash[0], hash[1], hash[2], hash[3], 0, 0, 0, 0};
+            i32 pend = dk_files_pending(files);
+            if (pend > 0) {
+                body8[4] = (u8)((u32)pend >> 8);
+                body8[5] = (u8)pend;
+            }
+            reply(cmd, seq, r, body8, 8u);
+        } else {
+            reply(cmd, seq, r, 0, 0);
+        }
+        return 0;
+    }
+    if (cmd == CMD_COMMIT) {
+        /* name every pending file in one table commit; reply body: pending u16 | reserved u16 (0 on success). A COMMIT with nothing pending is ok. */
+        u8 body4[4] = {0, 0, 0, 0};
+        r = dk_files_commit(files);
+        if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
+            return 1;
+        busy_tries = 0;
+        i32 pend = dk_files_pending(files);
+        if (pend > 0) {
+            body4[0] = (u8)((u32)pend >> 8);
+            body4[1] = (u8)pend;
+        }
+        reply(cmd, seq, r, body4, 4u);
         return 0;
     }
     if (cmd == CMD_ABORT) {
@@ -726,13 +923,12 @@ static void drop_file(void)
     }
 }
 
-/* The stream is corrupt (bad magic, a length over the bound): abort the open file, reply E_MSG only when the magic was valid (the seq can be trusted),
+/* The stream is lost (corrupt: bad magic, a length over the bound, E_MSG; or the session expired under a half-received frame, E_STATE): abort the open file, reply `status` only when the magic was valid (the seq can be trusted),
  * and discard the rest of the current USB transfer: a buffer of less than 16 KiB ends it. */
-static void fatal_stream(void)
+static void lost_stream(i32 status)
 {
-    st_fatal++;
     if (have >= HDR && frame[0] == 'D' && frame[1] == 'K' && frame[2] == 'B' && frame[3] == '1')
-        reply(frame[4], frame[5], E_MSG, 0, 0);
+        reply(frame[4], frame[5], status, 0, 0);
     have = total = 0;
     frame_ready = 0;
     dstage = direct = 0;
@@ -746,18 +942,27 @@ static void fatal_stream(void)
     drop_file();
 }
 
+static void fatal_stream(void)
+{
+    st_fatal++;
+    lost_stream(E_MSG);
+}
+
 /* Copy bytes from the receive buffers into the frame. 1: a whole frame is in `frame`; 0: no more bytes now; -1: the stream is corrupt. */
 static int pump(void)
 {
     for (;;) {
         if (total && have == total)
             return 1;
+        if (plan_on && (plan.n >= PLAN_SEGS - 2u || plan_rel_n >= PLAN_SEGS - 1u))
+            return 0; /* the plan is full: the rest follows after the write */
         if (!cur) {
             if (dk_usb_bulk_take(ub, &cur, &cur_len) == 0) {
                 cur = 0;
                 return 0;
             }
             cur_off = 0;
+            cur_planned = 0;
             last_len = cur_len;
             st_bufs++;
             st_bytes += cur_len;
@@ -785,14 +990,27 @@ static int pump(void)
             uf_waiting = 0;
         }
 #endif
-        copy(dst, (const u8 *)cur + cur_off, n);
+        if (plan_on &&
+            dstage ==
+                2) { /* the body goes to the other half on the helper task, while the pending write runs */
+            plan.s[plan.n].dst = dst;
+            plan.s[plan.n].src = (const u8 *)cur + cur_off;
+            plan.s[plan.n].n = n;
+            plan.n++;
+            cur_planned = 1;
+        } else {
+            copy(dst, (const u8 *)cur + cur_off, n);
+        }
 #if UF_TRACE
         uf_copy += UF_NOW() - t0;
 #endif
         have += n;
         cur_off += n;
         if (cur_off >= cur_len) {
-            dk_usb_bulk_release(ub, cur);
+            if (plan_on && cur_planned)
+                plan_rel[plan_rel_n++] = cur; /* a segment still reads it */
+            else
+                dk_usb_bulk_release(ub, cur);
             cur = 0;
         }
         if (dstage == 1 && have == HDR + 4u) {
@@ -813,6 +1031,44 @@ static int pump(void)
                 (frame[4] == CMD_DATA && acc_cap && handle > 0 && !acc_err && len >= 4u) ? 1 : 0;
         }
     }
+}
+
+/* The overlap's write, from the step loop: the pending half goes out (a full half is pushed first), with the copies of the received frames running on the helper meanwhile.
+ * 1: E_BUSY, run the step again; 2: a half was written; 0: nothing to do. */
+static int ov_service(void)
+{
+    if (!ov || handle <= 0 || acc_err || frame_ready)
+        return 0;
+    if (!wlen) {
+        if (acc_fill != acc_cap)
+            return 0;
+        ov_push();
+    }
+    if (w_giveup)
+        return 0;
+    i32 r = ov_write(1);
+    if (handle <= 0 || !ov) /* the stream was bad: fatal_stream dropped the file */
+        return 0;
+    if (r == DK_FILE_E_BUSY) {
+        if (++busy_tries < BUSY_TRIES)
+            return 1;
+        busy_tries = 0;
+        w_giveup = 1; /* accepted; the next DATA or END writes it first */
+        return 0;
+    }
+    busy_tries = 0;
+    if (r != 0) {
+        acc_err = r;
+        if (r == DK_FILE_E_STATE) { /* the runtime ended the session (no write for 20 s) */
+            /* A DATA frame may be half received (dstage 2: the rest of its body goes into the buffer that is released here). Drop the frame and
+             * skip the rest of its transfer, as a bad stream does: the frame gets E_STATE, the file is gone, the next frames get E_STATE too. */
+            handle = 0;
+            lost_stream(E_STATE);
+        }
+        return 0;
+    }
+    flushed = 0;
+    return 2;
 }
 
 /* End the bulk session: the stream, the open file and the replies are void, the buffers go back and the next enable allocates them again. */
@@ -983,6 +1239,16 @@ static i32 step(void *arg)
             return DK_IO_WAIT;
         if (budget == 0)
             return DK_IO_MORE; /* the other I/O jobs get a turn; the replies are sent above */
+        if (ov) {
+            int sv = ov_service();
+            if (sv == 1)
+                return DK_IO_MORE;
+            if (sv ==
+                2) { /* a write ended the step; the replies of the frames it took go out first */
+                budget = 0;
+                continue;
+            }
+        }
         if (frame_ready) {
             if (dispatch())
                 return DK_IO_MORE;

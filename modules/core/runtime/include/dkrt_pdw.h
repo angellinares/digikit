@@ -10,7 +10,7 @@
 #define DKRT_PDW_H
 #include <stdint.h>
 
-#define DKPW_VERSION 1u
+#define DKPW_VERSION 2u
 uint32_t dkpw_version(void);
 
 /* The staging folder as a firmware path (leading '/'). Written files are staged there until they are complete and hashed. The adapter creates the
@@ -36,6 +36,10 @@ int32_t dkpw_close(uint8_t *hash_out);
 
 /* Drop the staged file: close, then delete (never the other order). Safe when nothing is staged. */
 void dkpw_abort(void);
+
+/* The runtime's dk_files_commit on the samples root: run the hash-table rebuild that the files closed since the last one left pending (the same
+   rebuild as dkpw_abort and dkpw_recover do at the end of a batch), under the filesystem mutex. 0. Safe when nothing is pending. */
+int32_t dkpw_commit(void);
 
 /* Delete a file. 0, E_NOFILE, E_PATH (a folder, or under /factory), or E_FILE_IN_USE (the stock firmware has it open). */
 int32_t dkpw_delete(const uint8_t *path);

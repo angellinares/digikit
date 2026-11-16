@@ -245,12 +245,17 @@ pub enum DeviceEventError {
 
 /// Pure register model.  Command completion is synchronous, as in the
 /// oracle's early eMMC model; interrupt delivery and DMA are machine duties.
+/// Bound of the recorded-command buffer between two drains.
+const CMD_TRACE_MAX: usize = 4096;
+
 pub struct Esdhc<P> {
     regs: RegFile,
     card: P,
     policy: RegisterPolicy,
     pattern: u32,
     host_writes: VecDeque<(u32, [u8; 4])>,
+    /// Instrument (`DIGI_CARD_TRACE`): CMD12 and CMD23 with their argument, until the board takes them. `None` = off.
+    cmd_trace: Option<Vec<(u8, u32)>>,
 }
 
 impl<P: CardPort> Esdhc<P> {
@@ -283,7 +288,21 @@ impl<P: CardPort> Esdhc<P> {
             policy,
             pattern: 0,
             host_writes: VecDeque::new(),
+            cmd_trace: None,
         }
+    }
+
+    /// Start (or stop) recording CMD12 and CMD23 for the card trace instrument.
+    pub fn set_cmd_trace(&mut self, on: bool) {
+        self.cmd_trace = on.then(Vec::new);
+    }
+
+    /// Commands recorded since the last call (empty when the trace is off).
+    pub fn take_cmd_trace(&mut self) -> Vec<(u8, u32)> {
+        self.cmd_trace
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Give a machine owner the same attached card for its fallible eDMA
@@ -458,6 +477,12 @@ impl<P: CardPort> Esdhc<P> {
     fn issue_command(&mut self, xfer: u32) {
         let idx = ((xfer >> 24) & 0x3F) as u8;
         let arg = self.regs.u32_at(CMDARG as usize);
+        if let Some(trace) = self.cmd_trace.as_mut()
+            && matches!(idx, 12 | 23)
+            && trace.len() < CMD_TRACE_MAX
+        {
+            trace.push((idx, arg));
+        }
         let response = self.card.command(idx, arg);
         for (off, value) in [CMDRSP0, CMDRSP1, CMDRSP2, CMDRSP3]
             .into_iter()

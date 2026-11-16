@@ -8,7 +8,7 @@ cpu = "cf"
 sig = "void (u8 *p)"
 rule = { kind = "cf_func", hash = "b591a5e50d0db4780b36812232691efa", offset = 0x0, len = 2 }
 mark = "D"
-users = ["core/runtime"]
+users = ["core/plusdrive-write", "core/runtime"]
 doc = "The firmware's free, `void f(u8 *p)`, paired with operator new (32 MiB buddy allocator). core/runtime registers it as fw_free."
 
 [[fn]]
@@ -18,7 +18,7 @@ cpu = "cf"
 sig = "u8 *(u32 size)"
 rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x0, len = 4 }
 mark = "D"
-users = ["core/digikit-menu", "core/runtime"]
+users = ["core/digikit-menu", "core/plusdrive-write", "core/runtime"]
 doc = "operator new and its free (the 32 MiB buddy allocator, finding 01): void *f(u32), void f(void *)"
 
 [[site]]

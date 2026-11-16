@@ -4,7 +4,8 @@ import { describe, expect, test } from 'vitest';
 import { bootInfo, pokeKnob, sha, statusOf } from '@digi/regression/runtime/card-kit.ts';
 import type { TestRuntime } from '@digi/regression/support.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
-import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE, word } from '@digi/regression/runtime/fx-live.ts';
+import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { RING_SYMBOLS } from '@digi/regression/runtime/runtime-menu.ts';
 
@@ -31,9 +32,15 @@ const SPIN = 7;
 const STALE = 8;
 const FOREIGN = 9;
 const BIG_CALL = 10;
+const BATCH = 11; // the batch of deferred files (DK_FILE_DEFER): after the path, u8 n files and u8 mode
+const COMMIT_THEN_END = 0; // mode: dk_files_commit after the last close
+const END_JOB = 1; // mode: the job ends after the last close (the runtime commits at the end of the job)
+const WAIT_IDLE = 2; // mode: the job sleeps after the last close (the runtime's 1 s idle commit names the files)
 const REPLACE = 0x40; // added to the case: DK_FILE_REPLACE
 const SELECTION = ['modules/file-write.dkm', 'modules/file-write-b.dkm'];
 const pattern = (n: number) => Buffer.from(Uint8Array.from({ length: n }, (_, i) => (i * 7 + (i >> 8)) & 255));
+/** File i of a batch job: the pattern shifted by 13 * i bytes. */
+const shifted = (n: number, i: number) => Buffer.from(Uint8Array.from({ length: n }, (_, k) => (((k + 13 * i) * 7) + ((k + 13 * i) >> 8)) & 255));
 const cstr = (s: string) => Buffer.concat([Buffer.from(s), Buffer.from([0])]);
 
 for (const device of DEVICES) {
@@ -41,7 +48,7 @@ for (const device of DEVICES) {
     const kit = cardRig(device, 'file-write', {
       dsp: 'zero',
       roots: RT,
-      symbols: ['DKRT_MAILBOX', 'DKRT_CARD', 'DKRT_SESSION_IDLE', ...RING_SYMBOLS],
+      symbols: ['DKRT_MAILBOX', 'DKRT_CARD', 'DKRT_SESSION_IDLE', 'DKRT_UPLOAD_CUT', 'DKRT_UPLOAD_WRITES', ...RING_SYMBOLS],
       initial: () => ({ selection: [] }),
       project: true,
       uploads: true,
@@ -288,6 +295,112 @@ for (const device of DEVICES) {
       expect((await until(rt, 2)).close, 'the SDK writes again').toBe(0);
       expect((await files(rt)).get('data/after-expiry.bin')?.hash).toBe(sha(pattern(1000)));
       expect([...(await files(rt)).keys()], 'the abandoned file never reached the store').toEqual(['data/after-expiry.bin']);
+    }, 900_000);
+    /** A batch job: `n` deferred files `<base>00`, `<base>01`, ... of `size` bytes each. */
+    const startBatch = async (rt: TestRuntime, base: string, n: number, size: number, mode: number) =>
+      (await usb(rt, (dk) => dk.request(CMD, Buffer.concat([Buffer.from([BATCH]), be32(size), cstr(base), Buffer.from([n, mode])])))).status;
+    /** Run until the batch job has closed `n` files (it may still be waiting). */
+    const closed = async (rt: TestRuntime, n: number) => {
+      for (let i = 0; i < 200; i++) {
+        await rt.ui.wait({ ms: 50, why: SETTLE });
+        const s = await status(rt);
+        if (s.steps >= n || s.state === 2) return s;
+      }
+      throw new Error(`the job did not close ${n} files`);
+    };
+    const names = (m: Map<string, unknown>) => [...m.keys()].sort();
+    const batchNames = (base: string, from: number, to: number) =>
+      Array.from({ length: to - from }, (_, k) => `${base}${String(from + k).padStart(2, '0')}`);
+
+    test('deferred files: pending until dk_files_commit, then all named by one commit with their own hashes', async () => {
+      const rt = await boot('defer-commit');
+      const size = 2000;
+      expect(await startBatch(rt, 'batch/c', 5, size, COMMIT_THEN_END), 'the job is queued').toBe(0);
+      const s = await until(rt, 2);
+      expect([s.job, s.close, s.steps], 'five files closed, the job ended ok').toEqual([0, 0, 5]);
+      expect(s.aux, 'five pending after the last close, the commit returned 0, none pending after it').toEqual([5, 0, 0]);
+      const got = await files(rt);
+      expect(names(got), 'all five are in the store').toEqual(batchNames('batch/c', 0, 5));
+      for (let i = 0; i < 5; i++) {
+        expect(got.get(`batch/c${String(i).padStart(2, '0')}`)?.hash, `file ${i} has its own hash`).toBe(sha(shifted(size, i)));
+      }
+      expect(await usb(rt, (dk) => dk.verify('batch/c03')), 'VERIFY reads the card and agrees').toBe(sha(shifted(size, 3)));
+      await rt.session.expectNoFault('a batch commit');
+    }, 900_000);
+
+    test('the limit of 16 pending files commits them all inside the closing call; the 17th waits for the idle commit', async () => {
+      const rt = await boot('defer-limit');
+      expect(await startBatch(rt, 'batch/l', 17, 1000, WAIT_IDLE)).toBe(0);
+      const s = await closed(rt, 17);
+      expect(s.state, 'the job sleeps after the 17th close').toBe(1);
+      expect(s.aux[0], 'one pending: the 16th close committed the first 16').toBe(1);
+      expect(names(await files(rt)), 'the first 16 are in the store, the 17th is not').toEqual(batchNames('batch/l', 0, 16));
+      await advanceLong(rt, 2000);
+      expect(names(await files(rt)), 'after the idle second the 17th is named too').toEqual(batchNames('batch/l', 0, 17));
+      await usb(rt, (dk) => dk.request(CMD + 2));
+      const end = await until(rt, 2);
+      expect([end.job, end.aux[2]], 'the job ends ok with nothing pending').toEqual([0, 0]);
+    }, 900_000);
+
+    test('the idle commit: pending files are not in the store until 1 s after the last file call; a delete of a pending path removes it', async () => {
+      const rt = await boot('defer-idle');
+      expect(await startBatch(rt, 'batch/i', 3, 1500, WAIT_IDLE)).toBe(0);
+      const s = await closed(rt, 3);
+      expect([s.state, s.aux[0]], 'three pending, the job sleeps').toEqual([1, 3]);
+      expect(names(await files(rt)), 'a pending file is not listed').toEqual([]);
+      await usb(rt, (dk) => dk.delete('batch/i00'));
+      await advanceLong(rt, 2000);
+      expect(names(await files(rt)), 'the deleted pending file never reaches the store; the others are named by the idle commit').toEqual(batchNames('batch/i', 1, 3));
+      expect((await files(rt)).get('batch/i01')?.hash).toBe(sha(shifted(1500, 1)));
+      await usb(rt, (dk) => dk.request(CMD + 2));
+      expect((await until(rt, 2)).job).toBe(0);
+    }, 900_000);
+
+    test('the end of the owner\'s job commits its pending files without waiting a second', async () => {
+      const rt = await boot('defer-end');
+      expect(await startBatch(rt, 'batch/e', 4, 1200, END_JOB)).toBe(0);
+      const s = await until(rt, 2);
+      expect([s.job, s.aux[0]], 'four pending when the job ended').toEqual([0, 4]);
+      await rt.ui.wait({ ms: 300, why: SETTLE });
+      expect(names(await files(rt)), 'named well before the 1 s idle time').toEqual(batchNames('batch/e', 0, 4));
+    }, 900_000);
+    test('a SysEx BEGIN of a pending path takes its slot (the pending bytes are never committed over it) and a path inside a pending file is E_PATH', async () => {
+      const rt = await boot('defer-begin');
+      expect(await startBatch(rt, 'batch/p', 2, 1500, WAIT_IDLE)).toBe(0);
+      expect((await closed(rt, 2)).aux[0]).toBe(2);
+      const E_PATH = -51;
+      const inside = await usb(rt, (dk) => dk.request(GCMD.BEGIN, beginBody('batch/p00/x', 512, fileHash(Buffer.alloc(512)))));
+      expect(inside.status, 'inside a pending file').toBe(E_PATH);
+      const bytes = Buffer.alloc(2048, 9);
+      await usb(rt, (dk) => dk.put('batch/p00', bytes)); // SysEx BEGIN, DATA, END of the pending path
+      expect((await files(rt)).get('batch/p00')?.hash, 'the SysEx file is stored at once').toBe(sha(bytes));
+      await advanceLong(rt, 2000);
+      const got = await files(rt);
+      expect(names(got), 'the other pending file is named by the idle commit').toEqual(['batch/p00', 'batch/p01']);
+      expect(got.get('batch/p00')?.hash, 'the replaced pending entry did not come back').toBe(sha(bytes));
+      expect(got.get('batch/p01')?.hash).toBe(sha(shifted(1500, 1)));
+      await usb(rt, (dk) => dk.request(CMD + 2));
+      expect((await until(rt, 2)).job).toBe(0);
+    }, 900_000);
+
+    test('a CLEAR whose commit is cut leaves the old store, and the pending files are still pending and committed afterwards', async () => {
+      const rt = await boot('defer-clear');
+      expect(await startBatch(rt, 'batch/old', 1, 1200, END_JOB)).toBe(0);
+      await until(rt, 2);
+      await rt.ui.wait({ ms: 300, why: SETTLE });
+      expect(names(await files(rt))).toEqual(['batch/old00']);
+      expect(await startBatch(rt, 'batch/p', 2, 1500, WAIT_IDLE)).toBe(0);
+      expect((await closed(rt, 2)).aux[0], 'two pending').toBe(2);
+      // refuse every card write from now on: the CLEAR commit fails
+      const writes = await word(rt.session, planSymbol(kit.plan, 'DKRT_UPLOAD_WRITES'));
+      await pokeKnob(rt.session, kit.plan, 'DKRT_UPLOAD_CUT', writes);
+      await expect(usb(rt, (dk) => dk.clear()), 'the CLEAR is refused its write').rejects.toBeDefined();
+      await pokeKnob(rt.session, kit.plan, 'DKRT_UPLOAD_CUT', 0);
+      expect(names(await files(rt)), 'the old store is intact and the pending files are not listed').toEqual(['batch/old00']);
+      await advanceLong(rt, 2500);
+      expect(names(await files(rt)), 'the pending files survived the failed CLEAR and are committed').toEqual(['batch/old00', 'batch/p00', 'batch/p01']);
+      await usb(rt, (dk) => dk.request(CMD + 2));
+      expect((await until(rt, 2)).job).toBe(0);
     }, 900_000);
   });
 }
