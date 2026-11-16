@@ -9,7 +9,11 @@ static int32_t init(dk_module_ctx *ctx)
     dk_machine *m =
         dk_module_ctx_add_machine(ctx, DK_MACHINE_ID___UPPER__, "__TITLE__", "__SHORT__");
     dk_page *p = dk_machine_add_page(m, "__TITLE__", "__SHORT__");
-    dk_page_add_param(p, "Level", "LEVEL", 127);
+    dk_param *level = dk_page_add_param(p, "Level", "LEVEL", 127);
+    /* The range of a parameter is 0 to 127 until set: dk_param_range(level, 0, 100); */
+    (void)level;
+    /* A second page (and its first parameter, the next word for the DSP): dk_page *p2 = dk_machine_add_page(m, "Tone", "TON");
+       dk_page_add_param(p2, "Tone", "TONE", 64); each page and parameter adds to the rows in [uses.*] of module.toml. */
     return DK_OK;
 }
 

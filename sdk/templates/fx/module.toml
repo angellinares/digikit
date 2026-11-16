@@ -19,7 +19,7 @@ conflicts = []
 # `patchkit pack __ID__ --device dt2 -o __NAME__.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
 # publishes a free effect row of core/dynfx for the effect.
 # The effect is declared by builder calls in `init` (src/module.c): its page in the FX view (the title, one knob and the MIX knob). The id `__NAME__` is what the
-# keys hash; the DSP symbols are _<id>_process and _<id>_desc (`dk_fx_desc`, <dk/gen/fx.h>). `[uses.<device>]` is written by `mise run module:check`.
+# keys hash; the DSP symbols are _<id>_process and _<id>_desc (`dk_fx_desc`, <dk/gen/fx.h>). `[uses.<device>]` (the rows and `record_bytes`, the payload of the records `init` commits) is written by `mise run module:check`.
 [[fx]]
 id = "__NAME__"
 
