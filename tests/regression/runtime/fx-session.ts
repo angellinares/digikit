@@ -4,25 +4,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { expect } from 'vitest';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
+import { DkSession, EmuUsbTransport, type WaitRecord } from '@digi/dk-session';
 import {
-  button,
-  MS,
+  emulatorClock,
+  panelInput,
   repoRoot,
   withinRuntimeDeadline,
   type Device,
+  type Key,
   type RuntimeBaseline,
   type Session,
 } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
+import { Ui } from './ui.ts';
+import { recordPhase } from '../timing.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
 import { plusdriveBinary } from './card-kit.ts';
 import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { pollEmulated } from './waits.ts';
-import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
+import { analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
 import {
   planSymbol,
   prepareRuntimePlanListedOffline,
@@ -80,22 +83,40 @@ export interface PreparedFxSessionOptions {
   requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
 }
 
-/** Legacy bounded panel tap, including release of every held chord key on failure. */
+const uis = new WeakMap<Session, Ui>();
+/** The wait API's `Ui` over a bare session (fixtures here hold sessions, not runtimes); no runtime events are listened to. */
+function uiOf(session: Session): Ui {
+  let ui = uis.get(session);
+  if (!ui) {
+    const clock = emulatorClock(session);
+    const record = (r: WaitRecord) =>
+      recordPhase(`wait.${r.kind}`, r.wallMs, { what: r.what, clockMs: r.clockMs, ok: r.ok });
+    ui = new Ui(panelInput(session, clock), clock, () => undefined, record, session);
+    uis.set(session, ui);
+  }
+  return ui;
+}
+
+/**
+ * Panel tap that releases a held chord key on failure. No page-change event exists and the fixtures run paused: the tap waits for
+ * the firmware to take the input (`drained`), then `settleMs` of emulated time stays as the redraw settle (nothing observable).
+ */
 export async function tap(session: Session, key: string, settleMs = 300, held?: string): Promise<void> {
+  const ui = uiOf(session);
+  const input = panelInput(session, emulatorClock(session));
   try {
     if (held) {
-      await bounded(() => session.client.inputButton(button(held), true));
-      await advance(session, 5);
+      await bounded(() => input.button(held, true));
+      await ui.wait({ ms: 5, why: 'chord key registered before the tap' });
     }
-    await bounded(() => session.client.inputTap(button(key), 20 * MS));
-    await advance(session, 25);
+    await bounded(() => ui.tap(key as Key, { until: { drained: true } }));
   } finally {
     if (held) {
-      await bounded(() => session.client.inputButton(button(held), false));
-      await advance(session, 5);
+      await bounded(() => input.button(held, false));
+      await ui.wait({ ms: 5, why: 'chord key release registered' });
     }
   }
-  if (settleMs) await advance(session, settleMs);
+  if (settleMs) await ui.wait({ ms: settleMs, why: 'firmware redraw after a panel tap (no page-change event)' });
 }
 
 /** Wait until the boot input has finished, so the run can pause. */
