@@ -4,9 +4,8 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest';
 import { DkSession, EmuUsbTransport, RuntimeEvents, type Clock, type WaitRecord } from '@digi/dk-session';
 import {
-  freeClock,
+  emulatorClock,
   panelInput,
-  steppedClock,
   Session,
   withinRuntimeDeadline,
   type Device,
@@ -66,7 +65,7 @@ export interface PatchedSession {
 }
 
 export interface WaitApi {
-  /** Emulated time for waits: `freeClock`, or `steppedClock` where the fixture asks for it. */
+  /** Emulated time for waits (`emulatorClock`: steps a paused daemon, waits on a running one). */
   readonly clock: Clock;
   /** Listens to the runtime log (see `RuntimeEvents.listen`) and makes it the events of `ui`. */
   listen(opts?: { fromBoot?: boolean }): Promise<RuntimeEvents>;
@@ -82,9 +81,9 @@ const recordWait = (r: WaitRecord): void => {
 };
 
 /** A patched session with the clock, `listen` and `ui` added (also for one built by hand). */
-export function withWaitApi(ps: PatchedSession, clockMode: 'free' | 'stepped' = 'free'): TestRuntime {
+export function withWaitApi(ps: PatchedSession): TestRuntime {
   const { session, dk } = ps;
-  const clock = clockMode === 'stepped' ? steppedClock(session) : freeClock(session);
+  const clock = emulatorClock(session);
   let current: RuntimeEvents | undefined;
   return {
     ...ps,
@@ -222,8 +221,6 @@ export function withReusablePatchedSession(
   opts: Omit<SessionOptions, 'runtime' | 'dsp'> & {
     patchSet?: string;
     dsp?: 'zero' | 'sharc' | 'cold';
-    /** Clock of `runtime.clock`, `listen` and `ui`: 'free' (default) or 'stepped' (paused daemon). */
-    clock?: 'free' | 'stepped';
     /** Called when the daemon starts: a persistent run dir for it (see `claimRunDir`), or undefined for a fresh temporary one. */
     runDirClaim?: () => RunDirClaim | undefined;
   },
@@ -296,18 +293,15 @@ export function withReusablePatchedSession(
     };
     invalidate = invalidateCase;
     runtime = {
-      ...withWaitApi(
-        {
-          session: session!,
-          dk,
-          close: async () => {
-            if (!active) throw new Error('runtime case is no longer active');
-            invalidateCase();
-            await session!.close();
-          },
+      ...withWaitApi({
+        session: session!,
+        dk,
+        close: async () => {
+          if (!active) throw new Error('runtime case is no longer active');
+          invalidateCase();
+          await session!.close();
         },
-        opts.clock,
-      ),
+      }),
       epoch,
     };
     return runtime;
@@ -350,7 +344,7 @@ export function withReusablePatchedSession(
     }
   };
   beforeAll(async () => {
-    const { runDirClaim, clock: _clock, ...sessionOptions } = opts;
+    const { runDirClaim, ...sessionOptions } = opts;
     claim = runDirClaim?.();
     try {
       session = await Session.start({

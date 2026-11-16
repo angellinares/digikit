@@ -137,3 +137,19 @@ export async function waitClock(clock: Clock, ms: number): Promise<void> {
     await clock.pause(Math.min(50, ms - (now - start)));
   }
 }
+
+/**
+ * The emulator clock for both run modes: each `pause` reads `status.mode` and steps a paused daemon (`steppedClock`) or waits on a
+ * running one (`freeClock`). A fixture may switch modes inside a case (free while the device boots, paused for protocol reads).
+ */
+export function emulatorClock(session: Pick<Session, 'status' | 'client'>, opts: { hangMs?: number } = {}): Clock {
+  const free = freeClock(session, opts);
+  const stepped = steppedClock(session);
+  return {
+    now: () => free.now(),
+    pause: async (ms) => {
+      const status = (await session.status()) as { mode?: string };
+      return status.mode === 'paused' ? stepped.pause(ms) : free.pause(ms);
+    },
+  };
+}
