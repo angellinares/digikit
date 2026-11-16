@@ -20,6 +20,7 @@ pub const WIN_RESERVED: u8 = 3;
 
 /// One word of a window: `word` is the word offset from the start of the window (window 0: the byte address in the area).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct Slot {
     pub win: u8,
     pub word: u32,
@@ -36,6 +37,7 @@ impl Slot {
 
 /// Who a request belongs to. Each owner's requests are sent in the order they were submitted, and only that owner can take their results.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
 pub enum Owner {
     /// The DSP loader: the image of a module and its rows.
     Loader,
@@ -60,6 +62,7 @@ impl Owner {
 
 /// The handle of one submitted request.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct Ticket {
     pub owner: Owner,
     pub id: u16,
@@ -67,6 +70,7 @@ pub struct Ticket {
 
 /// What `link_result` says. A terminal result is given once: the request is gone after it is taken.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
 pub enum LinkResult {
     /// Queued or being sent.
     Pending,
@@ -84,6 +88,7 @@ pub enum LinkResult {
 
 /// One word write of a `Sequence`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct Step {
     pub win: u8,
     pub flags: u8,
@@ -108,6 +113,7 @@ const STEP0: Step = Step {
 
 /// Word writes in order. The last step publishes (the row's type or pc word); the steps before it are not visible to the DSP until then.
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct Sequence {
     pub n: u8,
     pub mark: *mut u8,
@@ -157,6 +163,7 @@ impl Sequence {
 
 /// What a request sends.
 #[derive(Clone, Copy)]
+#[repr(C, u8)]
 pub enum Stream {
     /// `len` bytes at `src` to byte address `dst` of the area (window 0), 4-aligned. The core reads `src` in place: it must stay valid until the result is
     /// taken or `link_drain` of the owner has returned.

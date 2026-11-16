@@ -517,10 +517,10 @@ fn what_init_declared_must_be_what_the_header_table_carries() {
     assert!(decl_matches(&declared(), &keys, base));
     // another handler, another length, an item more
     let mut d = declared();
-    d.decl.items[0].3 = base + 0x44;
+    d.decl.items[0].c = base + 0x44;
     assert!(!decl_matches(&d, &keys, base));
     let mut d = declared();
-    d.decl.items[0].2 = 28;
+    d.decl.items[0].b = 28;
     assert!(!decl_matches(&d, &keys, base));
     let mut d = declared();
     d.decl.add(Declare::HOOK, 1, base, 0);

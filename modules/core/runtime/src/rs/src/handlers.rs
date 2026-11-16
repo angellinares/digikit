@@ -13,7 +13,7 @@
 pub use dkrt_abi::service::*;
 
 /// The table over the runtime's own core.
-pub type ServiceTable = dkrt_abi::service::ServiceTable<crate::core_api::RealCore>;
+pub type ServiceTable = dkrt_abi::service::ServiceTable;
 
 /// The rows whose declare check failed (`check_declarations`): bit `i` for row `i`.
 static mut FAILED: u32 = 0;

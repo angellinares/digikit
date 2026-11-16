@@ -57,8 +57,10 @@ pub(crate) fn is_runtime_service(h: u32, services: &ServiceTable) -> bool {
         return true;
     }
     let mut i = 0;
-    while i < services.rows.len() {
-        if name_hash(services.rows[i].name) == h {
+    // the static prefix only: the rows after it are loaded services
+    let n = if services.rows.len() < crate::gen_services::STATIC { services.rows.len() } else { crate::gen_services::STATIC };
+    while i < n {
+        if name_hash(unsafe { &*services.rows[i] }.name()) == h {
             return true;
         }
         i += 1;
@@ -645,7 +647,8 @@ mod tests {
 
     struct S;
     impl<C: CoreApi> Service<C> for S {}
-    static ROWS: [ServiceRow<crate::core_api::RealCore>; 1] = [ServiceRow::of::<S>("machines", &[(KIND_MACHINE, 0x6c), (KIND_EFFECT, 0x1a4)])];
+    static ROWS: [ServiceRow; 1] = [ServiceRow::of::<S, crate::core_api::RealCore>("machines", &[(KIND_MACHINE, 0x6c), (KIND_EFFECT, 0x1a4)])];
+    static ROWS_P: dkrt_abi::service::RowPtrs<1> = dkrt_abi::service::RowPtrs::of(&ROWS);
 
     fn bytes(t: &Table) -> Vec<u8> {
         let mut b = vec![0u8; dkneeds::keys::table_size(t)];
@@ -671,14 +674,14 @@ mod tests {
     }
 
     fn run_with(tables: &[Option<Vec<u8>>], c: Vec<DkrtCap>) -> Plan {
-        let env = Env { services: ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE }, runtime: 0x000800, caps: &c };
+        let env = Env { services: ServiceTable::new(&ROWS_P.0, &REAL_CORE), runtime: 0x000800, caps: &c };
         let keys: Vec<Option<Keys>> = tables.iter().map(|t| t.as_ref().map(|b| Keys::parse(b).unwrap())).collect();
         plan(&env, &keys)
     }
 
     fn run_p(mods: &[Option<Vec<u8>>], provs: &[Option<Vec<u8>>]) -> Plan {
         let c = caps();
-        let env = Env { services: ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE }, runtime: 0x000800, caps: &c };
+        let env = Env { services: ServiceTable::new(&ROWS_P.0, &REAL_CORE), runtime: 0x000800, caps: &c };
         fn parse(tables: &[Option<Vec<u8>>]) -> Vec<Option<Keys<'_>>> {
             tables.iter().map(|t| t.as_ref().map(|b| Keys::parse(b).unwrap())).collect()
         }

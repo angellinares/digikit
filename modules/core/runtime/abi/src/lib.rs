@@ -11,6 +11,7 @@
 //! This crate never depends on the runtime crate: a function that needs the core's state belongs to `CoreApi`, so the dependency arrows between the core and the
 //! services point at this crate and nowhere else. `#![no_std]`; no allocation, no vtables.
 #![no_std]
+#![deny(improper_ctypes, improper_ctypes_definitions)]
 
 pub mod core_api;
 pub mod dsp;

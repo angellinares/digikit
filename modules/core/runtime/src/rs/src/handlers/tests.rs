@@ -120,8 +120,9 @@ impl<const N: u8, C: CoreApi> Service<C> for Fake<N> {
 /// Fake service `N` owns record kind `100 + N`, a record of `8 + 4 * N` bytes.
 static KINDS_1: [(u32, u32); 1] = [(101, 12)];
 static KINDS_2: [(u32, u32); 1] = [(102, 16)];
-static TWO_ROWS: [ServiceRow<RealCore>; 2] = [ServiceRow::of::<Fake<1>>("fake1", &KINDS_1), ServiceRow::of::<Fake<2>>("fake2", &KINDS_2)];
-pub(crate) const TWO: ServiceTable = ServiceTable { rows: &TWO_ROWS, failed: 0, core: &REAL_CORE };
+static TWO_ROWS: [ServiceRow; 2] = [ServiceRow::of::<Fake<1>, crate::core_api::RealCore>("fake1", &KINDS_1), ServiceRow::of::<Fake<2>, crate::core_api::RealCore>("fake2", &KINDS_2)];
+static TWO_ROWS_P: dkrt_abi::service::RowPtrs<2> = dkrt_abi::service::RowPtrs::of(&TWO_ROWS);
+pub(crate) const TWO: ServiceTable = ServiceTable::new(&TWO_ROWS_P.0, &REAL_CORE);
 
 /// The words of a `dynreg_info` that the walker reads: the magic and the device.
 static TABLE: [u32; 100] = {
@@ -314,16 +315,17 @@ impl<C: CoreApi> Service<C> for Extra {
 struct Silent;
 impl<C: CoreApi> Service<C> for Silent {}
 
-static DECL_ROWS: [ServiceRow<RealCore>; 4] = [
-    ServiceRow::of::<Good>("good", &[(70, 16)]),
-    ServiceRow::of::<WrongLen>("wronglen", &[(71, 16)]),
-    ServiceRow::of::<Extra>("extra", &[(72, 8)]),
-    ServiceRow::of::<Silent>("silent", &[(73, 8)]),
+static DECL_ROWS: [ServiceRow; 4] = [
+    ServiceRow::of::<Good, crate::core_api::RealCore>("good", &[(70, 16)]),
+    ServiceRow::of::<WrongLen, crate::core_api::RealCore>("wronglen", &[(71, 16)]),
+    ServiceRow::of::<Extra, crate::core_api::RealCore>("extra", &[(72, 8)]),
+    ServiceRow::of::<Silent, crate::core_api::RealCore>("silent", &[(73, 8)]),
 ];
+static DECL_ROWS_P: dkrt_abi::service::RowPtrs<4> = dkrt_abi::service::RowPtrs::of(&DECL_ROWS);
 
 #[test]
 fn a_service_whose_declarations_differ_from_its_table_is_failed_and_its_kinds_are_unknown() {
-    let t = ServiceTable { rows: &DECL_ROWS, failed: 0, core: &REAL_CORE };
+    let t = ServiceTable::new(&DECL_ROWS_P.0, &REAL_CORE);
     let failed = unsafe { t.check_declarations() };
     assert_eq!(failed, 0b1110, "the matching service passes; a wrong length, an extra item and a missing declaration fail");
     let t = ServiceTable { failed, ..t };
@@ -355,27 +357,29 @@ mod table {
         }
     }
 
-    static ROWS: [ServiceRow<RealCore>; 2] = [ServiceRow::of::<A>("a", &[(1, 8)]), ServiceRow::of::<B>("b", &[(2, 12)])];
-    const T: ServiceTable = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+    static ROWS: [ServiceRow; 2] = [ServiceRow::of::<A, crate::core_api::RealCore>("a", &[(1, 8)]), ServiceRow::of::<B, crate::core_api::RealCore>("b", &[(2, 12)])];
+    static ROWS_P: dkrt_abi::service::RowPtrs<2> = dkrt_abi::service::RowPtrs::of(&ROWS);
+    const T: ServiceTable = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
 
     #[test]
     fn a_table_asks_each_service_and_ands_the_clears() {
         assert_eq!(T.len(1), Some(8));
         assert_eq!(T.len(2), Some(12));
         assert_eq!(T.len(3), None);
-        assert_eq!(T.owner(2).map(|r| r.name), Some("b"));
+        assert_eq!(T.owner(2).map(|r| r.name()), Some("b"));
         assert!(T.owner(9).is_none());
         unsafe {
             assert!(!T.dsp_clear(0));
-            assert!(ServiceTable { rows: &ROWS[..1], ..T }.dsp_clear(0));
+            assert!(ServiceTable { rows: &ROWS_P.0[..1], ..T }.dsp_clear(0));
         }
     }
 
     #[test]
     fn a_kind_two_services_count_is_the_sum_of_their_counts() {
-        static TWO_B: [ServiceRow<RealCore>; 2] = [ServiceRow::of::<B>("b1", &[]), ServiceRow::of::<B>("b2", &[])];
+        static TWO_B: [ServiceRow; 2] = [ServiceRow::of::<B, crate::core_api::RealCore>("b1", &[]), ServiceRow::of::<B, crate::core_api::RealCore>("b2", &[])];
+        static TWO_B_P: dkrt_abi::service::RowPtrs<2> = dkrt_abi::service::RowPtrs::of(&TWO_B);
         unsafe {
-            assert_eq!(ServiceTable { rows: &TWO_B, ..T }.cap(3), Some((12, 2)));
+            assert_eq!(ServiceTable { rows: &TWO_B_P.0, ..T }.cap(3), Some((12, 2)));
             assert_eq!(T.cap(3), Some((6, 1)));
             assert_eq!(T.cap(4), None);
         }

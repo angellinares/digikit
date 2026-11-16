@@ -287,7 +287,8 @@ mod tests {
 
     struct S;
     impl<C: CoreApi> Service<C> for S {}
-    static ROWS: [ServiceRow<crate::core_api::RealCore>; 1] = [ServiceRow::of::<S>("machines", &[])];
+    static ROWS: [ServiceRow; 1] = [ServiceRow::of::<S, crate::core_api::RealCore>("machines", &[])];
+    static ROWS_P: dkrt_abi::service::RowPtrs<1> = dkrt_abi::service::RowPtrs::of(&ROWS);
 
     #[repr(C, align(16))]
     struct Block([u8; 1024]);
@@ -321,7 +322,7 @@ mod tests {
     }
 
     fn run<St: Storage>(st: &St, want: &[&str]) -> Found {
-        let services = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+        let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
         let want: Vec<u32> = want.iter().map(|n| name_hash(n)).collect();
         let mut block = Block([0; 1024]);
         assert!(st.list_state_bytes(ROOT_STORE) <= block.0.len());
@@ -393,7 +394,7 @@ mod tests {
         let user = Table { needs: &[Need { service: name_hash("big"), min_version: 0x010000, hard: true }], ..KEEP };
         let mut ub = vec![0u8; dkneeds::keys::table_size(&user)];
         write_table(&user, &mut ub).unwrap();
-        let services = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+        let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
         let caps = [dkrt_sdk::DkrtCap { kind: dkrt_sdk::proto::CAPK_MODULES as u32, limit: 8, used: 0, largest: 8 }];
         let env = crate::plan::Env { services, runtime: 0x000900, caps: &caps };
         let p = crate::plan::plan_with(&env, &[Some(Keys::parse(&ub).unwrap())], &[Some(keys)]);

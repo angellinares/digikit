@@ -14,7 +14,7 @@
 use crate::{cstr_len, MAX_MODULES};
 use dkrt_sdk::records::{KIND_ACTION, KIND_EFFECT, KIND_MACHINE, KIND_NATIVE_PAGE, KIND_NATIVE_PAGE_V2, KIND_PAGE, KIND_PARAM};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
-use dkrt_abi::service::Declare;
+use dkrt_abi::service::{DeclItem, Declare};
 use dkrt_sdk::*;
 
 /// The length of a record of `kind`, as the service that owns the kind declares it.
@@ -1279,14 +1279,14 @@ pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
     let mut d = c.decl;
     let mut i = 0;
     while i < d.n {
-        let (tag, a, b, e) = d.items[i];
+        let DeclItem { tag, a, b, c: e } = d.items[i];
         // the entries that are addresses become image offsets, as the table has them
         d.items[i] = if tag == Declare::KIND {
-            (tag, a, b, e.wrapping_sub(base))
+            DeclItem { tag, a, b, c: e.wrapping_sub(base) }
         } else if tag == Declare::HOOK || tag == Declare::EXPORT {
-            (tag, a, b.wrapping_sub(base), e)
+            DeclItem { tag, a, b: b.wrapping_sub(base), c: e }
         } else {
-            (tag, a, b, e)
+            DeclItem { tag, a, b, c: e }
         };
         i += 1;
     }

@@ -302,7 +302,8 @@ mod service_fixtures {
 
     struct S;
     impl<C: CoreApi> Service<C> for S {}
-    static ROWS: [ServiceRow<crate::core_api::RealCore>; 1] = [ServiceRow::of::<S>("machines", &[])];
+    static ROWS: [ServiceRow; 1] = [ServiceRow::of::<S, crate::core_api::RealCore>("machines", &[])];
+    static ROWS_P: dkrt_abi::service::RowPtrs<1> = dkrt_abi::service::RowPtrs::of(&ROWS);
 
     #[repr(C, align(16))]
     struct Block([u8; 1024]);
@@ -344,7 +345,7 @@ mod service_fixtures {
         let fs = FakeStorage::new();
         fs.add_dir(ROOT_STORE, b"services");
         fs.add_file(ROOT_STORE, b"services/svc-test.dks", &svc, 0, [0; 32]);
-        let services = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+        let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
         let mut block = Block([0; 1024]);
         let mut out = Found::new();
         unsafe { find(&fs, &services, block.0.as_mut_ptr(), &[name_hash("svc-test")], &mut out) };
@@ -368,7 +369,7 @@ mod service_fixtures {
             let (svc, _) = found(dev);
             let (mods, provs) = ([Some(Keys::parse(table(&user)).unwrap())], [Some(Keys::parse(table(&svc)).unwrap())]);
             let c = caps();
-            let env = Env { services: ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE }, runtime: 0x000900, caps: &c };
+            let env = Env { services: ServiceTable::new(&ROWS_P.0, &REAL_CORE), runtime: 0x000900, caps: &c };
             let p = plan_with(&env, &mods, &provs);
             assert_eq!((p.n, p.np), (1, 1), "{dev}");
             assert_eq!((p.provider_verdicts[0], p.verdicts[0]), (Verdict::Accepted, Verdict::Accepted), "{dev}");
