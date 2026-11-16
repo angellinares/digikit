@@ -141,6 +141,9 @@ impl CoreApi for RealCore {
     unsafe fn fx_info(&self) -> *const u32 {
         crate::dsp::finfo()
     }
+    unsafe fn info(&self, name_hash: u32) -> *const u32 {
+        PLATFORM.info(name_hash)
+    }
     fn link_set(&self, slot: Slot, value: u32) {
         crate::link::lk().set(slot, value)
     }

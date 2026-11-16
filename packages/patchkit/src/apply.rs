@@ -463,6 +463,11 @@ fn uses_expansion(lib: &Library, ids: &[String], dev: &str, port: &Port) -> bool
                 .registry
                 .iter()
                 .any(|r| r.region == exp && on(&r.devices, dev))
+            || mf
+                .slot
+                .iter()
+                .any(|s| slot_place(s) == exp && on(&s.devices, dev))
+            || mf.info.iter().any(|i| on(&i.devices, dev))
             || device_ops(m, port).is_ok_and(|ops| {
                 ops.iter().any(|o| {
                     matches!(o.op.as_str(), "hook" | "stub")
@@ -1083,6 +1088,42 @@ pub fn apply_with(
         .filter(|(_, v)| !v.is_empty())
         .collect();
     let mut slot_at: Vec<(u64, &'static str)> = vec![(0, CF); slot_defs.len()];
+    // the image's one info table: every slot word and every `[[info]]` of the library on this device, with one hash each
+    let info_defs: Vec<(&Module, &crate::module::InfoDef)> = order
+        .iter()
+        .map(|id| lib.get(id).unwrap())
+        .flat_map(|m| {
+            m.manifest
+                .info
+                .iter()
+                .filter(|i| on(&i.devices, &dev))
+                .map(move |i| (m, i))
+        })
+        .collect();
+    let n_info = slot_defs.iter().map(|(_, d)| d.len()).sum::<usize>() + info_defs.len();
+    if n_info > dkneeds::INFO_MAX as usize {
+        return Err(err!(
+            "{n_info} [[slot]] and [[info]] entries on {dev}, over the {} of `[limits.format] info_max`",
+            dkneeds::INFO_MAX
+        ));
+    }
+    {
+        let mut seen: Vec<(u32, String)> = vec![];
+        let names = slot_defs
+            .iter()
+            .flat_map(|(m, d)| d.iter().map(move |s| (m.id().to_string(), s.name.as_str())))
+            .chain(info_defs.iter().map(|(m, i)| (m.id().to_string(), i.name.as_str())));
+        for (owner, name) in names {
+            let h = dkneeds::keys::name_hash(name);
+            if let Some((_, other)) = seen.iter().find(|(x, _)| *x == h) {
+                return Err(err!(
+                    "two entries of the info table have the name hash {h:#010x}: {other} and {owner}: {name}"
+                ));
+            }
+            seen.push((h, format!("{owner}: {name}")));
+        }
+    }
+    let mut info_at: Option<(u64, &'static str)> = None;
 
     // Allocate every object first-fit in its region, then link with everyone's exports visible.
     let mut allocs: BTreeMap<String, Alloc> = BTreeMap::new();
@@ -1190,7 +1231,7 @@ pub fn apply_with(
                     &mut allocs,
                     port,
                     &slot_place(defs[0]),
-                    prim::slot_table_len(defs.len()),
+                    4 * defs.len(),
                     4,
                     &who,
                 )?;
@@ -1209,6 +1250,20 @@ pub fn apply_with(
                 )?);
             }
         }
+    }
+    if n_info > 0 {
+        let region = slot_defs
+            .first()
+            .map(|(_, d)| slot_place(d[0]))
+            .unwrap_or_else(|| "cf.expansion".into());
+        info_at = Some(take_region(
+            &mut allocs,
+            port,
+            &region,
+            prim::info_table_len(n_info),
+            4,
+            "the info table",
+        )?);
     }
     let mut globals: BTreeMap<String, u64> = BTreeMap::new();
     for p in &placed {
@@ -1255,15 +1310,17 @@ pub fn apply_with(
         }
         for (si, (sm, defs)) in slot_defs.iter().enumerate() {
             let base = slot_at[si].0;
-            let n = defs.len() as u64;
-            add(sm, format!("{}.slots", sm.id()), base)?;
             for (i, d) in defs.iter().enumerate() {
-                add(
-                    sm,
-                    format!("slot.{}", d.name),
-                    base + 8 + 8 * n + 4 * i as u64,
-                )?;
+                add(sm, format!("slot.{}", d.name), base + 4 * i as u64)?;
             }
+        }
+        if let Some((addr, _)) = info_at {
+            // the runtime links it as an optional import: 0 when no adapter declares an entry
+            let owner = slot_defs
+                .first()
+                .map(|(m, _)| *m)
+                .unwrap_or_else(|| info_defs[0].0);
+            add(owner, "dkrt_info_table".to_string(), addr)?;
         }
         for (hi, h) in stg.hooks.iter().enumerate() {
             let ret = if h.cpu == SHARC {
@@ -1452,16 +1509,52 @@ pub fn apply_with(
         }
         for (si, (sm, defs)) in slot_defs.iter().enumerate() {
             let (addr, cpu) = slot_at[si];
-            let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
             chunks.push(Chunk {
                 owner: sm.tag(),
                 cpu,
                 region: slot_place(defs[0]),
                 addr,
-                image: pad(prim::build_slot_table(&names, addr), cpu),
+                image: pad(vec![0u8; 4 * defs.len()], cpu),
                 code: vec![],
                 bss: 0,
-                what: format!("slot table of {}", sm.id()),
+                what: format!("slot words of {}", sm.id()),
+            });
+        }
+        if let Some((addr, cpu)) = info_at {
+            let mut entries: Vec<(u32, u32)> = vec![];
+            for (si, (_, defs)) in slot_defs.iter().enumerate() {
+                for (i, d) in defs.iter().enumerate() {
+                    entries.push((
+                        dkneeds::keys::name_hash(&d.name),
+                        (slot_at[si].0 + 4 * i as u64) as u32,
+                    ));
+                }
+            }
+            for (m, inf) in &info_defs {
+                let text = inf.symbol.as_deref().unwrap_or(&inf.name);
+                let v = crate::expr::eval_str(text, &scope)
+                    .map_err(|e| err!("{}: info {}: symbol: {e}", m.id(), inf.name))?;
+                let v = u32::try_from(v).map_err(|_| {
+                    err!("{}: info {}: address {v:#x} is not 32 bits", m.id(), inf.name)
+                })?;
+                entries.push((dkneeds::keys::name_hash(&inf.name), v));
+            }
+            let owner = slot_defs
+                .first()
+                .map(|(m, _)| m.tag())
+                .unwrap_or_else(|| info_defs[0].0.tag());
+            chunks.push(Chunk {
+                owner,
+                cpu,
+                region: slot_defs
+                    .first()
+                    .map(|(_, d)| slot_place(d[0]))
+                    .unwrap_or_else(|| "cf.expansion".into()),
+                addr,
+                image: pad(prim::build_info_table(&entries), cpu),
+                code: vec![],
+                bss: 0,
+                what: "the image's info table (dkrt_info_table)".into(),
             });
         }
         for (hi, h) in stg.hooks.iter().enumerate() {

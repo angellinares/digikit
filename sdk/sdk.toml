@@ -1728,6 +1728,8 @@ table_version = 2   # the newest version of the header table a reader accepts (1
 provider_max = 6    # provider slots of the boot plan (the services that provide; separate from the module records, SEL_MAX)
 bind_max = 24       # BIND items (hook sites) of one provider file (`patchkit bind` refuses more)
 install_sites = 48  # hook sites installed at once over all providers (the installer's table: machines 21 + fx 9 and room)
+slots_max = 16      # `[[slot]]` entries of one module (patchkit refuses more)
+info_max = 64       # entries of the image's one table `dkrt_info_table`: every `[[info]]` and `[[slot]]` of all adapters (patchkit refuses more; the core reads at most this many)
 collect_bytes = 7486  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
 
 # The layout of the `.dkm` file and of its DSP section: byte offsets (big endian words), entry sizes and magics that the packer (packages/patchkit

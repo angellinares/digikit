@@ -66,6 +66,8 @@ macro_rules! core_imports {
             fn dkc_dsp() -> *mut $crate::dsp::DspState;
             fn dkc_dsp_info() -> *const u32;
             fn dkc_fx_info() -> *const u32;
+            // An entry of the image's info table by the `name_hash` of its name (`CoreApi::info`): null when the image has none.
+            fn dkc_info(name_hash: u32) -> *const u32;
             // ---- the DSP link
             fn dkc_link_set(slot: *const $crate::link::Slot, value: u32);
             // `true`: `*out` is the confirmed value.

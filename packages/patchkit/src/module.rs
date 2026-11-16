@@ -19,9 +19,13 @@ pub struct Manifest {
     pub anchor_rule: Vec<toml::Value>,
     #[serde(default)]
     pub op: Vec<Op>,
-    /// `[[slot]]`: pointer slots (a zero data word each) that `op = "stub"` sites load; see `prim::build_slot_table`.
+    /// `[[slot]]`: pointer slots (a zero data word each) that `op = "stub"` sites load. Each is an entry of the image's one table `dkrt_info_table` (name hash and
+    /// the address of its word; `prim::build_info_table`).
     #[serde(default)]
     pub slot: Vec<SlotDef>,
+    /// `[[info]]`: data tables of this module that a service reads through `dkc_info`. Each is an entry of `dkrt_info_table`, with the address of `symbol`.
+    #[serde(default)]
+    pub info: Vec<InfoDef>,
     #[serde(default)]
     pub claim: Vec<Claim>,
     /// P1: sections copied from the user's image (and extended) at apply time.
@@ -192,7 +196,19 @@ impl Manifest {
                 ));
             }
             if hooks.iter().any(|(n, _)| *n == h.name) {
-                return Err(err!("{id}: [[hook]] {:?} is declared twice", h.name));
+                return Err(err!(
+                    "{id}: [[hook]] {:?} is declared twice (one name has one entry, so a hook for two devices is one entry without `devices`)",
+                    h.name
+                ));
+            }
+            for d in &h.devices {
+                if crate::devdata::by_short(d).is_none() {
+                    return Err(err!(
+                        "{id}: [[hook]] {:?}: device {d:?} is not one of {}",
+                        h.name,
+                        crate::devdata::short_list()
+                    ));
+                }
             }
             hooks.push((h.name.clone(), h.entry.clone()));
         }
@@ -222,6 +238,10 @@ pub struct ExportDef {
 pub struct ServiceHook {
     pub name: String,
     pub entry: String,
+    /// The devices the hook is for (`dt2`, `dn2`); empty: every device that declares it. `service!` lists the hooks of each device the same way
+    /// (`hooks_dt2`, `hooks_dn2`, `hooks`), and `patchkit service-check` compares the two per device.
+    #[serde(default)]
+    pub devices: Vec<String>,
 }
 
 /// An entry of `[[record]]`: the kind by its lower-case name (`dkneeds::KIND_NAMES`) and the key of one record of it.
@@ -646,13 +666,27 @@ pub struct Op {
     pub tail: Option<String>,
 }
 
+/// `[[info]] name = "fxpages_info", symbol = "fxpages_info", devices = ["dt2"]`: an entry of the image's info table: the hash of `name` and the address that the
+/// expression `symbol` evaluates to (a global symbol of the module's objects). `name` is what a service passes to `dkc_info` (as its name hash); it shares one
+/// namespace with the `[[slot]]` names of all image adapters, and `patchkit apply` refuses two entries with one hash.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InfoDef {
+    pub name: String,
+    /// Expression of the address; default: the symbol named `name`.
+    #[serde(default)]
+    pub symbol: Option<String>,
+    #[serde(default)]
+    pub devices: Vec<String>,
+}
+
 /// `[[slot]] name = "frame_type", devices = ["dn2"]`: one 4-byte pointer slot in the module's data region, zero at build.
 #[derive(Clone, Debug, Deserialize)]
 pub struct SlotDef {
     pub name: String,
     #[serde(default)]
     pub devices: Vec<String>,
-    /// region of the slot words and the table (default `cf.expansion`)
+    /// region of the slot words (default `cf.expansion`)
     #[serde(default)]
     pub place: Option<String>,
 }

@@ -206,6 +206,33 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
             }
         }
     }
+    for d in crate::devdata::all() {
+        let n = m.slot.iter().filter(|s| on(&s.devices, &d.short)).count();
+        if n > dkneeds::SLOTS_MAX as usize {
+            return Err(err!(
+                "{id}: {n} [[slot]] entries for {}, over the {} of `[limits.format] slots_max`",
+                d.short,
+                dkneeds::SLOTS_MAX
+            ));
+        }
+    }
+    for (i, inf) in m.info.iter().enumerate() {
+        check_devices(id, &format!("info {}", inf.name), &inf.devices)?;
+        if !ident_ok(&inf.name) {
+            return Err(err!("{id}: info name {:?} is not [a-z][a-z0-9_]*", inf.name));
+        }
+        if let Some(t) = &inf.symbol {
+            expr::parse(t).map_err(|e| err!("{id}: info {}: symbol: {e}", inf.name))?;
+        }
+        for o in &m.info[..i] {
+            let clash = crate::devdata::all()
+                .iter()
+                .any(|d| on(&inf.devices, &d.short) && on(&o.devices, &d.short));
+            if o.name == inf.name && clash {
+                return Err(err!("{id}: info {} is declared twice", inf.name));
+            }
+        }
+    }
     for s in &m.section {
         check_devices(id, &format!("section {}", s.name), &s.devices)?;
         if !ident_ok(&s.name) {
@@ -1056,8 +1083,8 @@ pub fn cf_tail(s: &CfSite, base: u64, ret: u64) -> Result<Vec<u8>> {
 /// Bytes of the stub prefix (load the slot, test it, branch to the handler); the stock path follows.
 pub const STUB_PREFIX_LEN: usize = 12;
 
-/// Magic and version of the slot table (`SLT` and version 1).
-pub const SLOT_TABLE_MAGIC: u32 = 0x534c_5401;
+/// "DKIT": the first word of the image's info table (`dkrt_abi::platform::INFO_MAGIC`; the runtime reads the table with `info_find`).
+pub const INFO_TABLE_MAGIC: u32 = 0x444b_4954;
 
 /// A scratch register: 0..=7 `d0`..`d7`, 8..=14 `a0`..`a6`. `a7` is the stack pointer and is refused.
 pub fn parse_scratch(r: &str) -> Result<u8> {
@@ -1153,25 +1180,22 @@ pub fn stub_prefix(scratch: u8, slot_addr: u32) -> Vec<u8> {
     out
 }
 
-/// The slot table and the slot words of one module: the table (magic, count, then `{name hash, word address}` per slot, big endian), then one zero
-/// word per slot. `base` is the address of the table; the word of slot `i` is at `base + 8 + 8 * n + 4 * i`.
-pub fn build_slot_table(names: &[&str], base: u64) -> Vec<u8> {
-    let n = names.len() as u64;
-    let words = base + 8 + 8 * n;
+/// The image's one info table, `dkrt_info_table`: big endian `{magic "DKIT", count}`, then one `{name hash, address}` per entry (`entries` in order: the
+/// `[[slot]]` and `[[info]]` entries of all image adapters). `dkrt_abi::platform::info_find` searches it.
+pub fn build_info_table(entries: &[(u32, u32)]) -> Vec<u8> {
     let mut out: Vec<u8> = vec![];
-    out.extend_from_slice(&SLOT_TABLE_MAGIC.to_be_bytes());
-    out.extend_from_slice(&(n as u32).to_be_bytes());
-    for (i, name) in names.iter().enumerate() {
-        out.extend_from_slice(&dkneeds::keys::name_hash(name).to_be_bytes());
-        out.extend_from_slice(&((words + 4 * i as u64) as u32).to_be_bytes());
+    out.extend_from_slice(&INFO_TABLE_MAGIC.to_be_bytes());
+    out.extend_from_slice(&(entries.len() as u32).to_be_bytes());
+    for (hash, addr) in entries {
+        out.extend_from_slice(&hash.to_be_bytes());
+        out.extend_from_slice(&addr.to_be_bytes());
     }
-    out.extend(std::iter::repeat_n(0u8, 4 * names.len()));
     out
 }
 
-/// Size of the slot table with its words.
-pub fn slot_table_len(n: usize) -> usize {
-    8 + 12 * n
+/// Size of the info table with `n` entries.
+pub fn info_table_len(n: usize) -> usize {
+    8 + 8 * n
 }
 
 /// The displaced instructions of a site as plan lines: address, bytes, instruction.

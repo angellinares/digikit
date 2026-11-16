@@ -1556,18 +1556,42 @@ fn a_stub_loads_its_slot_and_falls_through_to_the_stock_path() {
     assert!(d[1].starts_with("beq"), "{d:?}");
     assert!(d[2].starts_with("move.l"), "{d:?}");
     assert_eq!(d[3], "rts");
-    // slot table: magic, count, {hash, address}, then the zero word
-    let tab = sym(&out, "t/s", "t/s.slots");
-    let b = read_cf(&out, tab, 8 + 8 + 4);
-    assert_eq!(be32(&b[0..]), 0x534c_5401);
+    // the image's one info table: magic, count, then {hash, address} of the slot word; the word is zero (stock)
+    let tab = sym(&out, "t/s", "dkrt_info_table");
+    let b = read_cf(&out, tab, 8 + 8);
+    assert_eq!(be32(&b[0..]), 0x444b_4954);
     assert_eq!(be32(&b[4..]), 1);
     assert_eq!(be32(&b[8..]), dkneeds::keys::name_hash("frame_type"));
     assert_eq!(be32(&b[12..]) as u64, slot);
-    assert_eq!(slot, tab + 16);
-    assert_eq!(be32(&b[16..]), 0, "a zero slot means stock");
+    assert_eq!(be32(&read_cf(&out, slot, 4)), 0, "a zero slot means stock");
     let j = serde_json::to_value(&out.plan).unwrap();
     assert_eq!(j["hooks"][0]["slot"], "frame_type");
     assert_eq!(j["hooks"][0]["to"], tail);
+}
+
+#[test]
+fn info_entries_and_slots_share_one_table_and_a_duplicate_hash_is_refused() {
+    need_image!(DN2);
+    let extra = "[[info]]\nname = \"frame_info\"\nsymbol = \"slot.frame_type\"\ndevices = [\"dn2\"]\n";
+    let body = format!(
+        "{}{extra}",
+        stub_body(FRAMETYPE, "frame_type", "d0", "", "[\"dn2\"]")
+    );
+    let lib = library(vec![module("t/s", "", &body, Some(cf_obj()))]);
+    let out = run_on(DN2, &registry(), &lib, &["t/s"]).unwrap();
+    let slot = sym(&out, "t/s", "slot.frame_type");
+    let tab = sym(&out, "t/s", "dkrt_info_table");
+    let b = read_cf(&out, tab, 8 + 16);
+    assert_eq!((be32(&b[0..]), be32(&b[4..])), (0x444b_4954, 2));
+    // the slot entry, then the info entry (here an address that is the slot word's)
+    assert_eq!(be32(&b[8..]), dkneeds::keys::name_hash("frame_type"));
+    assert_eq!(be32(&b[12..]) as u64, slot);
+    assert_eq!(be32(&b[16..]), dkneeds::keys::name_hash("frame_info"));
+    assert_eq!(be32(&b[20..]) as u64, slot);
+    // an info entry with the name of a slot gives one hash twice
+    let dup = body.replace("name = \"frame_info\"", "name = \"frame_type\"");
+    let lib = library(vec![module("t/s", "", &dup, Some(cf_obj()))]);
+    expect_err(run_on(DN2, &registry(), &lib, &["t/s"]), "two entries of the info table have the name hash");
 }
 
 #[test]
