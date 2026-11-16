@@ -1470,3 +1470,211 @@ fn a_registry_limit_caps_the_entries_at_the_device_files_number() {
         "is not a device limit",
     );
 }
+
+// ---- pointer-slot stubs (`op = "stub"`, `[[slot]]`) ------------------------------------------------------------
+
+fn stub_body(hook: &str, slot: &str, scratch: &str, extra: &str, devices: &str) -> String {
+    format!(
+        "[[object]]\npath = \"x.json\"\nplace = \"cf.expansion\"\n[[slot]]\nname = \"{slot}\"\ndevices = {devices}\n[[op]]\nop = \"stub\"\nhook = \"{hook}\"\nslot = \"{slot}\"\nscratch = \"{scratch}\"\ndevices = {devices}\n{extra}\n"
+    )
+}
+
+/// The ColdFire instructions of `bytes`, as text.
+fn disasm(bytes: &[u8], at: u32) -> Vec<String> {
+    let mut v = vec![];
+    let mut o = 0;
+    while o < bytes.len() {
+        let i = coldfire::decode_at(bytes, at, o).expect("decodes");
+        v.push(format!("{i}"));
+        o += i.len as usize;
+    }
+    v
+}
+
+const FRAMETYPE: &str = "cf.machine.hook.frametype";
+
+#[test]
+fn a_stub_loads_its_slot_and_falls_through_to_the_stock_path() {
+    need_image!(DN2);
+    let (main, base) = stock_main(DN2);
+    let lib = library(vec![module(
+        "t/s",
+        "",
+        &stub_body(FRAMETYPE, "frame_type", "d0", "", "[\"dn2\"]"),
+        Some(cf_obj()),
+    )]);
+    let out = run_on(DN2, &registry(), &lib, &["t/s"]).unwrap();
+    let port = registry();
+    let site_anchor = port
+        .ports
+        .iter()
+        .find(|p| p.port.device == "dn2" && p.port.version == "1.12")
+        .and_then(|p| {
+            p.anchor
+                .iter()
+                .find(|a| a.name == "cf.machine.site.frametype")
+        })
+        .unwrap()
+        .addr;
+    let tail = sym(&out, "t/s", "hook.cf.machine.site.frametype.tail");
+    let ret = sym(&out, "t/s", "hook.cf.machine.site.frametype.return");
+    let slot = sym(&out, "t/s", "slot.frame_type");
+    // the site jumps to the stub (6 bytes cover `move.b (0xd8c,A0),D0b; ext.w D0w`, so no NOP)
+    let site = read_cf(&out, site_anchor, 6);
+    assert_eq!(&site[..2], &[0x4e, 0xf9]);
+    assert_eq!(be32(&site[2..]) as u64, tail);
+    assert_eq!(ret, site_anchor + 6);
+    // stub: move.l slot,d0 ; beq.b +4 ; move.l d0,-(sp) ; rts ; the displaced instructions ; jmp.l ret
+    let t = read_cf(&out, tail, 12 + 6 + 6);
+    assert_eq!(
+        &t[..12],
+        &[
+            0x20,
+            0x39,
+            (slot >> 24) as u8,
+            (slot >> 16) as u8,
+            (slot >> 8) as u8,
+            slot as u8,
+            0x67,
+            0x04,
+            0x2f,
+            0x00,
+            0x4e,
+            0x75
+        ]
+    );
+    let o = (site_anchor - base) as usize;
+    assert_eq!(
+        &t[12..18],
+        &main[o..o + 6],
+        "the stock instructions are copied"
+    );
+    assert_eq!(&t[18..20], &[0x4e, 0xf9]);
+    assert_eq!(be32(&t[20..]) as u64, ret);
+    let d = disasm(&t, tail as u32);
+    assert!(d[0].starts_with("move.l") && d[0].ends_with("d0"), "{d:?}");
+    assert!(d[1].starts_with("beq"), "{d:?}");
+    assert!(d[2].starts_with("move.l"), "{d:?}");
+    assert_eq!(d[3], "rts");
+    // slot table: magic, count, {hash, address}, then the zero word
+    let tab = sym(&out, "t/s", "t/s.slots");
+    let b = read_cf(&out, tab, 8 + 8 + 4);
+    assert_eq!(be32(&b[0..]), 0x534c_5401);
+    assert_eq!(be32(&b[4..]), 1);
+    assert_eq!(be32(&b[8..]), dkneeds::keys::name_hash("frame_type"));
+    assert_eq!(be32(&b[12..]) as u64, slot);
+    assert_eq!(slot, tab + 16);
+    assert_eq!(be32(&b[16..]), 0, "a zero slot means stock");
+    let j = serde_json::to_value(&out.plan).unwrap();
+    assert_eq!(j["hooks"][0]["slot"], "frame_type");
+    assert_eq!(j["hooks"][0]["to"], tail);
+}
+
+#[test]
+fn an_address_register_stub_tests_the_slot_with_tst() {
+    use patchkit::prim::stub_prefix;
+    let p = stub_prefix(8 + 1, 0x4700_0100);
+    assert_eq!(
+        p,
+        [
+            0x22, 0x79, 0x47, 0x00, 0x01, 0x00, 0x4a, 0x89, 0x67, 0x02, 0x4e, 0xd1
+        ]
+    );
+    let d = disasm(&p, 0x4000_0000);
+    assert_eq!(d.len(), 4, "{d:?}");
+    assert!(d[1].starts_with("tst.l"), "{d:?}");
+    assert!(d[2].starts_with("beq"), "{d:?}");
+    assert!(d[3].starts_with("jmp"), "{d:?}");
+}
+
+#[test]
+fn a_stub_op_is_checked_against_its_manifest() {
+    let m = |body: &str| try_module("t/s", "", body, Some(cf_obj()));
+    // the slot is not declared
+    expect_err(
+        m(&format!(
+            "[[op]]\nop = \"stub\"\nhook = \"{FRAMETYPE}\"\nslot = \"nope\"\nscratch = \"d0\"\ndevices = [\"dn2\"]\n"
+        )),
+        "not declared",
+    );
+    // declared for another device only
+    expect_err(
+        m(&stub_body(FRAMETYPE, "s", "d0", "", "[\"dn2\"]")
+            .replace("[[op]]", "[[slot]]\nname = \"other\"\n[[op]]")
+            .replace("slot = \"s\"", "slot = \"zz\"")),
+        "not declared",
+    );
+    // slot names are unique
+    expect_err(
+        m(&format!(
+            "{}[[slot]]\nname = \"frame_type\"\n",
+            stub_body(FRAMETYPE, "frame_type", "d0", "", "[]")
+        )),
+        "declared twice",
+    );
+    // scratch: required, a register, not the stack pointer
+    expect_err(
+        m(&stub_body(FRAMETYPE, "s", "d0", "", "[\"dn2\"]").replace("scratch = \"d0\"\n", "")),
+        "needs scratch",
+    );
+    for bad in ["a7", "sp", "d8", "x1"] {
+        expect_err(
+            m(&stub_body(FRAMETYPE, "s", bad, "", "[\"dn2\"]")),
+            "is not d0..d7 or a0..a6",
+        );
+    }
+    // `to` is not a stub field
+    expect_err(
+        m(&stub_body(FRAMETYPE, "s", "d0", "to = \"_f\"", "[\"dn2\"]")),
+        "to is not allowed",
+    );
+    // a hook op takes no slot
+    expect_err(
+        m(&hook_body("t.plain.hook", "slot = \"s\"")),
+        "belongs to op = \"stub\"",
+    );
+}
+
+#[test]
+fn a_stub_refuses_a_site_it_cannot_serve() {
+    need_image!(DN2);
+    need_image!(DT2);
+    let reg = registry();
+    let apply_dn2 = |scratch: &str, extra: &str| {
+        let lib = library(vec![module(
+            "t/s",
+            "",
+            &stub_body(FRAMETYPE, "frame_type", scratch, extra, "[\"dn2\"]"),
+            Some(cf_obj()),
+        )]);
+        run_on(DN2, &reg, &lib, &["t/s"])
+    };
+    // the displaced `move.b (0xd8c,A0),D0b` reads a0
+    expect_err(apply_dn2("a0", ""), "is read by the displaced instruction");
+    // a hand-written stock path takes the place of the displaced instructions
+    let out = apply_dn2("d1", "tail = \"_g\"").unwrap();
+    let tail = sym(&out, "t/s", "hook.cf.machine.site.frametype.tail");
+    let g = sym(&out, "t/s", "_g");
+    let t = read_cf(&out, tail, 18);
+    assert_eq!(&t[12..14], &[0x4e, 0xf9]);
+    assert_eq!(be32(&t[14..]) as u64, g);
+    // a site whose displaced code patchkit cannot re-encode: `move.w (d8,pc,d0.l*1),d0` of a jump table dispatch
+    let mut reg = registry();
+    add_anchor(&mut reg, DT2, "t.pcidx", "code", 0x4000_0ebe, 16);
+    add_hook(&mut reg, DT2, "t.pcidx.hook", "t.pcidx", 0, "replace");
+    let body = |extra: &str| stub_body("t.pcidx.hook", "s", "d7", extra, "[\"dt2\"]");
+    let lib = library(vec![module("t/p", "", &body(""), Some(cf_obj()))]);
+    let e = run_on(DT2, &reg, &lib, &["t/p"]).err().expect("refused");
+    assert!(e.0.contains("t/p: stub t.pcidx.hook"), "{e}");
+    assert!(
+        e.0.contains("cannot be re-encoded") && e.0.contains("tail ="),
+        "{e}"
+    );
+    let lib = library(vec![module(
+        "t/p",
+        "",
+        &body("tail = \"_g\""),
+        Some(cf_obj()),
+    )]);
+    run_on(DT2, &reg, &lib, &["t/p"]).unwrap();
+}

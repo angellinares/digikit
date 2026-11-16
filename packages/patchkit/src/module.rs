@@ -19,6 +19,9 @@ pub struct Manifest {
     pub anchor_rule: Vec<toml::Value>,
     #[serde(default)]
     pub op: Vec<Op>,
+    /// `[[slot]]`: pointer slots (a zero data word each) that `op = "stub"` sites load; see `prim::build_slot_table`.
+    #[serde(default)]
+    pub slot: Vec<SlotDef>,
     #[serde(default)]
     pub claim: Vec<Claim>,
     /// P1: sections copied from the user's image (and extended) at apply time.
@@ -493,7 +496,7 @@ pub struct ObjectRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Op {
-    /// `write` or `hook`
+    /// `write`, `hook` or `stub`
     pub op: String,
     #[serde(default)]
     pub anchor: String,
@@ -531,6 +534,26 @@ pub struct Op {
     pub expect_sha256: Option<String>,
     #[serde(default)]
     pub reloc: Vec<OpReloc>,
+    /// stub: the declared slot the stub loads (a `[[slot]]` of the module)
+    #[serde(default)]
+    pub slot: Option<String>,
+    /// stub: the register the stub overwrites (`d0`..`d7`, `a0`..`a6`); it must be one the hook's contract lets the hook clobber
+    #[serde(default)]
+    pub scratch: Option<String>,
+    /// stub: expression of a hand-written stock path; the stub jumps there instead of running the re-encoded displaced instructions
+    #[serde(default)]
+    pub tail: Option<String>,
+}
+
+/// `[[slot]] name = "frame_type", devices = ["dn2"]`: one 4-byte pointer slot in the module's data region, zero at build.
+#[derive(Clone, Debug, Deserialize)]
+pub struct SlotDef {
+    pub name: String,
+    #[serde(default)]
+    pub devices: Vec<String>,
+    /// region of the slot words and the table (default `cf.expansion`)
+    #[serde(default)]
+    pub place: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
