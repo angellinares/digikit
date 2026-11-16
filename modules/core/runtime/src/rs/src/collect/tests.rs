@@ -380,7 +380,7 @@ fn a_param_beyond_the_devices_knob_positions_or_outside_its_glyph_range_is_refus
 
 #[test]
 fn a_machine_with_two_knob_pages_is_refused_on_either_device() {
-    // the shape of `test/dyn-dn2-pages`: one machine, page A with three parameters, page B with two (the runtime has one knob page per machine)
+    // the shape of the parked fixture `test/dyn-dn2-pages` (back with run-time multi-page machines, RS-C): one machine, page A with three parameters, page B with two (the runtime has one knob page per machine)
     let mut b = Box::new(Collect::new());
     let m = b.add_machine(0, c(b"A\0"), c(b"A\0"));
     for n in [3, 2] {

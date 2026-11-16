@@ -18,16 +18,12 @@ const INFERRED_NEEDS_MODULES = [
   'test/c-demo',
   'test/commit-demo',
   'test/dyn-dn2',
-  'test/dyn-dn2-pages',
   'test/dyn-fx-gain',
   'test/sine',
 ];
-/** Fixtures that build for the Digitone II only. */
-const DN2_ONLY = new Set(['test/dyn-dn2-pages']);
-
 cardRigs('inferred needs', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, full: true, symbols: SYMBOLS }, (rig) => {
   for (const id of INFERRED_NEEDS_MODULES)
-    test.skipIf(DN2_ONLY.has(id) && rig.device !== 'dn2')(
+    test(
       `${id}: the resources taken are the needs inferred from its contents`,
       async () => {
         await rig.first();

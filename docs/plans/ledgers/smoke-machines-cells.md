@@ -24,7 +24,7 @@ Why: only three fixtures used patch-time `[[entry]]` rows of the `machines` regi
 | Part of the old proof or check | Coverage now |
 | --- | --- |
 | a: the menu marks the machine as current after the reopen | Dropped. The mark is drawn from the track's type, which `machine-rows-dn2` reads after YES (audio mirror after a TRIG) and `roundtrip` reads from the saved sound. No firmware word with the menu cursor is known, and a frame comparison would pin pixels of a list that has no stock reference with the added entry. |
-| a: SYN shows two pages, page rows read back | `machine-pages-dn2` (page rows, SYN cycle by what the first knob edits) and `machine-rows-dn2` (decoded page row: name, title, knob layout, slots). The refcount of the page name strings (-1 in the old read-back) is not asserted: the decoded names and titles are. |
+| a: SYN shows two pages, page rows read back | PARKED: run-time machines have one knob page (`collect.rs` `knob_page` refuses a second with E_FORMAT; host test `a_machine_with_two_knob_pages_is_refused_on_either_device`). The two-page fixture `test/dyn-dn2-pages` and `machine-pages-dn2.device.test.ts` were removed from the R12 batch and return with the roadmap item "run-time machines with several knob pages" (RS-C). The decoded single page row (name, title, knob layout, slots) is in `machine-rows-dn2`. |
 | b: each knob moves its mapped word only; empty knobs move nothing | `machine-rows-dn2`: the word index equals the slot and the mirror index of the parameter row (4 knobs); every knob of the page whose code is 0 (A, D, G, H of the fixture) is turned up and down and moves no Sound word. |
 | b: clamping (BETA top 0x3f00, GAMA bottom 0x100, GAMA top 0x7f00) | `machine-rows-dn2` (`turnPastLimit`): turn until the word holds the limit, two more events, the word still holds it. Values derived from `module.c` of `test/dyn-dn2`: Beta 0..63, Gamma 1..127, scale 0x100 (the decoded table rows are asserted too). |
 | c: defaults after the selection | `machine-rows-dn2`: after the TRIG the four Sound words equal the table defaults 0x2000, 0x1000, 0x7000, 0x4000 (polled; the engine slots read zero until the first trig, finding 02). |
@@ -43,7 +43,7 @@ The generic smoke tour in those cells (`tests/patchkit/smoke/tours/smoke.toml`) 
 
 - `machine-rows-dn2.device.test.ts` (DN2, test/dyn-dn2): one emulator start with two boots (the plain runtime for the stock page frames, then the card with the machine), SHARC for the module's DSP part.
 - `machine-rows-dt2.device.test.ts` (DT2, test/sine): one boot.
-- `machine-pages-dn2.device.test.ts` (DN2, test/dyn-dn2-pages): one boot, SHARC for the DSP part. Open: `[uses.dn2]` of the fixture is computed by hand (`mise run module:check test/dyn-dn2-pages` rewrites it and writes `build/gen`); no firmware word with the current page index was found, so the page shows in what a knob edits.
+- `machine-pages-dn2.device.test.ts` and `test/dyn-dn2-pages`: parked (see row a: the runtime has one knob page per machine).
 
 Open points for the review
 
@@ -51,7 +51,7 @@ Open points for the review
 2. The DN2 audio mirror address 0x8000487c is the one of the removed `select.toml` (DN2 1.12). The list position is 5 DOWN presses from FM TONE: FM TONE, FM DRUM, WAVETONE, SWARMER, MIDI, then the first run-time machine (the patch-time entry sat before MIDI at 4; the hint of the round trip test is 5).
 3. The decoded row expectations (names, titles, ranges) come from `build/gen/gallery.json` of `test/dyn-dn2` and the fixture sources; not seen on a device yet.
 4. A project with a run-time type loaded on the stock image (no runtime) is not tested; the round trip covers a runtime image without the module. Say if the uninstall path needs its own test.
-5. `[uses.dt2]` of `test/dyn-dn2-pages` was left as it is (hand computed for DN2; `module:check` was not run).
+5. (parked with `test/dyn-dn2-pages`.)
 6. The empty knobs are those whose decoded code is 0 (knobs A, D, G, H of `test/dyn-dn2`). The old proof had A to D filled; whether a turn of knob A or D (slots 25 and 28) is really inert is first seen on a device. The knob is turned before TRIG 1 is held: with TRIG held the firmware may record a step p-lock instead of editing the Sound word, so the held-note step only polls the engine word of that voice until it equals the Sound word. It assumes the held note uses voice slot 1.
 7. The DN2 TX frame (0x80005e60, type word +0x94, voice words +0xda + 0x92 v) and the audio mirror 0x8000487c are DN2 1.12 addresses without a port anchor; they are named constants in `machines-kit.ts` with the findings that give them (02, 06). The voice slot of the held note (1) assumes the round robin from 0 after the boot and one earlier TRIG; first seen on a device.
 8. `trackType` reads the DT2 track object, so the DN2 tests read the audio mirror.
