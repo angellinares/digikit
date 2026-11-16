@@ -1,6 +1,6 @@
 # Ledger: T2 step 2, card, settings and safe-mode duplicates move to host tests
 
-Status 2026-11-16: the host tests are written (commit "wip: host tests for the card check, ..."), not yet run. No device test is deleted yet: each deletion waits for its replacement to pass and for an independent review. Rust paths are under `modules/core/runtime/`.
+Status 2026-11-16: the host tests pass (`core/runtime:rust-tests`, merged with main 77f76827c). No device test is deleted yet: each deletion waits for its replacement to pass and for an independent review. Rust paths are under `modules/core/runtime/`.
 
 Line format: `device test | assertion | -> host test` or `KEPT: reason`. TS files are under `tests/`. `FP` is `src/rs/src/fake_platform.rs`.
 
@@ -33,7 +33,7 @@ Deleted after the host tests pass: table rows `higher` and `both` of "copies/$na
 | higher | boot reads copy A (seq 9 over 3): state 1, copy 0, seq 9, no error flag | `sdk/src/settings/tests.rs` `the_higher_seq_wins_and_a_equal_pair_takes_a` (copy, seq, damaged 0); `src/rs/src/settings.rs` `the_load_state_says_none_loaded_or_damaged` (state 1) |
 | higher | get returns the value of A | `sdk/src/settings/tests.rs` `the_higher_seq_wins_and_a_equal_pair_takes_a` (entries) |
 | higher | the next write goes to copy B with seq 10, A untouched | `settings.rs` `the_next_write_goes_to_the_other_copy_with_the_next_seq`; `sdk/src/settings/tests.rs` `a_write_takes_only_the_sectors_the_record_needs_and_only_its_copy` |
-| both | no valid copy: state 0 (both copies damaged), copy none, seq 0, error flag | `sdk/src/settings/tests.rs` `both_copies_damaged_is_an_empty_record` (copy NONE, damaged 2); `settings.rs` `the_load_state_says_none_loaded_or_damaged` (state 0). The error flag is `damaged != 0` in `load` and has no host test: [O], the kept `torn` row asserts the flag for the same condition |
+| both | no valid copy: state 0 (both copies damaged), copy none, seq 0, error flag | `sdk/src/settings/tests.rs` `both_copies_damaged_is_an_empty_record` (copy NONE, damaged 2); `settings.rs` `the_load_state_says_none_loaded_or_damaged` (state 0). The error flag is the one condition `damaged != 0` in `load`; the SDK test asserts `damaged` 2 for this case, and the kept `torn` row asserts the flag on the device |
 | both | get answers E_SET_NOKEY | `sdk/src/settings/tests.rs` `both_copies_damaged_is_an_empty_record` (no entries), `put_get_replace_remove` (E_SET_NOKEY on an absent key) |
 | both | the next write goes to copy A with seq 1 | `settings.rs` `the_next_write_goes_to_the_other_copy_with_the_next_seq` (case NONE) |
 
@@ -55,3 +55,7 @@ New host case with no device twin: a copy cut inside its sector write (second ha
 - `settings.device.test.ts`, `settings-cards.device.test.ts`: main, restart, blank, overlap and oldcard are the mailbox, the 2 s timer through emulated time and the card boot paths (real boundaries). `write_due` and `next_write` are host-tested now, but the timer through the firmware clock stays a device case.
 - `settings-api.device.test.ts` test 3 (key rules through the mailbox): not an exact duplicate (audit). Not touched.
 - DSP mode: `card-safety` and the settings tests already run `dsp: 'zero'`. `safe-mode` runs `dsp: 'sharc'`; the fault-module cases (reset in init, safe-once flag, hang early and late) load no DSP module and may run on zero. [O] one proof run decides; the power-cut and REC cases load a machine or `c-demo` and stay as they are until then.
+
+## Blank scan range (checked)
+
+`check` scans `BLANK_SECTORS` = 2048 sectors from the area start. Header B is at relative sector `sectors - TAIL`, with `TAIL = 1 + 2 * 16 + 2 = 35`, and selection copy A at `sectors - 2`. The host layout has 4096 sectors: header B at 4061, selection A at 4094, both beyond 2048, so a torn header B or selection A is not seen by the scan and the card reads blank, as on the device (real areas are far larger). Header A (sector 0) is inside the scan.
