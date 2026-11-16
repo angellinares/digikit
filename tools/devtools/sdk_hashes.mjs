@@ -78,13 +78,15 @@ const result = {
   image: {},
 };
 mkdirSync(work, { recursive: true });
-const jobs = modules.flatMap(({ m }) => devicesOf(m).map((d) => ({ id: m.id, d })));
+const jobs = modules.flatMap(({ m }) =>
+  devicesOf(m).map((d) => ({ id: m.id, d, ext: m.role === 'service' ? 'dks' : 'dkm' })),
+);
 let next = 0;
 await Promise.all(
   Array.from({ length: JOBS }, async () => {
     while (next < jobs.length) {
-      const { id, d } = jobs[next++];
-      const out = join(work, `${d}-${id.replaceAll('/', '__')}.dkm`);
+      const { id, d, ext } = jobs[next++];
+      const out = join(work, `${d}-${id.replaceAll('/', '__')}.${ext}`);
       const err = await runAsync(['pack', id, '--device', d, '-o', out]);
       if (err && !NOPACK_OK.has(id)) failures.push(`pack ${id} --device ${d} failed: ${err}`);
       result.dkm[`${d} ${id}`] = err ? 'nopack' : sha(readFileSync(out));

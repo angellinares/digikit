@@ -8,6 +8,7 @@ import { rpc } from '@digi/regression/runtime/fx-live.ts';
 import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
 import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
 import { stateName } from '@digi/regression/runtime/load-states.ts';
+import { FREE_TYPE, voiceRows } from '@digi/regression/runtime/project-kit.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { waitForBootEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
@@ -38,7 +39,7 @@ const CUT_CASES = [
 ] as const;
 
 
-cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symbols: [...CARD_SYMBOLS, 'voices.rows', 'dyndsp_info'] }, (h) => {
   test(
     'a module that resets the machine in its init: two boots never reach the UI loop, the third boots in safe mode',
     async () => {
@@ -56,6 +57,10 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
       expect(info.loaded, 'safe mode loaded no module').toBe(0);
       expect(info.allResults[0], 'and reported it').toBe(E_SAFE_MODE);
       expect(stateName(info.states[0]!), 'and skipped it').toBe('SKIPPED');
+      expect(
+        (await voiceRows(h.session, h.plan)).filter(([type]) => type !== FREE_TYPE),
+        'and claimed no voice row',
+      ).toEqual([]);
       expect((await introNow(h.session)).equals(safeFrame('counter')), 'the intro shows the 2 FAILED BOOTS frame').toBe(true);
       const rec = currentRecord(await h.records());
       expect(rec?.counter, 'the UI loop ran: counter 0').toBe(0);
