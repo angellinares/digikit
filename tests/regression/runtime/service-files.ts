@@ -21,6 +21,17 @@ export function neededServices(files: string[]): string[] {
   return Object.keys(SERVICE_MODULES).filter((name) => needed.has(nameHash(name)));
 }
 
+/**
+ * The services to put on a card: those that the packed `.dkm` files need, and the `extra` ones a test asks for by name (`services: ['machines']`), in the order of
+ * `SERVICE_MODULES`. A test needs `extra` when its subject is the service itself (the rows it acts on are in the image, no module declares them).
+ */
+export function wantedServices(files: string[], extra: readonly string[] = []): string[] {
+  const unknown = extra.filter((name) => !(name in SERVICE_MODULES));
+  if (unknown.length) throw new Error(`unknown service ${unknown.join(', ')} (known: ${Object.keys(SERVICE_MODULES).join(', ')})`);
+  const named = new Set([...neededServices(files), ...extra]);
+  return Object.keys(SERVICE_MODULES).filter((name) => named.has(name));
+}
+
 /** The store path of a service file. */
 export const servicePath = (name: string) => `services/${name}.dks`;
 

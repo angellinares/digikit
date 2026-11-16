@@ -34,7 +34,7 @@ import { emulatorDk, pollEmulated } from './waits.ts';
 import { record } from './artifacts.ts';
 import { FIRMWARE, FULL_TIER, claimRunDir, selectDevices, skipEmptyHalf } from './devices.ts';
 import { moduleArtifact } from './install.ts';
-import { boundService, neededServices, servicePath, SERVICE_MODULES } from './service-files.ts';
+import { boundService, servicePath, SERVICE_MODULES, wantedServices } from './service-files.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { RING_SYMBOLS } from './runtime-menu.ts';
 import {
@@ -85,6 +85,8 @@ export interface CardRigOptions {
   roots?: string[];
   /** The image has no runtime (a patched-in module only): no `DKRT_BOOT`, no runtime readiness; the case is ready 300 emulated ms after the stock firmware's ready point. */
   plain?: boolean;
+  /** Services whose bound files go on every card of the rig besides those the modules need (names of `SERVICE_MODULES`), for a test of the service itself. */
+  services?: string[];
   /** Plan symbols besides `DKRT_BOOT`. */
   symbols?: string[];
   /** Daemon environment besides the write watch; it overrides the watch's variables. A function gets the prepared runtime plan when the daemon starts. */
@@ -261,9 +263,12 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   const build = async (session: Session, tag: string, spec: CardSpec = {}) => {
     const { modules = [], name: _name, ...rest } = spec;
     const files = modules.map((m) => (typeof m === 'string' ? mod(m) : m));
-    // the services that these modules need go on the card too, bound to the stock firmware (`service-files.ts`)
+    // the services that these modules need, and the ones the test names (`o.services`), go on the card too, bound to the stock firmware (`service-files.ts`)
     const services = await Promise.all(
-      neededServices(files.map((m) => m.file))
+      wantedServices(
+        files.map((m) => m.file),
+        o.services,
+      )
         .filter((name) => !files.some((m) => m.name === servicePath(name)))
         .map(async (name) => ({
           name: servicePath(name),

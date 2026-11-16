@@ -9,15 +9,17 @@
         "files": ["machines-dt2-clone.device.test.ts"],
         "devices": ["dt2"],
         "tags": ["S:machines", "C:state", "C:dsp"],
-        "modules": ["test/sine", "core/services/machines"],
-        "plusdrive": true
+        "modules": ["core/services/machines"],
+        "plusdrive": true,
+        "sources": ["modules/core/services/machines/tests/image-roots.json", "dist/bytes/project-images.sha256"]
       },
       {
         "files": ["machines-dn2-clone.device.test.ts", "machines-dn2-pages.device.test.ts"],
         "devices": ["dn2"],
         "tags": ["S:machines", "C:state"],
-        "modules": ["test/sine", "core/services/machines"],
-        "plusdrive": true
+        "modules": ["core/services/machines"],
+        "plusdrive": true,
+        "sources": ["modules/core/services/machines/tests/image-roots.json", "dist/bytes/project-images.sha256"]
       }
     ]
   }

@@ -10,7 +10,7 @@ Cells removed from `tests/patchkit/smoke/matrix.toml` (54 keys of `goldens.json`
 - `dn2-1.12:core/machines+test/dn2-clone` (16 keys) -> `machines-dn2-clone.device.test.ts`
 - `dn2-1.12:core/machines+core/params+test/dn2-pages` (20 keys) -> `machines-dn2-pages.device.test.ts`
 
-The fixtures stay (patchkit Rust tests use them). Each new test boots one image of its own (image root sets `rt-machine-clone`, `rt-dn2-clone`, `rt-dn2-pages` in `tests/regression/runtime/image-roots.json`), with `test/sine` selected on the card only so that the harness puts `machines.dks` there. The tests assert firmware state (decoded machine, page and parameter rows, the track's machine type, the audio mirror, Sound words, the DSP selector byte). A frame is compared only with another frame of the same run.
+The fixtures stay (patchkit Rust tests use them). Each new test boots one image of its own (image root sets `rt-machine-clone`, `rt-dn2-clone`, `rt-dn2-pages` in `tests/regression/runtime/image-roots.json`), with `machines.dks` put on the card by the rig option `services: ['machines']` (no module is selected). The root sets are in the project's `tests/image-roots.json`. The tests assert firmware state (decoded machine, page and parameter rows, the track's machine type, the audio mirror, Sound words, the DSP selector byte). A frame is compared only with another frame of the same run.
 
 ## Cell-specific assertions (the `select.toml` tests)
 
@@ -44,5 +44,6 @@ The tour runs on every cell. Checked against the stock cell of the same device i
 
 1. The index mapping of a slot to a Sound word is assumed (slot n is halfword n of the Sound array, from +0x14 of the Sound object). The test asserts only relative distances, so a constant offset does not matter.
 2. The DT2 and DN2 addresses (0x4265338c via `trackType`, 0x255970, 0x8000487c, 0x80005ef4) are the ones of the removed `select.toml` files, for DT2 1.17 and DN2 1.12.
-3. `track/track2` of the removed DN2 clone cell differs from stock and from the DN2 pages cell, and nothing in this ledger explains it. Reproduce it on the device (track 2 after the clone was added) before the deletion merges, or decide it is noise.
-4. Adding three sets to `image-roots.json` changes a shared input of every device test key.
+3. `track/track2` of the removed DN2 clone cell differs from stock and from the DN2 pages cell, and nothing in this ledger explains it (open check 5).
+4. The runtime finds a service file only for a hard NEED of a selected module (`loader/discover.rs`). With no module selected, `machines.dks` may not load, and the three tests then fail in their first behaviour assertion. The device run decides; if it fails, select a module that needs the service.
+5. Open check: `track/track2` of the DN2 clone cell. The DN2 clone test logs the frame hash, both Sound arrays and the decoded rows for TRK + TRIG 2 before any selection (artifact `track2-frame.json`, and the console). Compare with the same dump of a stock boot.

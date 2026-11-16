@@ -4,14 +4,14 @@ import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 import { pickSine, word, REDRAW } from '@digi/regression/runtime/fx-live.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
 import { decodeTables } from '@digi/regression/runtime/project-kit.ts';
-import { carrierCard, ENCODERS, expectServiceLoaded, tableSymbols, turnChangesOneWord } from './machines-kit.ts';
+import { ENCODERS, expectCleanBoot, SERVICES, tableSymbols, turnChangesOneWord } from './machines-kit.ts';
 
 /**
  * A machine with its own parameter pages on the Digitone II with `machines.dks` loaded (port of the patchkit smoke cell
  * `dn2-1.12:core/machines+core/params+test/dn2-pages`, whose test is tests/fixtures/modules/dn2-pages/tests/select.toml). `test/dn2-pages` adds the machine
  * PAGES (type 6, listed before MIDI, `own_dsp`) and two SYN pages of its own: PGA with ALPH BETA GAMA DELT, PGB with EPSL ZETA. The group hook places the
  * machine's row in the machine menu; the page's draw, code, key and turn hooks (in `machines.dks`) make the SYN key cycle the two pages and the knobs edit
- * their parameters. One boot. `test/sine` is on the card only to make the harness put `machines.dks` there.
+ * their parameters. One boot. The rig puts the bound `machines.dks` on the card (`services: ['machines']`); no module is selected.
  */
 const AUDIO_MIRROR_DN2_112 = 0x8000487c; // SRAM, first byte: the selected machine type (select.toml of dn2-clone)
 
@@ -20,13 +20,13 @@ describeOn('dn2', `DN2 ${FIRMWARE.dn2} machines.dks: own pages of the machine PA
     dsp: 'sharc',
     roots: rootsOf('rt-dn2-pages'),
     symbols: tableSymbols('dn2'),
-    initial: carrierCard,
+    services: SERVICES,
   });
 
   test('PAGES is the 5th list entry; SYN cycles its two pages; a knob changes the parameter of its page', async () => {
     const rt = await run.first();
     const { session } = rt;
-    await expectServiceLoaded(rt, run);
+    await expectCleanBoot(rt, run);
 
     // the page rows the table builder wrote: names, titles, knob layout and the sound slot of each knob (module.toml of the fixture)
     const tables = await decodeTables(session, run.plan);

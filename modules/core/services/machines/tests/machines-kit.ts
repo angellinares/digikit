@@ -1,7 +1,7 @@
 import { button, encoder as encoderCode, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
+import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { bounded, peak, readFloatWav, rpc, SETTLE, word, type Rt } from '@digi/regression/runtime/fx-live.ts';
 import { halfword } from '@digi/regression/runtime/fx-track-ui.ts';
@@ -9,9 +9,8 @@ import path from 'node:path';
 
 /** Helpers of the machines service device tests: what the firmware shows after a machine row of the image and `machines.dks` act together. */
 
-/** The module whose machine record gives the card a hard NEED on the machines service, so the harness puts `machines.dks` on the card and the runtime loads it. */
-export const SERVICE_CARRIER = 'test/sine';
-export const carrierCard = () => ({ modules: [SERVICE_CARRIER], selection: ['modules/sine.dkm'] });
+/** The service the tests act on: its bound file goes on every card of the rig (`services` option of `cardRig`), no module needs it. */
+export const SERVICES = ['machines'];
 
 /** Plan symbols that `decodeTables` and `dynType` read (the Digitakt II has no page rows). */
 export const tableSymbols = (device: Device) => [
@@ -28,20 +27,10 @@ export const tableSymbols = (device: Device) => [
 
 export const ENCODERS = ['ENC A', 'ENC B', 'ENC C', 'ENC D', 'ENC E', 'ENC F', 'ENC G', 'ENC H'] as const;
 
-/** The boot loaded the carrier module and no safe mode. A module that needs the machines service loads only when `services/machines.dks` was found, bound and activated. */
-export async function expectServiceLoaded(rt: Rt, rig: CardRig): Promise<void> {
-  const { session, ui } = rt;
-  // the module's DSP part follows its ColdFire part (result LOADING)
-  let info = await bootInfo(session, rig.plan);
-  for (let i = 0; i < 50 && info.results.includes(E_LOADING); i++) {
-    await ui.wait({ ms: 100, why: SETTLE });
-    info = await bootInfo(session, rig.plan);
-  }
-  expect({ loaded: info.loaded, safe: info.safe, results: info.results.slice(0, info.count) }).toEqual({
-    loaded: 1,
-    safe: 0,
-    results: [0],
-  });
+/** The boot is clean: no module is selected, no safe mode. */
+export async function expectCleanBoot(rt: Rt, rig: CardRig): Promise<void> {
+  const info = await bootInfo(rt.session, rig.plan);
+  expect({ count: info.count, loaded: info.loaded, safe: info.safe }).toEqual({ count: 0, loaded: 0, safe: 0 });
 }
 
 /** The parameter halfwords of the Sound object of `track` (1 based): the array starts at +0x14, `sound_words` long (`[fx]` of devices/<profile>.toml). */

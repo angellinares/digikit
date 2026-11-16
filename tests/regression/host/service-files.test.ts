@@ -24,7 +24,7 @@ vi.mock('@digi/test-support', async (original) => ({
   repoRoot: () => dir,
 }));
 import { installModules } from '../runtime/install.ts';
-import { boundService, neededServices } from '../runtime/service-files.ts';
+import { boundService, neededServices, wantedServices } from '../runtime/service-files.ts';
 import { bindServiceSymbols, serviceMapEntries } from '../runtime/service-symbols.ts';
 
 // the packed service the harness finds under dist/modules/<device>/<leaf>.dks
@@ -76,6 +76,33 @@ test('only the services that a .dks provides (the table of service files) are na
   expect(neededServices([effect, machine])).toEqual(['machines', 'fx']);
   expect(neededServices([machine])).toEqual(['machines']);
   expect(neededServices([effect])).toEqual(['fx']);
+});
+
+test('a test can name services besides those the modules need; an unknown name is refused', () => {
+  const effect = write('effect2.dkm', [nameHash('fx')]);
+  expect(wantedServices([], ['machines'])).toEqual(['machines']);
+  expect(wantedServices([effect], ['machines'])).toEqual(['machines', 'fx']);
+  expect(wantedServices([effect], ['fx'])).toEqual(['fx']);
+  expect(() => wantedServices([], ['nope'])).toThrow(/unknown service nope/);
+});
+
+test('install puts a named service on the card although no module needs it', async () => {
+  const order: string[] = [];
+  const dk = {
+    put: async (p: string) => void order.push(`put ${p}`),
+    verifyFile: async () => true,
+    select: async () => void order.push('select'),
+    restart: async () => void order.push('restart'),
+    waitForBoot: async () => void order.push('boot'),
+    modules: async () => [{ name: 'x' }],
+  } as unknown as DkSession;
+  fs.mkdirSync(path.join(dir, 'dist/modules/dt2'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'dist/svc-bound/dt2'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'dist/modules/dt2/machines.dks'), 'packed');
+  fs.writeFileSync(path.join(dir, 'dist/svc-bound/dt2/machines.dks'), 'bound');
+  const plain = write('plain.dkm', []);
+  await installModules(dk, [{ id: 'x', artifact: plain }], { device: 'dt2', services: ['machines'] });
+  expect(order).toEqual(['put modules/x.dkm', 'put services/machines.dks', 'select', 'restart', 'boot']);
 });
 
 test('install puts the bound service on the card before the selection and the restart', async () => {

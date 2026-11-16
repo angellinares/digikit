@@ -4,20 +4,12 @@ import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 import { dspBytes, pickSine, REDRAW } from '@digi/regression/runtime/fx-live.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
 import { decodeTables, trackType } from '@digi/regression/runtime/project-kit.ts';
-import {
-  carrierCard,
-  ENCODERS,
-  expectServiceLoaded,
-  notePeak,
-  tableSymbols,
-  turnChangesOneWord,
-} from './machines-kit.ts';
+import { ENCODERS, expectCleanBoot, notePeak, SERVICES, tableSymbols, turnChangesOneWord } from './machines-kit.ts';
 
 /**
  * A machine row of the image on the Digitakt II with `machines.dks` loaded (port of the patchkit smoke cell `dt2-1.17:core/machines+test/machine-clone`, whose
  * test is tests/fixtures/modules/machine-clone/tests/select.toml). `test/machine-clone` adds the machine XClone to the image: a clone of SAMPLE (stock type 0)
- * with the descriptor ID fields of MANUAL SLICE, permanent type 8 (types.toml). The machines hooks live in `machines.dks`; `test/sine` is on the card only
- * because its machine record makes the harness put the service file there and the runtime load it.
+ * with the descriptor ID fields of MANUAL SLICE, permanent type 8 (types.toml). The machines hooks live in `machines.dks`, which the rig puts on the card (`services: ['machines']`); no module is selected.
  * One boot. SHARC audio: the clone sounds and the DSP's selector for type 8 is set.
  */
 const SELECTOR_DT2_117 = 0x255970; // DSP address read by the cell: the byte for the selected type (finding 04, 06)
@@ -27,13 +19,13 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} machines.dks: the added machine XClone`, 
     dsp: 'sharc',
     roots: rootsOf('rt-machine-clone'),
     symbols: tableSymbols('dt2'),
-    initial: carrierCard,
+    services: SERVICES,
   });
 
   test('XClone is in the list, selecting it commits type 8, its SRC page has the descriptor knobs and the clone sounds', async () => {
     const rt = await run.first();
     const { session } = rt;
-    await expectServiceLoaded(rt, run);
+    await expectCleanBoot(rt, run);
 
     // the row the table builder wrote: a clone of SAMPLE with MANUAL SLICE's descriptor ids (module.toml f0 .. f8)
     const tables = await decodeTables(session, run.plan);
