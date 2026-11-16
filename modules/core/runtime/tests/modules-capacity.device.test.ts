@@ -23,6 +23,7 @@ async function expectModulesReply(runtime: PatchedSession): Promise<void> {
   await installModules(
     dk,
     ids.map((id) => ({ id, artifact: moduleArtifact(device, id) })),
+    { device, session }, // the machines need machines.dks on the card
   );
   const info = await dk.info();
   expect(hasCap(info, 'MODULES') && hasCap(info, 'CAPACITY'), 'INFO sets the MODULES and CAPACITY capabilities').toBe(
