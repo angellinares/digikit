@@ -19,7 +19,10 @@ export interface LibraryFile {
 
 /** The modules the app can offer for install, per device id (`dt2`, `dn2`). */
 export interface TransferLibrary {
-  /** The .dkm files of the device; read again at each call (a rebuild shows up at the next read). */
+  /**
+   * The .dkm files of the device, and its unbound .dks service files (the backend splits them by extension: no separate service source);
+   * read again at each call (a rebuild shows up at the next read).
+   */
   scan(device: string): Promise<LibraryFile[]>;
   /** The bytes of one file of `scan`. */
   read(device: string, path: string): Promise<Uint8Array>;

@@ -18,7 +18,7 @@ export type SegmentKind = 'machine' | 'effect' | 'tool' | 'other';
 export interface KnownModule {
   name: string;
   label: string;
-  group: 'Machines' | 'Effects' | 'Tools';
+  group: 'Machines' | 'Effects' | 'Tools' | 'Services';
   needs: Needs | null;
 }
 

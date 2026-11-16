@@ -55,6 +55,18 @@ export const transferBackend = {
     for (const id of modules) {
       const m = libraryById(id) ?? LIBRARY[0];
       const path = pathOf(m.id);
+      // the services of the ticked module that are not on the card go first (sim.ts gives pluck two)
+      const row = view().modules.find((r) => r.id === m.id);
+      for (const s of row?.services?.filter((x) => x.state !== 'on device') ?? []) {
+        const sid = s.stem;
+        const spath = `services/${s.stem}.dks`;
+        const size = Math.round(s.size);
+        onEvent({ event: 'upload', kind: 'service', id: sid, path: spath, bytes: size });
+        await pace(size, (sent) =>
+          onEvent({ event: 'progress', kind: 'service', id: sid, path: spath, sent, bytes: size }),
+        );
+        onEvent({ event: 'verify', kind: 'service', id: sid, path: spath, ok: true });
+      }
       onEvent({ event: 'build', id });
       await delay(150);
       onEvent({ event: 'upload', id, path, bytes: m.size });
@@ -110,4 +122,8 @@ export const transferBackend = {
 };
 
 /** The same bag as the real `createTransferBackend` (packages/workbench-core/src/transfer/transfer-backend.ts); the preview reads the library from sim.ts. */
-export const createTransferBackend = (_deps: unknown) => ({ transferBackend, loadLibrary: async () => [] });
+export const createTransferBackend = (_deps: unknown) => ({
+  transferBackend,
+  loadLibrary: async () => [],
+  installDeps: async () => undefined,
+});

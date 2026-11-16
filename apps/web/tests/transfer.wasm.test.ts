@@ -21,6 +21,15 @@ import {
   available,
   eventText,
   installModules,
+  installServices,
+  installsWithLine,
+  installResultLines,
+  deleteResultLines,
+  neededServiceText,
+  serviceRefusalText,
+  serviceTags,
+  fitLine,
+  modulesBar,
   onDevice,
   onDeviceWithPending,
   progressFailed,
@@ -374,4 +383,160 @@ test('the storage line of Modules mode: files on the card, their size and the fr
   assert.doesNotMatch(storageLine(view), /arena|memory|DSP|RAM/i);
   // free space is in the storage line, not in the device line, in Modules mode
   assert.equal(freeLine(undefined), '');
+});
+
+const fx = { stem: 'fx', label: 'fx service', version: 0x010200, state: 'not on device', size: 38400 } as const;
+const machines = { stem: 'machines', label: 'machines service', version: 0x010200, state: 'on device', size: 62464 } as const;
+const pluck = row('a/pluck', 'Machines', { label: 'pluck', services: [fx, machines] });
+const shot = row('a/shot', 'Machines', { label: 'shot', services: [machines] });
+const sv = { ...view, modules: [pluck, shot] };
+
+test('services: the with line, sub row tags, the fit line and the services to upload', () => {
+  assert.equal(installsWithLine(pluck), 'pluck installs with: fx service, machines service');
+  assert.equal(installsWithLine(row('a/none', 'Tools')), null);
+  assert.deepEqual(serviceTags(fx).map((t) => [t.text, t.tone]), [['not on device', 'warn']]);
+  assert.deepEqual(serviceTags(machines).map((t) => [t.text, t.tone]), [['on device', 'ok']]);
+  assert.equal(serviceTags({ ...fx, state: 'differs' })[0].text, 'differs');
+  assert.equal(
+    fitLine(sv, new Set(['a/pluck'])),
+    'Fits together: pluck and its 2 services. 1 service needs uploading (fx service).',
+  );
+  assert.equal(
+    fitLine(sv, new Set(['a/pluck', 'a/shot'])),
+    'Fits together: 2 modules and their 2 services. 1 service needs uploading (fx service).',
+  );
+  assert.equal(fitLine(sv, new Set()), '');
+  assert.equal(fitLine({ ...view, modules: [row('a/none', 'Tools')] }, new Set(['a/none'])), '');
+  // each service once, skipping the one on the device
+  assert.deepEqual(installServices(sv, new Set(['a/pluck', 'a/shot'])), [
+    { id: 'fx', path: 'services/fx.dks', bytes: 38400 },
+  ]);
+  assert.deepEqual(installModules(sv, new Set(['a/pluck'])), ['a/pluck']);
+});
+
+test('services: tickedFit counts the services once and enforces the provider limit', () => {
+  const caps = {
+    MODULES: { limit: 8, used: 0, largest: 0 },
+    SELECTION: { limit: 8, used: 0, largest: 0 },
+    ARENA: { limit: 524288, used: 0, largest: 524288 },
+    STAGE: { limit: 65536, used: 0, largest: 65536 },
+    DSP_AREA: { limit: 524288, used: 0, largest: 524288 },
+  };
+  const needs = { file_size: 900, ARENA: 64, DSP_AREA: 8, DSP_ALIGN: 8 };
+  const v = { ...sv, capacity: caps, modules: [{ ...pluck, needs }, { ...shot, needs }] };
+  assert.deepEqual(tickedFit(v, new Set(['a/pluck'])), {
+    text: 'The ticked module and its 2 services fit the device.',
+    tone: 'ok',
+  });
+  assert.equal(tickedFit(v, new Set(['a/pluck', 'a/shot']))!.text, 'The 2 ticked modules and their 2 services fit the device together.');
+  const many = Array.from({ length: 7 }, (_, i) => ({ ...fx, stem: `s${i}`, label: `s${i} service` }));
+  const big = { ...v, modules: [{ ...pluck, needs, services: many }] };
+  assert.deepEqual(tickedFit(big, new Set(['a/pluck'])), {
+    text: 'The selection needs more than 6 services.',
+    tone: 'warn',
+  });
+  assert.equal(tickedLoad(big, new Set(['a/pluck'])), null);
+  // the memory of a service counts: a module that fits alone does not fit with a service that needs more DSP area than is left
+  const heavy = { ...fx, needs: { file_size: 900, ARENA: 64, DSP_AREA: 600000, DSP_ALIGN: 8 } };
+  const withHeavy = { ...v, modules: [{ ...pluck, needs, services: [heavy] }] };
+  const noFit = tickedFit(withHeavy, new Set(['a/pluck']))!;
+  assert.equal(noFit.tone, 'warn');
+  assert.match(noFit.text, /^The services of the ticked modules do not fit the device with them: /);
+  assert.equal(tickedLoad(withHeavy, new Set(['a/pluck'])), null);
+});
+
+test('services: refusal texts, the service mismatch tag, the needed-by tag', () => {
+  const r = { module: 'pluck', service: 'machines' } as const;
+  assert.equal(
+    serviceRefusalText({ ...r, kind: 'fingerprint', runtime: '0.5.2', builtFor: '0.5.0' }),
+    'pluck not installed. It needs the machines service, and this workbench has no machines service for the runtime on your device (runtime 0.5.2, service built for 0.5.0). Nothing was uploaded for pluck. Update the workbench, or flash a matching runtime from the Firmware page.',
+  );
+  assert.equal(
+    serviceRefusalText({ module: 'pluck', service: 'fx', kind: 'missing' }),
+    'pluck not installed. It needs the fx service, which this workbench does not have.',
+  );
+  assert.equal(
+    serviceRefusalText({ module: 'pluck', service: 'fx', kind: 'unknown-hash' }),
+    'pluck not installed. It needs the fx service, which this workbench does not have.',
+  );
+  assert.equal(
+    serviceRefusalText({ module: 'pluck', service: 'fx', kind: 'version', need: '1.3', have: '1.2' }),
+    'pluck not installed. It needs fx service 1.3, the runtime has 1.2.',
+  );
+  assert.equal(
+    serviceRefusalText({ module: 'pluck', service: 'fx', kind: 'too-many' }),
+    'pluck not installed. The selection needs more than 6 services.',
+  );
+  const refusal = { ...r, kind: 'fingerprint', runtime: '0.5.2', builtFor: '0.5.0' } as const;
+  const [tag] = localTags({ ...pluck, service_refusal: refusal }).filter((t) => t.text === 'service mismatch');
+  assert.equal(tag.tone, 'warn');
+  assert.equal(tag.title, 'machines service built for 0.5.0, device runtime is 0.5.2');
+  const dks = { ...row(null, 'Tools'), path: 'services/machines.dks', needed_by: ['shot'] };
+  assert.deepEqual(deviceTags(dks).map((t) => [t.text, t.tone]), [['needed by shot', 'dim']]);
+  assert.equal(
+    neededServiceText('machines', ['shot']),
+    'machines service is needed by shot. Delete that module first (its services go with it).',
+  );
+});
+
+test('services: the install progress runs the service phase first and names refused modules', () => {
+  let p = startProgress(['a/pluck', 'a/freqshift'], false, { 'a/pluck': 1000, 'a/freqshift': 1000 }, [
+    { id: 'fx', path: 'services/fx.dks', bytes: 4000 },
+    { id: 'machines', path: 'services/machines.dks', bytes: 4000 },
+  ]);
+  assert.deepEqual(p.modules.map((m) => m.kind), ['service', 'service', undefined, undefined]);
+  const ev = (e: TransferEvent) => (p = applyEvent(p, e));
+  ev({ event: 'upload', kind: 'service', id: 'fx', path: 'services/fx.dks', bytes: 4000 });
+  ev({ event: 'progress', kind: 'service', id: 'fx', sent: 1600, bytes: 4000 });
+  assert.equal(p.message, 'Uploading services/fx.dks: 40%');
+  ev({ event: 'verify', kind: 'service', id: 'fx', path: 'services/fx.dks', ok: true });
+  assert.equal(p.message, 'Verified services/fx.dks on the card');
+  ev({ event: 'skip', kind: 'service', id: 'machines', path: 'services/machines.dks' });
+  assert.equal(p.message, 'services/machines.dks: already on the card, not uploaded');
+  assert.equal(p.modules[0].state, 'ok');
+  assert.equal(p.modules[2].state, 'wait', 'a module with the same id as no service is not touched');
+  assert.equal(rowStatus(p, {}, 'services/fx.dks')!.kind, 'ok');
+  // a refused module leaves the steps; the other one installs
+  const refusal = { module: 'a/pluck', service: 'machines', kind: 'missing' } as const;
+  ev({ event: 'refuse', refusal });
+  assert.deepEqual(p.modules.map((m) => m.id), ['fx', 'machines', 'a/freqshift']);
+  assert.equal(p.message, 'a/pluck not installed. It needs the machines service, which this workbench does not have.');
+  assert.deepEqual(installResultLines(p, ['a/pluck', 'a/freqshift']), [
+    'a/pluck not installed. It needs the machines service, which this workbench does not have.',
+    'freqshift was installed.',
+  ]);
+  assert.equal(modulesBar(p).message, p.message);
+  assert.equal(progressFailed(p), false);
+  // every ticked module refused: the bar fails and says no files went up
+  let q = startProgress(['a/pluck'], false, {}, []);
+  q = applyEvent(q, { event: 'refuse', refusal });
+  assert.equal(progressFailed(q), true);
+  assert.equal(modulesBar(q).message, 'Install failed: no files uploaded');
+  assert.deepEqual(installResultLines(startProgress(['a/x'], false), ['a/x']), []);
+});
+
+test('services: delete texts', () => {
+  assert.equal(eventText({ event: 'delete', path: 'modules/pluck.dkm' }), 'Deleting modules/pluck.dkm');
+  assert.equal(
+    eventText({ event: 'delete', path: 'services/fx.dks', why: 'unused-service' }),
+    'Deleted services/fx.dks (no module on the card needs it)',
+  );
+  assert.equal(
+    eventText({ event: 'keep', path: 'services/machines.dks', by: ['shot'] }),
+    'Kept services/machines.dks (shot needs it)',
+  );
+  assert.deepEqual(
+    deleteResultLines([
+      { event: 'delete', path: 'modules/pluck.dkm' },
+      { event: 'delete', path: 'services/fx.dks', why: 'unused-service' },
+      { event: 'keep', path: 'services/machines.dks', by: ['shot'] },
+    ]),
+    [
+      'Deleted modules/pluck.dkm',
+      'Deleted services/fx.dks (no module on the card needs it)',
+      'Kept services/machines.dks (shot needs it)',
+      'Restart the device to apply.',
+    ],
+  );
+  assert.deepEqual(deleteResultLines([]), []);
 });

@@ -1,12 +1,14 @@
 // The pure logic of the Transfer page (no DOM, no Tauri): the two lists, the install request, the progress bar and the texts.
-// Host tests: apps/web/tests/transfer.test.ts.
+// Host tests: apps/web/tests/transfer.wasm.test.ts.
 //
 // The page only puts files on the card (upload and verify) and restarts the device. Which modules the device loads is its own
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
 import { formatBytes } from '../modules/backend.ts';
-import { fit, fitsSet } from '../modules/fit.ts';
+import { fit, fitsSet, type Needs } from '../modules/fit.ts';
 import type { Group, TransferEvent, TransferRow, TransferView } from '../modules/dktransfer.ts';
+import { PROVIDER_MAX } from '../modules/services.ts';
+import type { ServiceRef, ServiceRefusal } from '../modules/services.ts';
 export type { Group, TransferEvent, TransferRow, TransferView };
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
 
@@ -59,6 +61,76 @@ export function installModules(view: TransferView, ticks: Set<string>): string[]
   return view.modules.filter((r) => r.id && ticks.has(rowKey(r))).map((r) => r.id as string);
 }
 
+/** The services of the ticked modules that can install: each service once, in the order of the rows (a refused module adds none). */
+function tickedServices(view: TransferView, ticks: Set<string>): ServiceRef[] {
+  const seen = new Set<string>();
+  const out: ServiceRef[] = [];
+  for (const r of view.modules) {
+    if (!r.id || !ticks.has(rowKey(r)) || r.service_refusal) continue;
+    for (const sv of r.services ?? [])
+      if (!seen.has(sv.stem)) {
+        seen.add(sv.stem);
+        out.push(sv);
+      }
+  }
+  return out;
+}
+
+/** The capacity needs of the ticked modules' services, each service once (a service without needs adds nothing). */
+function serviceNeeds(view: TransferView, ticks: Set<string>): Needs[] {
+  return tickedServices(view, ticks).flatMap((sv) => (sv.needs ? [sv.needs] : []));
+}
+
+/** The services to upload for the ticked modules, each once, dependencies first; a service that is on the device with the same hash is left out. */
+export function installServices(view: TransferView, ticks: Set<string>): { id: string; path: string; bytes: number }[] {
+  return tickedServices(view, ticks)
+    .filter((sv) => sv.state !== 'on device')
+    .map((sv) => ({ id: sv.stem, path: `services/${sv.stem}.dks`, bytes: sv.size }));
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** `pluck installs with: fx service, machines service`; null when the module needs no service. */
+export function installsWithLine(row: TransferRow): string | null {
+  const names = (row.services ?? []).map((sv) => sv.label);
+  return names.length ? `${row.label ?? row.name} installs with: ${names.join(', ')}` : null;
+}
+
+/** The text of a refused module: nothing was uploaded for it. */
+export function serviceRefusalText(r: ServiceRefusal): string {
+  switch (r.kind) {
+    case 'version':
+      return `${r.module} not installed. It needs ${r.service} service ${r.need}, the runtime has ${r.have}.`;
+    case 'too-many':
+      return `${r.module} not installed. The selection needs more than ${PROVIDER_MAX} services.`;
+    case 'fingerprint': {
+      const versions = r.runtime && r.builtFor ? ` (runtime ${r.runtime}, service built for ${r.builtFor})` : '';
+      return (
+        `${r.module} not installed. It needs the ${r.service} service, and this workbench has no ${r.service} service for the runtime on your device${versions}. ` +
+        `Nothing was uploaded for ${r.module}. Update the workbench, or flash a matching runtime from the Firmware page.`
+      );
+    }
+    default:
+      return `${r.module} not installed. It needs the ${r.service} service, which this workbench does not have.`;
+  }
+}
+
+/** The refusal of a delete of a service that a module on the card still needs. */
+export const neededServiceText = (service: string, by: string[]): string =>
+  `${service} service is needed by ${by.join(', ')}. Delete that module first (its services go with it).`;
+
+/** The lines after a delete job, from its `delete` and `keep` events, then the restart hint. */
+export function deleteResultLines(events: TransferEvent[]): string[] {
+  const lines: string[] = [];
+  for (const e of events) {
+    if (e.event === 'delete')
+      lines.push(`Deleted ${e.path}${e.why === 'unused-service' ? ' (no module on the card needs it)' : ''}`);
+    else if (e.event === 'keep') lines.push(`Kept ${e.path} (${e.by.join(', ')} needs it)`);
+  }
+  if (lines.length) lines.push('Restart the device to apply.');
+  return lines;
+}
+
 /** A readable line for a progress event of `dktransfer` (`install`, `restart`). */
 export function eventText(e: TransferEvent): string {
   const s = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
@@ -70,11 +142,17 @@ export function eventText(e: TransferEvent): string {
     case 'upload':
       return `Uploading ${e.path} (${e.bytes} bytes)`;
     case 'skip':
-      return `${e.id}: already on the card, not uploaded`;
+      return `${e.kind === 'service' ? (e.path ?? e.id) : e.id}: already on the card, not uploaded`;
     case 'progress':
-      return `Uploading ${e.id}`;
+      return `Uploading ${e.kind === 'service' ? (e.path ?? e.id) : e.id}`;
+    case 'refuse':
+      return serviceRefusalText(e.refusal);
+    case 'keep':
+      return `Kept ${e.path} (${e.by.join(', ')} needs it)`;
     case 'delete':
-      return `Deleting ${e.path}`;
+      return e.why === 'unused-service'
+        ? `Deleted ${e.path} (no module on the card needs it)`
+        : `Deleting ${e.path}`;
     case 'verify':
       return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
     case 'restart':
@@ -120,7 +198,44 @@ export function localTags(r: TransferRow): RowTag[] {
     out.push({ text: 'differs', title: 'A different build is on the device; Install replaces it', tone: 'warn' });
   const w = warningText(r);
   if (w) out.push({ text: "won't fit", title: w, tone: 'warn' });
+  const sr = r.service_refusal;
+  if (sr)
+    out.push({
+      text: 'service mismatch',
+      title:
+        sr.builtFor && sr.runtime
+          ? `${sr.service} service built for ${sr.builtFor}, device runtime is ${sr.runtime}`
+          : serviceRefusalText(sr),
+      tone: 'warn',
+    });
   return out;
+}
+
+/** The tag of a service sub row under a module: where the service stands on the device. */
+export function serviceTags(sv: ServiceRef): RowTag[] {
+  return [
+    {
+      text: sv.state,
+      tone: sv.state === 'on device' ? 'ok' : 'warn',
+      title: sv.state === 'differs' ? 'A different build is on the device; Install replaces it' : undefined,
+    },
+  ];
+}
+
+/** The line under the list for the ticked modules and their services: what is installed together and what needs uploading; '' without services. */
+export function fitLine(view: TransferView, ticks: Set<string>): string {
+  const svs = tickedServices(view, ticks);
+  if (!svs.length) return '';
+  const mods = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && !r.service_refusal);
+  const who =
+    mods.length === 1
+      ? `${mods[0].label ?? mods[0].name} and its ${plural(svs.length, 'service', 'services')}`
+      : `${mods.length} modules and their ${plural(svs.length, 'service', 'services')}`;
+  const up = svs.filter((sv) => sv.state !== 'on device');
+  const upText = up.length
+    ? `${plural(up.length, 'service needs', 'services need')} uploading (${up.map((sv) => sv.label).join(', ')}).`
+    : 'No service needs uploading.';
+  return `Fits together: ${who}. ${upText}`;
 }
 
 /**
@@ -129,20 +244,31 @@ export function localTags(r: TransferRow): RowTag[] {
  * device now is not counted. null when nothing is ticked or the device gave no CAPACITY.
  */
 export function tickedFit(view: TransferView, ticks: Set<string>): { text: string; tone: 'ok' | 'warn' } | null {
-  const rows = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && r.needs);
+  const rows = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && r.needs && !r.service_refusal);
   if (!rows.length || !view.capacity) return null;
-  const short = fitsSet(
-    rows.map((r) => r.needs!),
-    view.capacity,
-    true,
-  );
-  if (!short)
+  const nServices = tickedServices(view, ticks).length;
+  if (nServices > PROVIDER_MAX)
+    return { text: `The selection needs more than ${PROVIDER_MAX} services.`, tone: 'warn' };
+  const short = fitsSet([...rows.map((r) => r.needs!), ...serviceNeeds(view, ticks)], view.capacity, true);
+  if (!short) {
+    const withServices = nServices
+      ? rows.length === 1
+        ? ` and its ${plural(nServices, 'service', 'services')}`
+        : ` and their ${plural(nServices, 'service', 'services')}`
+      : '';
     return {
       text:
         rows.length === 1
-          ? 'The ticked module fits the device.'
-          : `The ${rows.length} ticked modules fit the device together.`,
+          ? `The ticked module${withServices} ${nServices ? 'fit' : 'fits'} the device.`
+          : `The ${rows.length} ticked modules${withServices} fit the device together.`,
       tone: 'ok',
+    };
+  }
+  // an index past the modules is one of their services (counted after the modules)
+  if (short.index >= rows.length)
+    return {
+      text: `The services of the ticked modules do not fit the device with them: ${short.describe}`,
+      tone: 'warn',
     };
   const row = rows[short.index] as (typeof rows)[number];
   const name = row.label ?? row.name;
@@ -158,9 +284,13 @@ export function tickedFit(view: TransferView, ticks: Set<string>): { text: strin
 /** The load of the device after the next boot with the ticked modules (`DSP 52% CPU 1%`, the fit rule's load line), or null when nothing is
  * ticked, the device gave no CAPACITY or the ticked modules do not fit together (tickedFit says which). */
 export function tickedLoad(view: TransferView, ticks: Set<string>): string | null {
-  const rows = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && r.needs);
-  if (!rows.length || !view.capacity) return null;
-  const answer = fit({ caps: view.capacity, needs: rows.map((r) => r.needs!), empty: true });
+  const rows = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && r.needs && !r.service_refusal);
+  if (!rows.length || !view.capacity || tickedServices(view, ticks).length > PROVIDER_MAX) return null;
+  const answer = fit({
+    caps: view.capacity,
+    needs: [...rows.map((r) => r.needs!), ...serviceNeeds(view, ticks)],
+    empty: true,
+  });
   return answer.set || !answer.line ? null : answer.line;
 }
 
@@ -175,7 +305,13 @@ export function deviceTags(r: TransferRow): RowTag[] {
       title: r.not_loaded,
       tone: 'warn',
     });
-  if (!r.id)
+  if (r.needed_by?.length)
+    out.push({
+      text: `needed by ${r.needed_by.join(', ')}`,
+      title: 'A module on the card needs this service; delete that module first',
+      tone: 'dim',
+    });
+  else if (!r.id)
     out.push({
       text: 'not in library',
       title: 'Only on the device: no built module of your library matches',
@@ -194,6 +330,8 @@ export type Verified = Record<string, 'ok' | 'failed'>;
 export type StepState = 'wait' | 'build' | 'upload' | 'verify' | 'ok' | 'failed';
 export interface ModuleStep {
   id: string;
+  /** 'service' for a service file (those steps come first); absent: a module. */
+  kind?: 'service' | 'module';
   state: StepState;
   /** The store path and the file size, known from the `upload` event (the size of the list's row before). */
   path?: string;
@@ -207,12 +345,23 @@ export interface Progress {
   /** A restart has one step; an install has none. */
   restart: StepState | 'none';
   message: string;
+  /** Modules the install refused (a service check failed): not uploaded, not steps. */
+  refused?: ServiceRefusal[];
 }
 
-/** `sizes`: the file size of each module from the list, so that the bar has its weights before the uploads start. */
-export function startProgress(ids: string[], restart: boolean, sizes: Record<string, number> = {}): Progress {
+/** `sizes`: the file size of each module from the list, so that the bar has its weights before the uploads start. `services`: the service
+ * files to upload (installServices); their steps come first, as the install uploads services before modules. */
+export function startProgress(
+  ids: string[],
+  restart: boolean,
+  sizes: Record<string, number> = {},
+  services: { id: string; path: string; bytes: number }[] = [],
+): Progress {
   return {
-    modules: ids.map((id) => ({ id, state: 'wait', bytes: sizes[id] ?? 0, sent: 0 })),
+    modules: [
+      ...services.map((sv): ModuleStep => ({ id: sv.id, kind: 'service', state: 'wait', path: sv.path, bytes: sv.bytes, sent: 0 })),
+      ...ids.map((id): ModuleStep => ({ id, state: 'wait', bytes: sizes[id] ?? 0, sent: 0 })),
+    ],
     restart: restart ? 'wait' : 'none',
     message: '',
   };
@@ -225,8 +374,16 @@ const percent = (sent: number, bytes: number) => (bytes ? Math.min(100, Math.rou
 export function applyEvent(p: Progress, e: TransferEvent): Progress {
   const next: Progress = { ...p, modules: p.modules.map((m) => ({ ...m })) };
   if (e.event !== 'result') next.message = eventText(e);
-  const mod = (id: unknown) => next.modules.find((m) => m.id === id);
+  const service = 'kind' in e && e.kind === 'service';
+  const mod = (id: unknown) =>
+    next.modules.find((m) => (m.kind === 'service') === service && (m.id === id || (service && m.path === (e as { path?: unknown }).path)));
   switch (e.event) {
+    case 'refuse': {
+      // the module is not uploaded: it leaves the steps, the others go on
+      next.modules = next.modules.filter((m) => m.kind === 'service' || m.id !== e.refusal.module);
+      next.refused = [...(next.refused ?? []), e.refusal];
+      break;
+    }
     case 'build': {
       const m = mod(e.id);
       if (m) m.state = 'build';
@@ -298,7 +455,24 @@ export function progressFraction(p: Progress): number {
 
 /** Did a step fail? (the bar turns red) */
 export function progressFailed(p: Progress): boolean {
-  return p.restart === 'failed' || p.modules.some((m) => m.state === 'failed');
+  return p.restart === 'failed' || p.modules.some((m) => m.state === 'failed') || allRefused(p);
+}
+
+/** Was every ticked module refused (so that nothing was uploaded)? */
+export const allRefused = (p: Progress): boolean =>
+  !!p.refused?.length && !p.modules.some((m) => m.kind !== 'service');
+
+/** The lines after an install that had refusals: each refused module named with its reason, then `x was installed.` for the others
+ * (`ids`: the ticked module ids). Empty when nothing was refused. */
+export function installResultLines(p: Progress, ids: string[]): string[] {
+  const refused = p.refused ?? [];
+  if (!refused.length) return [];
+  const names = new Set(refused.map((r) => r.module));
+  const leaf = (id: string) => id.split('/').pop() as string;
+  return [
+    ...refused.map(serviceRefusalText),
+    ...ids.filter((id) => !names.has(id) && !names.has(leaf(id))).map((id) => `${leaf(id)} was installed.`),
+  ];
 }
 
 /** What the bar along the bottom shows, the same for an install, a delete, a restart and a samples upload. */
@@ -322,7 +496,8 @@ export function modulesBar(p: Progress): BarInfo {
     total += m.bytes;
     sent += m.state === 'ok' ? m.bytes : m.state === 'upload' || m.state === 'verify' ? m.sent : 0;
   }
-  return { fraction: progressFraction(p), failed: progressFailed(p), message: p.message || 'Starting…', sent, total };
+  const message = allRefused(p) ? 'Install failed: no files uploaded' : p.message || 'Starting…';
+  return { fraction: progressFraction(p), failed: progressFailed(p), message, sent, total };
 }
 
 /** What one file's row shows while an install runs: its upload bar, "verifying", or the result. */
@@ -349,7 +524,7 @@ export function onDeviceWithPending(view: TransferView, p: Progress | undefined)
   const have = new Set(rows.map((r) => r.path));
   for (const m of p?.modules ?? []) {
     if (!m.path || have.has(m.path)) continue;
-    const repo = view.modules.find((r) => r.id === m.id);
+    const repo = m.kind === 'service' ? undefined : view.modules.find((r) => r.id === m.id);
     rows.push({
       ...(repo ?? { group: 'Tools', test: false, name: m.id, version: null }),
       id: m.id,

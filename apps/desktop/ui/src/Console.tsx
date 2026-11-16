@@ -990,7 +990,7 @@ export default function Console(props: { host: Host }) {
             </div>
           </div>
           <Show when={page() === 'transfer'}>
-            <TransferPage />
+            <TransferPage onFlash={() => setPage('firmware')} />
           </Show>
           <Show when={page() === 'remote'}>
             <RemotePage fallbackDevice={device()} emulatorLoaded={!!status()} host={props.host} />

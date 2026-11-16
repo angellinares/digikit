@@ -24,17 +24,36 @@ export interface TransferApp {
   /** The Transfer logic over the selected target (`transferBackend`) and the built modules (`loadLibrary`). */
   backend: TransferBackendApp['transferBackend'];
   loadLibrary: TransferBackendApp['loadLibrary'];
+  /** The service-aware install inputs for a device, or none when the app has no binder (`transferBackend.installDeps`). */
+  installDeps: TransferBackendApp['installDeps'];
 }
 
 export function createTransferApp(
   env: TransferEnv,
-  deps: { storage: KeyValue; sessions: SessionHub; needs?: BackendDeps['needs'] },
+  deps: {
+    storage: KeyValue;
+    sessions: SessionHub;
+    needs?: BackendDeps['needs'];
+    binder?: BackendDeps['binder'];
+    firmwareHash?: BackendDeps['firmwareHash'];
+    runtimeIdentity?: BackendDeps['runtimeIdentity'];
+    runtimeServices?: BackendDeps['runtimeServices'];
+  },
 ): TransferApp {
   const { storage, sessions } = deps;
   const connection = createConnection(env);
   const jobs = createJobs();
   const target = createTarget({ env, storage, sessions, connection });
   const state = createTransferState({ env, storage, jobs });
-  const { transferBackend, loadLibrary } = createTransferBackend({ env, target, connection, needs: deps.needs });
-  return { env, storage, connection, jobs, target, state, backend: transferBackend, loadLibrary };
+  const { transferBackend, loadLibrary, installDeps } = createTransferBackend({
+    env,
+    target,
+    connection,
+    needs: deps.needs,
+    binder: deps.binder,
+    firmwareHash: deps.firmwareHash,
+    runtimeIdentity: deps.runtimeIdentity,
+    runtimeServices: deps.runtimeServices,
+  });
+  return { env, storage, connection, jobs, target, state, backend: transferBackend, loadLibrary, installDeps };
 }

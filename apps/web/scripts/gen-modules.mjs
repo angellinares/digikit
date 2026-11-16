@@ -232,7 +232,23 @@ export function shipModules(out, root = repoRoot) {
       source: files,
     });
   }
-  const index = { modules };
+  // the unbound .dks services (dist/modules/<dev>/*.dks): the Transfer page binds them to the user's firmware
+  const services = {};
+  const servicesRoot = join(root, 'dist', 'modules');
+  if (existsSync(servicesRoot)) {
+    for (const dev of readdirSync(servicesRoot, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+      const names = readdirSync(join(servicesRoot, dev.name))
+        .filter((f) => f.endsWith('.dks'))
+        .sort();
+      for (const name of names) {
+        const bytes = readFileSync(join(servicesRoot, dev.name, name));
+        mkdirSync(join(out, dev.name), { recursive: true });
+        writeFileSync(join(out, dev.name, name), bytes);
+        (services[dev.name] ??= []).push({ file: `${dev.name}/${name}`, size: bytes.length, sha256: sha256(bytes) });
+      }
+    }
+  }
+  const index = { modules, services };
   writeFileSync(join(out, 'index.json'), JSON.stringify(index, null, 1));
   return index;
 }
