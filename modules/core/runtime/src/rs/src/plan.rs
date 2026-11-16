@@ -5,11 +5,14 @@
 //! loader reports that error itself; the planner accepts the module). Output (`Plan`): one `Verdict` per module (`dkrt_abi::plan`: accepted, or refused with a
 //! `Reason`) and the order to load them in.
 //!
-//! - Order: a module that needs a service another module exports (`NEEDS`, `EXPORTS`), or whose keys are for a kind another module owns (`KEYS`, `KINDS`),
+//! - Providers (R12-2): the service files (`.dks`) the boot found for the hard needs of the selection come in their own arrays (`PROVIDER_MAX`), apart from
+//!   the module arrays: a provider never takes a module record. All providers are planned and load before the modules (a module never provides a service),
+//!   in dependency order among themselves.
+//! - Order: a module that needs a service a provider provides (`NEEDS`, `PROVIDES`), or whose keys are for a kind another module owns (`KEYS`, `KINDS`),
 //!   loads after that module; otherwise the order is the selection's (the module id's position). A cycle refuses its modules (`NeedMissing`).
-//! - Needs: a hard need of a service that is neither one of the runtime's (`[handle] services`) nor exported by an earlier module is refused (`NeedMissing`);
-//!   a need of a newer version than the runtime is refused (`NeedVersion`). A service of the image (core/ui and the like) that is not there is the
-//!   loader's `E_IMPORT`, with the missing module's name: the planner does not know the image.
+//! - Needs: a hard need of a service that is neither one of the runtime's (`[handle] services`) nor provided by an accepted provider is refused (`NeedMissing`);
+//!   a need of a newer version than the runtime, or than the provider provides, is refused (`NeedVersion`). A service of the image (core/ui and the like) that
+//!   is not there is the loader's `E_IMPORT`, with the missing module's name: the planner does not know the image.
 //! - Exclusive: one owner for each kind (a service of the table, or a module's `KINDS`), slot and hook site; keys of a *generic* kind (`[records.kinds]`
 //!   `generic`) are unique across the selection. The keys of the typed kinds (machines, effects) keep their own rules: a machine key twice takes a fresh type
 //!   number, an effect id twice is `E_FX_ID_DUP` at the load.
@@ -21,7 +24,7 @@ use dkneeds::keys::{name_hash, tag, Keys};
 use dkrt_abi::plan::{Reason, Verdict};
 use crate::handlers::ServiceTable;
 use dkrt_fit as fit;
-use dkrt_sdk::{DkrtCap, CAP_MAX, SEL_MAX};
+use dkrt_sdk::{DkrtCap, CAP_MAX, PROVIDER_MAX, SEL_MAX};
 
 /// What the planner is told about the runtime it plans for.
 pub struct Env<'a> {
@@ -41,9 +44,15 @@ pub struct Plan {
     pub order: [u8; SEL_MAX],
     /// The DSP load of the accepted modules (`used`) and the largest per-voice machine cost among them (`largest`): the DSP entry of the capacity after the plan.
     pub dsp_load: (u32, u32),
+    /// The number of providers planned (at most `PROVIDER_MAX`).
+    pub np: usize,
+    /// The verdict of each provider, by provider index.
+    pub provider_verdicts: [Verdict; PROVIDER_MAX],
+    /// The provider indices in load order; all of them load before the modules (a refused provider is in it too).
+    pub provider_order: [u8; PROVIDER_MAX],
 }
 
-fn is_runtime_service(h: u32, services: &ServiceTable) -> bool {
+pub(crate) fn is_runtime_service(h: u32, services: &ServiceTable) -> bool {
     if h == name_hash("runtime") {
         return true;
     }
@@ -76,8 +85,16 @@ fn has_word(t: &Keys, tg: u16, w: u32) -> bool {
     false
 }
 
-fn exports(t: &Keys, h: u32) -> bool {
-    has_word(t, tag::EXPORTS, h)
+/// The version of service `h` that entry `t` provides (`PROVIDES`), if it does.
+fn provided_version(t: &Keys, h: u32) -> Option<u32> {
+    let mut i = 0;
+    while let Some(x) = t.words(tag::PROVIDES, i) {
+        if x.0 == h {
+            return Some(x.1);
+        }
+        i += 1;
+    }
+    None
 }
 
 fn provides_kind(t: &Keys, kind: u32) -> bool {
@@ -107,11 +124,11 @@ fn is_generic(kind: u32) -> bool {
     false
 }
 
-/// Whether module `j` has to load after module `i`: it needs a service `i` exports, or has keys for a kind `i` owns.
+/// Whether entry `j` has to load after entry `i`: it needs a service `i` provides, or has keys for a kind `i` owns.
 fn after(j: &Keys, i: &Keys) -> bool {
     let mut k = 0;
     while let Some(n) = j.words(tag::NEEDS, k) {
-        if n.2 & 1 != 0 && exports(i, n.0) {
+        if n.2 & 1 != 0 && provided_version(i, n.0).is_some() {
             return true;
         }
         k += 1;
@@ -185,7 +202,7 @@ fn order_of(mods: &[Option<Keys>], order: &mut [u8; SEL_MAX], cyclic: &mut [bool
 use core::ptr::{addr_of, addr_of_mut};
 
 /// The most bytes of a header table the boot planner keeps (a module with eight machines, three effects and nine needs has about 260; a larger table is not planned and the loader decides).
-const TABLE_MAX: usize = 384;
+pub(crate) const TABLE_MAX: usize = 384;
 static mut TABLES: [[u8; TABLE_MAX]; SEL_MAX] = [[0; TABLE_MAX]; SEL_MAX];
 /// Bytes of the table kept for selection index `k`; 0: none (the file is missing, torn, of the old format or has a larger table).
 static mut TABLE_LEN: [usize; SEL_MAX] = [0; SEL_MAX];
@@ -266,13 +283,9 @@ fn needs_of_uses(t: &Keys) -> fit::Needs {
     }
 }
 
-/// The verdict of module `j` against the accepted modules `done` (the ones before it in the order).
-fn judge(env: &Env, mods: &[Option<Keys>], j: usize, done: &[bool; SEL_MAX], caps: &mut [DkrtCap]) -> Verdict {
-    let t = match &mods[j] {
-        Some(t) => t,
-        None => return Verdict::Accepted,
-    };
-    // needs
+/// The refusal for the hard needs of entry `t`, if one is not met: a service of the runtime (at most the runtime's version) or one an accepted provider
+/// (`pdone`, not `skip`: the provider's own index, `usize::MAX` for a module) provides at the needed version or newer.
+fn check_needs(env: &Env, t: &Keys, provs: &[Option<Keys>], pdone: &[bool; PROVIDER_MAX], skip: usize) -> Option<Reason> {
     let mut ni = 0;
     while let Some(n) = t.words(tag::NEEDS, ni) {
         ni += 1;
@@ -282,38 +295,107 @@ fn judge(env: &Env, mods: &[Option<Keys>], j: usize, done: &[bool; SEL_MAX], cap
         }
         if is_runtime_service(service, &env.services) {
             if min_version > env.runtime {
-                return Verdict::Refused(Reason::NeedVersion);
+                return Some(Reason::NeedVersion);
             }
             continue;
         }
         let mut found = false;
+        let mut met = false;
         let mut i = 0;
-        while i < mods.len() {
-            if i != j && done[i] {
-                if let Some(ti) = &mods[i] {
-                    found |= exports(ti, service);
+        while i < provs.len() {
+            if i != skip && pdone[i] {
+                if let Some(ti) = &provs[i] {
+                    if let Some(v) = provided_version(ti, service) {
+                        found = true;
+                        if v >= min_version {
+                            met = true;
+                        }
+                    }
                 }
             }
             i += 1;
         }
         if !found {
-            return Verdict::Refused(Reason::NeedMissing);
+            return Some(Reason::NeedMissing);
+        }
+        if !met {
+            return Some(Reason::NeedVersion);
         }
     }
-    // the kinds the module owns, the slots and hook sites it takes: one owner each
+    None
+}
+
+/// Fit `t`'s uses against `caps` and take them. A provider takes no module record: the module and selection entries are left as they were.
+fn take_fit(t: &Keys, caps: &mut [DkrtCap], record: bool) -> Option<u8> {
+    let mut saved = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; 2];
+    let mut at = [usize::MAX; 2];
+    if !record {
+        let mut s = 0;
+        let mut c = 0;
+        while c < caps.len() {
+            let k = caps[c].kind;
+            if (k == dkrt_sdk::proto::CAPK_MODULES as u32 || k == dkrt_sdk::proto::CAPK_SELECTION as u32) && s < 2 {
+                saved[s] = caps[c];
+                at[s] = c;
+                s += 1;
+                // room for the record the fit function counts
+                caps[c].limit = caps[c].limit.saturating_add(1);
+            }
+            c += 1;
+        }
+    }
+    let n = needs_of_uses(t);
+    let short = fit::fits_now(&n, caps).map(|s| s.kind);
+    if short.is_none() {
+        fit::take(&n, caps);
+    }
+    let mut s = 0;
+    while s < 2 {
+        if at[s] != usize::MAX {
+            caps[at[s]] = saved[s];
+        }
+        s += 1;
+    }
+    short
+}
+
+/// The first kind, slot or hook site of `t` that another owner has: a kind of the runtime's table, or a kind, slot or hook site of an accepted module (`done`, not
+/// index `skip_m`) or of an accepted provider (`pdone`, not index `skip_p`). One rule for modules and providers (a service module's KINDS, SLOTS and HOOKS).
+#[allow(clippy::too_many_arguments)]
+fn owner_clash(
+    env: &Env,
+    t: &Keys,
+    mods: &[Option<Keys>],
+    done: &[bool; SEL_MAX],
+    skip_m: usize,
+    provs: &[Option<Keys>],
+    pdone: &[bool; PROVIDER_MAX],
+    skip_p: usize,
+) -> Option<u32> {
     let mut ki = 0;
     while let Some(d) = t.words(tag::KINDS, ki) {
         ki += 1;
         let kind = d.0;
         if env.services.owner(kind).is_some() {
-            return Verdict::Refused(Reason::DuplicateOwner(kind));
+            return Some(kind);
         }
         let mut i = 0;
         while i < mods.len() {
-            if i != j && done[i] {
+            if i != skip_m && done[i] {
                 if let Some(ti) = &mods[i] {
                     if provides_kind(ti, kind) {
-                        return Verdict::Refused(Reason::DuplicateOwner(kind));
+                        return Some(kind);
+                    }
+                }
+            }
+            i += 1;
+        }
+        let mut i = 0;
+        while i < provs.len() {
+            if i != skip_p && pdone[i] {
+                if let Some(ti) = &provs[i] {
+                    if provides_kind(ti, kind) {
+                        return Some(kind);
                     }
                 }
             }
@@ -322,14 +404,88 @@ fn judge(env: &Env, mods: &[Option<Keys>], j: usize, done: &[bool; SEL_MAX], cap
     }
     let mut i = 0;
     while i < mods.len() {
-        if i != j && done[i] {
+        if i != skip_m && done[i] {
             if let Some(ti) = &mods[i] {
                 if let Some(site) = shared(t, ti, tag::SLOTS).or_else(|| shared(t, ti, tag::HOOKS)) {
-                    return Verdict::Refused(Reason::DuplicateOwner(site));
+                    return Some(site);
                 }
             }
         }
         i += 1;
+    }
+    let mut i = 0;
+    while i < provs.len() {
+        if i != skip_p && pdone[i] {
+            if let Some(ti) = &provs[i] {
+                if let Some(site) = shared(t, ti, tag::SLOTS).or_else(|| shared(t, ti, tag::HOOKS)) {
+                    return Some(site);
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The verdict of provider `j` against the accepted providers `pdone` (the ones before it in the order).
+fn judge_provider(env: &Env, provs: &[Option<Keys>], j: usize, pdone: &[bool; PROVIDER_MAX], caps: &mut [DkrtCap]) -> Verdict {
+    let t = match &provs[j] {
+        Some(t) => t,
+        None => return Verdict::Accepted,
+    };
+    if let Some(r) = check_needs(env, t, provs, pdone, j) {
+        return Verdict::Refused(r);
+    }
+    // one owner for each service
+    let mut k = 0;
+    while let Some(x) = t.words(tag::PROVIDES, k) {
+        k += 1;
+        let h = x.0;
+        if is_runtime_service(h, &env.services) {
+            return Verdict::Refused(Reason::DuplicateOwner(h));
+        }
+        let mut i = 0;
+        while i < provs.len() {
+            if i != j && pdone[i] {
+                if let Some(ti) = &provs[i] {
+                    if provided_version(ti, h).is_some() {
+                        return Verdict::Refused(Reason::DuplicateOwner(h));
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+    if let Some(site) = owner_clash(env, t, &[], &[false; SEL_MAX], usize::MAX, provs, pdone, j) {
+        return Verdict::Refused(Reason::DuplicateOwner(site));
+    }
+    match take_fit(t, caps, false) {
+        Some(kind) => Verdict::Refused(Reason::Fit(kind)),
+        None => Verdict::Accepted,
+    }
+}
+
+/// The verdict of module `j` against the accepted providers `pdone` and the accepted modules `done` (the ones before it in the order).
+fn judge(
+    env: &Env,
+    mods: &[Option<Keys>],
+    provs: &[Option<Keys>],
+    j: usize,
+    done: &[bool; SEL_MAX],
+    pdone: &[bool; PROVIDER_MAX],
+    caps: &mut [DkrtCap],
+) -> Verdict {
+    let t = match &mods[j] {
+        Some(t) => t,
+        None => return Verdict::Accepted,
+    };
+    // needs
+    if let Some(r) = check_needs(env, t, provs, pdone, usize::MAX) {
+        return Verdict::Refused(r);
+    }
+    // the kinds the module owns, the slots and hook sites it takes: one owner each
+    if let Some(site) = owner_clash(env, t, mods, done, j, provs, pdone, usize::MAX) {
+        return Verdict::Refused(Reason::DuplicateOwner(site));
     }
     // the keys: an owner for the kind, and no key twice for a generic kind
     let mut gi = 0;
@@ -346,6 +502,15 @@ fn judge(env: &Env, mods: &[Option<Keys>], j: usize, done: &[bool; SEL_MAX], cap
             i += 1;
         }
         owned |= provides_kind(t, kind);
+        let mut p = 0;
+        while p < provs.len() {
+            if pdone[p] {
+                if let Some(tp) = &provs[p] {
+                    owned |= provides_kind(tp, kind);
+                }
+            }
+            p += 1;
+        }
         if !owned {
             return Verdict::Refused(Reason::UnownedKind(kind));
         }
@@ -369,29 +534,56 @@ fn judge(env: &Env, mods: &[Option<Keys>], j: usize, done: &[bool; SEL_MAX], cap
         }
     }
     // fit
-    let n = needs_of_uses(t);
-    if let Some(s) = fit::fits_now(&n, caps) {
-        return Verdict::Refused(Reason::Fit(s.kind));
+    match take_fit(t, caps, true) {
+        Some(kind) => Verdict::Refused(Reason::Fit(kind)),
+        None => Verdict::Accepted,
     }
-    fit::take(&n, caps);
-    Verdict::Accepted
 }
 
-/// Plan a selection: `mods[k]` is the header table of selection index `k`.
+/// Plan a selection without providers: `mods[k]` is the header table of selection index `k`.
 pub fn plan(env: &Env, mods: &[Option<Keys>]) -> Plan {
+    plan_with(env, mods, &[])
+}
+
+/// Plan a selection with its providers: `provs[k]` is the header table of provider index `k` (at most `PROVIDER_MAX`). The providers are judged first, in
+/// dependency order, then the modules.
+pub fn plan_with(env: &Env, mods: &[Option<Keys>], provs: &[Option<Keys>]) -> Plan {
     let n = mods.len().min(SEL_MAX);
     let mods = &mods[..n];
-    let mut p = Plan { n, verdicts: [Verdict::Accepted; SEL_MAX], order: [0; SEL_MAX], dsp_load: (0, 0) };
-    let mut cyclic = [false; SEL_MAX];
-    order_of(mods, &mut p.order, &mut cyclic);
+    let np = provs.len().min(PROVIDER_MAX);
+    let provs = &provs[..np];
+    let mut p = Plan {
+        n,
+        verdicts: [Verdict::Accepted; SEL_MAX],
+        order: [0; SEL_MAX],
+        dsp_load: (0, 0),
+        np,
+        provider_verdicts: [Verdict::Accepted; PROVIDER_MAX],
+        provider_order: [0; PROVIDER_MAX],
+    };
     let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
     let k = env.caps.len().min(CAP_MAX);
     caps[..k].copy_from_slice(&env.caps[..k]);
+    let mut pdone = [false; PROVIDER_MAX];
+    let mut porder = [0u8; SEL_MAX];
+    let mut pcyclic = [false; SEL_MAX];
+    order_of(provs, &mut porder, &mut pcyclic);
+    let mut pat = 0;
+    while pat < np {
+        let j = porder[pat] as usize;
+        p.provider_order[pat] = j as u8;
+        let v = if pcyclic[j] { Verdict::Refused(Reason::NeedMissing) } else { judge_provider(env, provs, j, &pdone, &mut caps[..k]) };
+        p.provider_verdicts[j] = v;
+        pdone[j] = v.is_accepted();
+        pat += 1;
+    }
+    let mut cyclic = [false; SEL_MAX];
+    order_of(mods, &mut p.order, &mut cyclic);
     let mut done = [false; SEL_MAX];
     let mut at = 0;
     while at < n {
         let j = p.order[at] as usize;
-        let v = if cyclic[j] { Verdict::Refused(Reason::NeedMissing) } else { judge(env, mods, j, &done, &mut caps[..k]) };
+        let v = if cyclic[j] { Verdict::Refused(Reason::NeedMissing) } else { judge(env, mods, provs, j, &done, &pdone, &mut caps[..k]) };
         p.verdicts[j] = v;
         done[j] = v.is_accepted();
         at += 1;
@@ -409,7 +601,7 @@ pub fn plan(env: &Env, mods: &[Option<Keys>]) -> Plan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dkneeds::keys::{write_table, KeyGroup, KindDecl, Need, Pair, Table, Use};
+    use dkneeds::keys::{write_table, KeyGroup, KindDecl, Need, Pair, Slot, Table, Use};
     use dkneeds::{KIND_EFFECT, KIND_MACHINE, RES_DSP_COST_FX, RES_DSP_COST_VOICE, RES_MACHINE_ROWS};
     use crate::core_api::{CoreApi, REAL_CORE};
     use dkrt_abi::service::{Service, ServiceRow};
@@ -451,7 +643,17 @@ mod tests {
         plan(&env, &keys)
     }
 
-    const KEEP: Table<'static> = Table { needs: &[], uses: &[], keys: &[], kinds: &[], slots: &[], hooks: &[], exports: &[], resources: &[] };
+    fn run_p(mods: &[Option<Vec<u8>>], provs: &[Option<Vec<u8>>]) -> Plan {
+        let c = caps();
+        let env = Env { services: ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE }, runtime: 0x000800, caps: &c };
+        fn parse(tables: &[Option<Vec<u8>>]) -> Vec<Option<Keys<'_>>> {
+            tables.iter().map(|t| t.as_ref().map(|b| Keys::parse(b).unwrap())).collect()
+        }
+        plan_with(&env, &parse(mods), &parse(provs))
+    }
+
+    const KEEP: Table<'static> =
+        Table { needs: &[], uses: &[], keys: &[], kinds: &[], slots: &[], hooks: &[], exports: &[], resources: &[], provides: &[], bind: &[] };
 
     #[test]
     fn a_module_with_no_table_and_a_module_with_nothing_to_share_are_accepted_in_selection_order() {
@@ -461,15 +663,10 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_loads_before_the_modules_that_need_it_and_a_need_nobody_provides_is_refused() {
+    fn a_module_need_is_refused_when_nothing_provides_it_and_the_runtime_services_are_always_there() {
         let svc = name_hash("lfo_bus");
         let consumer = Table { needs: &[Need { service: svc, min_version: 0x000800, hard: true }], ..KEEP };
-        let provider = Table { exports: &[Pair { a: svc, b: 0x40 }], ..KEEP };
-        // consumer first in the selection, provider second: the provider loads first
-        let p = run(&[Some(bytes(&consumer)), Some(bytes(&provider))]);
-        assert_eq!(p.order[..2], [1, 0]);
-        assert_eq!(p.verdicts[..2], [Verdict::Accepted; 2]);
-        // without the provider the need is missing; an optional need is not looked at
+        // without a provider the need is missing; an optional need is not looked at
         let p = run(&[Some(bytes(&consumer))]);
         assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
         assert_eq!(p.verdicts[0].result(), E_MISSING);
@@ -480,11 +677,112 @@ mod tests {
         assert_eq!(run(&[Some(bytes(&ok))]).verdicts[0], Verdict::Accepted);
         let newer = Table { needs: &[Need { service: name_hash("runtime"), min_version: 0x000801, hard: true }], ..KEEP };
         assert_eq!(run(&[Some(bytes(&newer))]).verdicts[0].result(), E_CONTRACT);
-        // two modules that need each other cannot load: both are refused
-        let a = Table { needs: &[Need { service: 1, min_version: 0, hard: true }], exports: &[Pair { a: 2, b: 0 }], ..KEEP };
-        let b = Table { needs: &[Need { service: 2, min_version: 0, hard: true }], exports: &[Pair { a: 1, b: 0 }], ..KEEP };
-        let p = run(&[Some(bytes(&a)), Some(bytes(&b))]);
-        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing); 2]);
+    }
+
+    fn need(service: u32, min_version: u32) -> Need {
+        Need { service, min_version, hard: true }
+    }
+
+    #[test]
+    fn a_provider_is_ordered_before_its_dependents() {
+        let svc = name_hash("lfo_bus");
+        let consumer = Table { needs: &[need(svc, 0x000100)], ..KEEP };
+        let provider = Table { provides: &[Pair { a: svc, b: 0x000100 }], ..KEEP };
+        let p = run_p(&[Some(bytes(&consumer))], &[Some(bytes(&provider))]);
+        assert_eq!((p.n, p.np), (1, 1));
+        assert_eq!(p.verdicts[0], Verdict::Accepted);
+        assert_eq!(p.provider_verdicts[0], Verdict::Accepted);
+        // a provider that needs a provider: the one needed is first, whatever the find order was
+        let (a, b) = (name_hash("a"), name_hash("b"));
+        let top = Table { needs: &[need(b, 0)], provides: &[Pair { a, b: 0 }], ..KEEP };
+        let base = Table { provides: &[Pair { a: b, b: 0 }], ..KEEP };
+        let user = Table { needs: &[need(a, 0)], ..KEEP };
+        let p = run_p(&[Some(bytes(&user))], &[Some(bytes(&top)), Some(bytes(&base))]);
+        assert_eq!(p.provider_order[..2], [1, 0]);
+        assert_eq!(p.provider_verdicts[..2], [Verdict::Accepted; 2]);
+        assert_eq!(p.verdicts[0], Verdict::Accepted);
+        // providers that need each other cannot load, and the module that needs one is missing its service
+        let x = Table { needs: &[need(2, 0)], provides: &[Pair { a: 1, b: 0 }], ..KEEP };
+        let y = Table { needs: &[need(1, 0)], provides: &[Pair { a: 2, b: 0 }], ..KEEP };
+        let user = Table { needs: &[need(1, 0)], ..KEEP };
+        let p = run_p(&[Some(bytes(&user))], &[Some(bytes(&x)), Some(bytes(&y))]);
+        assert_eq!(p.provider_verdicts[..2], [Verdict::Refused(Reason::NeedMissing); 2]);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+    }
+
+    #[test]
+    fn a_need_with_no_provider_is_missing() {
+        let consumer = Table { needs: &[need(name_hash("lfo_bus"), 0)], ..KEEP };
+        let other = Table { provides: &[Pair { a: name_hash("other"), b: 0 }], ..KEEP };
+        let p = run_p(&[Some(bytes(&consumer))], &[Some(bytes(&other))]);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+        assert_eq!(p.verdicts[0].result(), E_MISSING);
+    }
+
+    #[test]
+    fn a_provider_older_than_the_need_is_a_contract_error() {
+        let svc = name_hash("lfo_bus");
+        let provider = Table { provides: &[Pair { a: svc, b: 0x010000 }], ..KEEP };
+        let newer = Table { needs: &[need(svc, 0x010100)], ..KEEP };
+        let same = Table { needs: &[need(svc, 0x010000)], ..KEEP };
+        let p = run_p(&[Some(bytes(&newer)), Some(bytes(&same))], &[Some(bytes(&provider))]);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedVersion));
+        assert_eq!(p.verdicts[0].result(), E_CONTRACT);
+        assert_eq!(p.verdicts[1], Verdict::Accepted);
+    }
+
+    #[test]
+    fn two_providers_of_one_service_have_one_owner() {
+        let svc = name_hash("lfo_bus");
+        let provider = Table { provides: &[Pair { a: svc, b: 0 }], ..KEEP };
+        let p = run_p(&[], &[Some(bytes(&provider)), Some(bytes(&provider))]);
+        assert_eq!(p.provider_verdicts[..2], [Verdict::Accepted, Verdict::Refused(Reason::DuplicateOwner(svc))]);
+        assert_eq!(p.provider_verdicts[1].result(), E_PLAN_OWNER);
+        // a service of the runtime is not for a provider to take
+        let rt = Table { provides: &[Pair { a: name_hash("runtime"), b: 0 }], ..KEEP };
+        assert_eq!(run_p(&[], &[Some(bytes(&rt))]).provider_verdicts[0], Verdict::Refused(Reason::DuplicateOwner(name_hash("runtime"))));
+    }
+
+    #[test]
+    fn the_uses_of_a_provider_count_against_fit_without_a_module_record() {
+        let three = Table { uses: &[Use { resource: RES_MACHINE_ROWS, count: 3 }], ..KEEP };
+        let two = Table { uses: &[Use { resource: RES_MACHINE_ROWS, count: 2 }], ..KEEP };
+        let three_p = Table { provides: &[Pair { a: 6, b: 0 }], ..three };
+        // 4 machine rows: the provider takes 3, so the module of 2 does not fit
+        let p = run_p(&[Some(bytes(&two))], &[Some(bytes(&three_p))]);
+        assert_eq!(p.provider_verdicts[0], Verdict::Accepted);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::Fit(CAPK_MACHINE_ROWS)));
+        // a provider over the capacity is refused
+        let five = Table { uses: &[Use { resource: RES_MACHINE_ROWS, count: 5 }], provides: &[Pair { a: 7, b: 0 }], ..KEEP };
+        let p = run_p(&[], &[Some(bytes(&five))]);
+        assert_eq!(p.provider_verdicts[0], Verdict::Refused(Reason::Fit(CAPK_MACHINE_ROWS)));
+        // the providers take no module record: six providers and eight modules fit the eight records
+        let provs: Vec<Option<Vec<u8>>> = (0..6u32).map(|k| Some(bytes(&Table { provides: &[Pair { a: 100 + k, b: 0 }], ..KEEP }))).collect();
+        let mods: Vec<Option<Vec<u8>>> = (0..8).map(|_| Some(bytes(&KEEP))).collect();
+        let p = run_p(&mods, &provs);
+        assert_eq!(p.provider_verdicts[..6], [Verdict::Accepted; 6]);
+        assert_eq!(p.verdicts[..8], [Verdict::Accepted; 8]);
+    }
+
+    #[test]
+    fn module_exports_no_longer_meet_a_need() {
+        let svc = name_hash("lfo_bus");
+        let consumer = Table { needs: &[need(svc, 0)], ..KEEP };
+        let exporter = Table { exports: &[Pair { a: svc, b: 0x40 }], ..KEEP };
+        let p = run(&[Some(bytes(&consumer)), Some(bytes(&exporter))]);
+        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing), Verdict::Accepted]);
+        assert_eq!(p.order[..2], [0, 1]);
+    }
+
+    #[test]
+    fn a_refused_provider_fails_the_modules_that_need_it() {
+        let svc = name_hash("lfo_bus");
+        let five = Table { uses: &[Use { resource: RES_MACHINE_ROWS, count: 5 }], provides: &[Pair { a: svc, b: 0 }], ..KEEP };
+        let consumer = Table { needs: &[need(svc, 0)], ..KEEP };
+        let p = run_p(&[Some(bytes(&consumer))], &[Some(bytes(&five))]);
+        assert_eq!(p.provider_verdicts[0], Verdict::Refused(Reason::Fit(CAPK_MACHINE_ROWS)));
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing));
+        assert_eq!(p.verdicts[0].result(), E_MISSING);
     }
 
     #[test]
@@ -514,13 +812,48 @@ mod tests {
         let k = Table { kinds: &[KindDecl { kind: 90, len: 16, entry: 8 }], ..KEEP };
         let p = run(&[Some(bytes(&k)), Some(bytes(&k))]);
         assert_eq!(p.verdicts[..2], [Verdict::Accepted, Verdict::Refused(Reason::DuplicateOwner(90))]);
-        let slot = Table { slots: &[Pair { a: 7, b: 0 }], ..KEEP };
+        let slot = Table { slots: &[Slot { id: 7, flags: 0, entry: 0 }], ..KEEP };
         let hook = Table { hooks: &[Pair { a: 9, b: 4 }], ..KEEP };
         let p = run(&[Some(bytes(&slot)), Some(bytes(&slot)), Some(bytes(&hook)), Some(bytes(&hook))]);
         assert_eq!(
             p.verdicts[..4],
             [Verdict::Accepted, Verdict::Refused(Reason::DuplicateOwner(7)), Verdict::Accepted, Verdict::Refused(Reason::DuplicateOwner(9))]
         );
+    }
+
+    #[test]
+    fn a_providers_kinds_slots_and_hooks_have_one_owner_with_the_modules_and_the_other_providers() {
+        let svc = |n: &str| Pair { a: name_hash(n), b: 0 };
+        let (pa, pb) = ([svc("a")], [svc("b")]);
+        let k = [KindDecl { kind: 90, len: 16, entry: 8 }];
+        let slot = [Slot { id: 7, flags: 0, entry: 0 }];
+        let hook = [Pair { a: 9, b: 4 }];
+        let owner = |n| Verdict::Refused(Reason::DuplicateOwner(n));
+        // the runtime's kind
+        let dup = Table { provides: &pa, kinds: &[KindDecl { kind: KIND_MACHINE, len: 8, entry: 0 }], ..KEEP };
+        assert_eq!(run_p(&[], &[Some(bytes(&dup))]).provider_verdicts[0], owner(KIND_MACHINE));
+        // another provider's kind, slot and hook site
+        for (what, first, second, site) in [
+            ("kind", Table { provides: &pa, kinds: &k, ..KEEP }, Table { provides: &pb, kinds: &k, ..KEEP }, 90),
+            ("slot", Table { provides: &pa, slots: &slot, ..KEEP }, Table { provides: &pb, slots: &slot, ..KEEP }, 7),
+            ("hook", Table { provides: &pa, hooks: &hook, ..KEEP }, Table { provides: &pb, hooks: &hook, ..KEEP }, 9),
+        ] {
+            let p = run_p(&[], &[Some(bytes(&first)), Some(bytes(&second))]);
+            assert_eq!(p.provider_verdicts[..2], [Verdict::Accepted, owner(site)], "{what}");
+            assert_eq!(p.provider_verdicts[1].result(), E_PLAN_OWNER);
+        }
+        // a module that takes what an accepted provider owns is refused (the providers are judged first)
+        let prov = Table { provides: &pa, kinds: &k, slots: &slot, ..KEEP };
+        let by_kind = Table { kinds: &k, ..KEEP };
+        let by_slot = Table { slots: &slot, ..KEEP };
+        let p = run_p(&[Some(bytes(&by_kind)), Some(bytes(&by_slot))], &[Some(bytes(&prov))]);
+        assert_eq!(p.provider_verdicts[0], Verdict::Accepted);
+        assert_eq!(p.verdicts[..2], [owner(90), owner(7)]);
+        // a module with keys for a kind a provider owns has an owner for it
+        let keys = [0x100u32];
+        let user = Table { keys: &[KeyGroup { kind: 90, keys: &keys }], ..KEEP };
+        let p = run_p(&[Some(bytes(&user))], &[Some(bytes(&prov))]);
+        assert_eq!(p.verdicts[0], Verdict::Accepted);
     }
 
     #[test]

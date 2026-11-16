@@ -491,11 +491,11 @@ fn a_header_table_of_runtime_0_7_or_none_is_a_contract_error_and_a_damaged_one_a
 
 #[test]
 fn what_init_declared_must_be_what_the_header_table_carries() {
-    use dkneeds::keys::{write_table, KindDecl, Pair, Table};
+    use dkneeds::keys::{write_table, KindDecl, Pair, Slot, Table};
     // a header table with one kind (kind 90, 24 bytes, handler at image offset 0x40), one slot and one export
     let t = Table {
         kinds: &[KindDecl { kind: 90, len: 24, entry: 0x40 }],
-        slots: &[Pair { a: 3, b: 1 }],
+        slots: &[Slot { id: 3, flags: 1, entry: 0 }],
         exports: &[Pair { a: 0xaabb, b: 0x50 }],
         ..Table::default()
     };
