@@ -306,14 +306,39 @@ pub struct Options {
     pub service: Option<Provided>,
 }
 
+/// The low 24 bits of a `HOOKS` entry of a service file: the handler's image offset. The top byte is the device mask of the hook.
+pub const HOOK_ENTRY_MASK: u32 = 0x00ff_ffff;
+
+/// The device mask of a hook: bit `i` is the device `i` of `devdata::all()` (file-name order); no device is mask 0, which means every device. The packer writes it
+/// in the top byte of the hook's `HOOKS` entry and `patchkit bind` reads it (and writes the bound file's entry without it), so a hook for the device of the firmware
+/// that the port lacks is refused wherever bind runs.
+pub fn hook_device_mask(devices: &[String]) -> Result<u32> {
+    let all = crate::devdata::all();
+    let mut mask = 0u32;
+    for d in devices {
+        let i = all.iter().position(|x| x.short == *d).ok_or_else(|| {
+            err!(
+                "hook device {d:?} is not one of {}",
+                crate::devdata::short_list()
+            )
+        })?;
+        if i >= 8 {
+            return Err(err!("hook device {d:?}: the device mask has 8 bits"));
+        }
+        mask |= 1 << i;
+    }
+    Ok(mask)
+}
+
 /// What a service file provides: the service name (`[module] service`) and the functions it exports (`[[export]]`), each a global function of the object.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Provided {
     pub service: String,
     pub exports: Vec<String>,
-    /// The hooks the service takes (`[[hook]]`): (hook name of the port, global function of the object that handles it). A `patchkit bind`
-    /// of the file gives each a trampoline.
-    pub hooks: Vec<(String, String)>,
+    /// The hooks the service takes (`[[hook]]`): (hook name of the port, global function of the object that handles it, devices it is for; empty: every
+    /// device). A `patchkit bind` of the file gives each a trampoline; the devices are the device mask in the top byte of the `HOOKS` entry
+    /// ([`hook_device_mask`]).
+    pub hooks: Vec<(String, String, Vec<String>)>,
     /// The pointer slots the service fills (`[[fill]]`): (slot name of the image adapter, global function of the object whose address goes in the slot).
     /// A `SLOTS` item of the table is the name hash and the entry offset.
     pub fills: Vec<(String, String)>,
@@ -584,7 +609,7 @@ fn pack_inner(
         None => (vec![], vec![], vec![], vec![], vec![]),
         Some(s) => {
             let mut hk: Vec<dkneeds::keys::Pair> = vec![];
-            for (hook, entry) in &s.hooks {
+            for (hook, entry, devices) in &s.hooks {
                 if !linked.globals.iter().any(|g| g == entry) {
                     return Err(err!(
                         "the service hooks {hook} with {entry}, which is no global symbol of the object"
@@ -597,7 +622,15 @@ fn pack_inner(
                 if hk.iter().any(|p| p.a == a) {
                     return Err(err!("the service hooks {hook} twice"));
                 }
-                hk.push(dkneeds::keys::Pair { a, b: at });
+                if at > HOOK_ENTRY_MASK {
+                    return Err(err!(
+                        "the service hooks {hook} with {entry} at image offset {at:#x}, over the 24 bits of a HOOKS entry"
+                    ));
+                }
+                hk.push(dkneeds::keys::Pair {
+                    a,
+                    b: at | hook_device_mask(devices)? << 24,
+                });
             }
             hk.sort_by_key(|p| p.a);
             let mut sl: Vec<dkneeds::keys::Slot> = vec![];

@@ -278,13 +278,11 @@ fn bind_raw(
     })
 }
 
-/// Replaces the references to the tails with base-relative relocations. `idle` are the name hashes of the hooks that the service lists for other devices: their tails
-/// are never entered on this firmware (`init` declares and the runtime installs only the hooks of the running device), so a reference to one resolves to the image offset 0.
-///
 /// Replaces the references to the tails with base-relative relocations. A relocation against an import named by [`tail_import`] becomes a
 /// base-relative one and its word (the addend) gets the tail's image offset added; the import is dropped from the list and the indices of the others move
-/// down. `tails` are (hook name, image offset of its tail). An import of the form of a tail reference that no bound hook owns is refused: such a file would
-/// never load. Returns the imports that stay.
+/// down. `tails` are (hook name, image offset of its tail). `idle` are the name hashes of the hooks that the service lists for other devices: their tails
+/// are never entered on this firmware (`init` declares and the runtime installs only the hooks of the running device), so a reference to one resolves to the
+/// image offset 0. An import of the form of a tail reference that no bound hook owns is refused: such a file would never load. Returns the imports that stay.
 fn resolve_tail_refs(
     image: &mut [u8],
     relocs: &mut [(u32, u32)],
@@ -400,7 +398,10 @@ fn shift_bss_words(image: &mut [u8], dkm: &Dkm, old: usize) -> Result<()> {
         }
     }
     let keys = Keys::parse(&dkm.register).map_err(|e| err!("header table: {e:?}"))?;
-    for p in keys.exports().chain(keys.hooks()) {
+    for p in keys.exports().chain(keys.hooks().map(|h| Pair {
+        a: h.a,
+        b: h.b & crate::dkm::HOOK_ENTRY_MASK,
+    })) {
         if p.b as usize >= old {
             return Err(err!(
                 "{}: table entry {:#x} is not in the image",
@@ -426,6 +427,73 @@ fn shift_bss_words(image: &mut [u8], dkm: &Dkm, old: usize) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The name of the hook with `hash`, found as a word of the `devices/fw/` declaration texts; `None` when no declaration names it.
+fn name_from_decls(decls: &[&str], hash: u32) -> Option<String> {
+    decls.iter().find_map(|t| {
+        t.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+            .find(|w| !w.is_empty() && name_hash(w) == hash)
+            .map(str::to_string)
+    })
+}
+
+/// The hooks of `hooks` (the `HOOKS` list of the file lists those of every device) that this `device` binds. The top byte of an entry is its device mask
+/// ([`crate::dkm::hook_device_mask`]; 0: every device): a hook for another device is skipped, and a hook for this device that the port (`port_hooks`) does not
+/// declare is an error naming it (`decls` give the name of the hash). The pairs returned have the plain image offset.
+fn select_hooks(
+    module: &str,
+    hooks: &[Pair],
+    port_hooks: &[&str],
+    decls: &[&str],
+    device: &str,
+) -> Result<Vec<Pair>> {
+    let bit = crate::devdata::all()
+        .iter()
+        .position(|d| d.short == device)
+        .map(|i| 1u32 << i)
+        .ok_or_else(|| err!("{module}: unknown device {device}"))?;
+    let mut out = vec![];
+    for h in hooks {
+        let mask = h.b >> 24;
+        if mask != 0 && mask & bit == 0 {
+            continue;
+        }
+        if find_hook(port_hooks.iter().copied(), h.a).is_err() {
+            let name = name_from_decls(decls, h.a).unwrap_or_else(|| format!("#{:08x}", h.a));
+            return Err(err!(
+                "{module}: hook {name} is declared for {device} but the port of this firmware has no such hook"
+            ));
+        }
+        out.push(Pair {
+            a: h.a,
+            b: h.b & crate::dkm::HOOK_ENTRY_MASK,
+        });
+    }
+    Ok(out)
+}
+
+/// The address map of the packed service (`patchkit pack --addrmap`, offsets from the load address) for the bound file: the trampolines and tails that `bind`
+/// appends move `.bss`, so every entry at or past the packed image length `old` moves by `grow` bytes. Entries below it are unchanged.
+pub fn shift_addrmap(map: &str, old: usize, grow: usize) -> Result<String> {
+    let mut v: serde_json::Value =
+        serde_json::from_str(map).map_err(|e| err!("address map: {e}"))?;
+    let entries = v
+        .get_mut("entries")
+        .and_then(|e| e.as_array_mut())
+        .ok_or_else(|| err!("address map: no entries"))?;
+    for e in entries {
+        if e["cpu"] != "cf" {
+            continue;
+        }
+        let addr = e["addr"]
+            .as_u64()
+            .ok_or_else(|| err!("address map: an entry has no addr"))?;
+        if addr >= old as u64 {
+            e["addr"] = serde_json::json!(addr + grow as u64);
+        }
+    }
+    Ok(v.to_string())
 }
 
 /// Binds the service `dks` to the stock firmware `fw`: the bound file and one report per hook. The file is refused when it is no service, declares no
@@ -472,15 +540,17 @@ pub fn bind(
         .map(|(off, k)| (*off, k.map_or(0, |i| 1 << 24 | i as u32)))
         .collect();
     let mut bound = Vec::new();
-    // a service lists the hooks of every device in HOOKS; this device takes those its port declares, and the bound file lists only those (the hooks
-    // that `service!` declares at `init` on this device)
-    let mut on_device: Vec<Pair> = vec![];
-    for h in &hooks {
-        if find_hook(port.hook.iter().map(|x| x.name.as_str()), h.a).is_err() {
-            continue;
-        }
-        on_device.push(*h);
-    }
+    let on_device = select_hooks(
+        &dkm.name,
+        &hooks,
+        &port
+            .hook
+            .iter()
+            .map(|x| x.name.as_str())
+            .collect::<Vec<_>>(),
+        decls,
+        device,
+    )?;
     if on_device.is_empty() {
         return Err(err!(
             "{}: none of its {} hooks is declared for {device} on this firmware",
@@ -1020,5 +1090,47 @@ mod tests {
             root,
             Path::new("/src/digikit/dist/../../digikit/x")
         ));
+    }
+
+    #[test]
+    fn hooks_of_other_devices_are_skipped_and_missing_ones_refused() {
+        use crate::dkm::hook_device_mask;
+        let mask = |d: &str| hook_device_mask(&[d.to_string()]).unwrap();
+        let pair = |n: &str, d: &str| Pair {
+            a: name_hash(n),
+            b: 0x40 | mask(d) << 24,
+        };
+        let hooks = [pair("h.dt2", "dt2"), pair("h.dn2", "dn2")];
+        // dn2's port lacks the dt2 hook: skipped, and the pair has the plain offset
+        let got = select_hooks("m", &hooks, &["h.dn2"], &[], "dn2").unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].a, got[0].b), (name_hash("h.dn2"), 0x40));
+        // dn2 declares h.dn2 for itself but the port lacks it: refused, naming the hook (from the declaration texts)
+        let e = select_hooks("m", &hooks, &[], &["hook h.dn2 {}"], "dn2").unwrap_err();
+        assert!(e.0.contains("h.dn2") && e.0.contains("no such hook"), "{e}");
+        // mask 0 is every device
+        let all = [Pair {
+            a: name_hash("h.x"),
+            b: 8,
+        }];
+        assert!(select_hooks("m", &all, &[], &[], "dt2").is_err());
+        assert_eq!(
+            select_hooks("m", &all, &["h.x"], &[], "dn2").unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn bound_address_map_moves_bss_entries_only() {
+        let map = r#"{"entries":[{"cpu":"cf","addr":4,"name":"a"},{"cpu":"cf","addr":100,"name":"b"},{"cpu":"sharc","addr":100,"name":"c"}]}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&shift_addrmap(map, 100, 24).unwrap()).unwrap();
+        let addrs: Vec<u64> = v["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["addr"].as_u64().unwrap())
+            .collect();
+        assert_eq!(addrs, [4, 124, 100]);
     }
 }

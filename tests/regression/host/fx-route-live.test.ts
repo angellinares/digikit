@@ -30,6 +30,11 @@ vi.mock('../runtime/runtime-plan.ts', async (original) => ({
   ...(await original<object>()),
   prepareRuntimePlanListedOffline: fake.prepare,
 }));
+// the host boot has no card and no service file: the symbol binding is not what these tests observe
+vi.mock('../runtime/service-symbols.ts', async (original) => ({
+  ...(await original<object>()),
+  bindServiceSymbols: vi.fn(async () => {}),
+}));
 vi.mock('../runtime/write-safety.ts', () => ({ runtimeWatchEnv: fake.watchEnv, runtimeSafety: fake.safety }));
 vi.mock('../runtime/fx-live.ts', async (original) => ({
   ...(await original<object>()),

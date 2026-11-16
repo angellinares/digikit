@@ -140,6 +140,25 @@ fn a_service_with_a_hook_packs_its_hooks_entry() {
 }
 
 #[test]
+fn the_packer_writes_the_device_mask_of_a_hook_in_the_top_byte() {
+    let m = SERVICE.replace(
+        "entry = \"hooktest_settings_tail\"\n",
+        "entry = \"hooktest_settings_tail\"\ndevices = [\"dn2\"]\n",
+    );
+    let dks = pack_with(&m, "dt2").unwrap();
+    let dkm = Dkm::parse(&dks).unwrap();
+    let k = Keys::parse(&dkm.register).unwrap();
+    let h = k.hooks().next().unwrap();
+    let mask = patchkit::dkm::hook_device_mask(&["dn2".to_string()]).unwrap();
+    assert_ne!(mask, 0);
+    assert_eq!(h.b >> 24, mask);
+    assert_eq!(
+        h.b & patchkit::dkm::HOOK_ENTRY_MASK,
+        patchkit::dkm::image_symbols(&service_object()).unwrap()["hooktest_settings_tail"]
+    );
+}
+
+#[test]
 fn a_missing_static_or_repeated_handler_and_a_hook_without_the_role_are_refused() {
     for bad in ["no_such_fn", "local_tail"] {
         let m = SERVICE.replace("hooktest_settings_tail", bad);

@@ -151,7 +151,7 @@ export async function inspectFxBoot(
   artifacts: string,
   tag: string,
   expectedResults = expectedNames.map(() => 0),
-  readiness: { afterEpoch?: number } = {},
+  readiness: { afterEpoch?: number; noServices?: boolean } = {},
 ) {
   const { session, dk } = runtime;
   validateRuntimePlan(plan, session);
@@ -175,8 +175,8 @@ export async function inspectFxBoot(
   await drainInputs(session);
   await bounded(() => session.client.call('run.mode', { mode: 'paused' }));
   const fields = await Promise.all(Array.from({ length: 10 }, (_, i) => word(session, boot + i * 4)));
-  // the symbols of the fx service file for this boot (`symbolsOf`); a boot without the service has none
-  await bindServiceSymbols(runtime, plan, 'fx');
+  // the symbols of the fx service file for this boot (`symbolsOf`); only a preset with `noServices` has none, any other boot without them fails here
+  await bindServiceSymbols(runtime, plan, 'fx', { expected: !readiness.noServices });
   expect(fields.slice(0, 4)).toEqual([0x444b4254, 1, 0, 0]);
   expect(fields.slice(7, 10)).toEqual([expectedResults.length, expectedNames.length, 1]);
   const status = await bounded(() => session.status());

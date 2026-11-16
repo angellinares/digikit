@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import type { Session } from '@digi/test-support';
 import { readLoadTable } from './addrmap.ts';
-import { moduleArtifact } from './install.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
-import { SERVICE_MODULES } from './service-files.ts';
+import { boundMapPath, SERVICE_MODULES } from './service-files.ts';
 
 /** What a lookup needs of a runtime: its session (`PatchedSession`, `TestRuntime` and `Rt` all have it). */
 type WithSession = { readonly session: Session };
@@ -44,17 +43,19 @@ async function loadAddress(
   return hit.base;
 }
 
-/** The symbols of the module map beside the packed service (`<leaf>.addrmap.json`, docs/ADDRMAP.md): name to offset from the load address. */
+/**
+ * The symbols of the service as bound to the stock firmware (docs/ADDRMAP.md): name to offset from the load address. The bound map is the one `patchkit bind` writes
+ * (`dist/svc-bound/<device>/<name>.addrmap.json`): bind appends tails and trampolines and moves `.bss`, so the map of the unbound pack is wrong for those symbols.
+ */
 export function serviceMapEntries(device: Session['options']['device'], service: string): Map<string, number> {
-  const file = moduleArtifact(device, SERVICE_MODULES[service]!).replace(/\.dk[ms]$/, '.addrmap.json');
-  if (!fs.existsSync(file)) throw new Error(`${file}: run nx run ${SERVICE_MODULES[service]}:pack`);
+  const file = boundMapPath(device, service);
+  if (!fs.existsSync(file)) throw new Error(`${file}: run nx run ${SERVICE_MODULES[service]}:bind`);
   const map = JSON.parse(fs.readFileSync(file, 'utf8')) as { entries: { cpu: string; addr: number; name: string }[] };
   return new Map(map.entries.filter((e) => e.cpu === 'cf').map((e) => [e.name, e.addr]));
 }
 
 /**
- * The address of `symbol` of a loaded service, e.g. `serviceSymbol(runtime, plan, 'fx', 'DKRT_FXP')`: the load address plus the offset in the service's address map. The
- * bind step appends nothing to a service whose hooks are entered directly (fx), so the map of the unbound pack is valid for the bound file.
+ * The address of `symbol` of a loaded service, e.g. `serviceSymbol(runtime, plan, 'fx', 'DKRT_FXP')`: the load address plus the offset in the service's address map.
  */
 export async function serviceSymbol(
   runtime: WithSession,
@@ -91,17 +92,25 @@ export async function serviceSymbols(
 
 const bound = new WeakMap<object, (name: string) => number>();
 
-/** Bind the symbols of `service` for the session after a boot (`inspectFxBoot`); a boot without the service clears them. Not an error: only a test that reads them needs them. */
+/** Bind the symbols of `service` for the session after a boot (`inspectFxBoot`). A fixture that declares `noServices` has no service: pass `expected: false` and the
+ * symbols are cleared. Otherwise a service that cannot be found is an error naming the service and the reason (no silent fallback to the image's plan). */
 export async function bindServiceSymbols(
   runtime: WithSession,
   plan: RuntimePlan,
   service: string,
-  opts: LookupOptions = {},
+  opts: LookupOptions & { expected?: boolean } = {},
 ): Promise<void> {
+  if (opts.expected === false) {
+    bound.delete(runtime.session);
+    return;
+  }
   try {
     bound.set(runtime.session, await serviceSymbols(runtime, plan, service, opts));
-  } catch {
+  } catch (e) {
     bound.delete(runtime.session);
+    throw new Error(
+      `symbols of the ${service} service are not available: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
 

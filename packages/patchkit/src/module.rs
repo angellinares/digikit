@@ -196,14 +196,14 @@ impl Manifest {
                 }
             }
         }
-        let mut hooks: Vec<(String, String)> = vec![];
+        let mut hooks: Vec<(String, String, Vec<String>)> = vec![];
         for h in &self.hooks {
             if h.name.is_empty() || h.entry.is_empty() {
                 return Err(err!(
                     "{id}: [[hook]] needs a `name` and an `entry`, both not empty"
                 ));
             }
-            if hooks.iter().any(|(n, _)| *n == h.name) {
+            if hooks.iter().any(|(n, _, _)| *n == h.name) {
                 return Err(err!(
                     "{id}: [[hook]] {:?} is declared twice (one name has one entry, so a hook for two devices is one entry without `devices`)",
                     h.name
@@ -218,7 +218,7 @@ impl Manifest {
                     ));
                 }
             }
-            hooks.push((h.name.clone(), h.entry.clone()));
+            hooks.push((h.name.clone(), h.entry.clone(), h.devices.clone()));
         }
         let mut fills: Vec<(String, String)> = vec![];
         for f in &self.fills {

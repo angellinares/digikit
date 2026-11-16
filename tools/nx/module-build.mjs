@@ -118,6 +118,9 @@ const STOCK_FIRMWARE = { dt2: 'firmware/Digitakt_II_OS1.17.syx', dn2: 'firmware/
 /** The bound file of a service with hooks, `dist/svc-bound/<device>/<leaf>.dks` (never committed: it holds firmware bytes). */
 export const boundOut = (dev, m) => `dist/svc-bound/${dev}/${m.id.split('/').at(-1)}.dks`;
 
+/** The address map of the bound file (the packed map moved by what bind appended), written by `patchkit bind --addrmap`. */
+export const boundMap = (dev, m) => boundOut(dev, m).replace(/\.dks$/, '.addrmap.json');
+
 // A service that takes hooks is bound to the stock firmware (`patchkit bind`) before a device test puts it on a card. The target is keyed on the packed `.dks`
 // bytes and the firmware image (its content hash), so a change that leaves both alone replays the bound file; the tests copy it, they never run patchkit for it.
 export const bindTarget = (workspaceRoot, m, devices) => {
@@ -125,14 +128,18 @@ export const bindTarget = (workspaceRoot, m, devices) => {
   return {
     executor: 'nx:run-commands',
     cache: true,
-    inputs: ds.flatMap((d) => [`{workspaceRoot}/${packOut(d, m)}`, `{workspaceRoot}/${STOCK_FIRMWARE[d]}`]),
+    inputs: ds.flatMap((d) => [
+      `{workspaceRoot}/${packOut(d, m)}`,
+      `{workspaceRoot}/${packMap(d, m)}`,
+      `{workspaceRoot}/${STOCK_FIRMWARE[d]}`,
+    ]),
     dependsOn: ['patchkit:cli', 'pack'],
-    outputs: ds.map((d) => `{workspaceRoot}/${boundOut(d, m)}`),
+    outputs: ds.flatMap((d) => [`{workspaceRoot}/${boundOut(d, m)}`, `{workspaceRoot}/${boundMap(d, m)}`]),
     options: {
       // a device whose firmware file is not here writes nothing (its tests are skipped without the image)
       commands: ds.map(
         (d) =>
-          `if test -f ${STOCK_FIRMWARE[d]}; then ${PK} bind ${packOut(d, m)} --firmware ${STOCK_FIRMWARE[d]} -o ${boundOut(d, m)} > /dev/null; fi`,
+          `if test -f ${STOCK_FIRMWARE[d]}; then ${PK} bind ${packOut(d, m)} --firmware ${STOCK_FIRMWARE[d]} -o ${boundOut(d, m)} --addrmap ${packMap(d, m)} > /dev/null; fi`,
       ),
       parallel: false,
       cwd: '.',

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { repoRoot, type Device } from '@digi/test-support';
+import { repoRoot, resolveInputs, type Device } from '@digi/test-support';
+import { FIRMWARE } from './devices.ts';
 import { neededServiceHashes, nameHash } from './dkm-parse.ts';
 
 /**
@@ -28,10 +29,22 @@ export const servicePath = (name: string) => `services/${name}.dks`;
  * committed); a test only copies it, so no test that puts a service on a card is a live-patchkit task. `moduleFile` is the packed `.dks` (the `bind` input).
  */
 export async function boundService(device: Device, name: string, moduleFile: string): Promise<string> {
-  const out = path.join(repoRoot(), 'dist/svc-bound', device, `${name}.dks`);
-  if (!fs.existsSync(out))
-    throw new Error(
-      `missing ${out}: run nx run ${SERVICE_MODULES[name]}:bind (it binds ${moduleFile} to the stock firmware)`,
-    );
+  const out = boundPath(device, name);
+  const rerun = `run nx run ${SERVICE_MODULES[name]}:bind`;
+  if (!fs.existsSync(out)) throw new Error(`missing ${out}: ${rerun} (it binds ${moduleFile} to the stock firmware)`);
+  // an older bound file was made from other bytes: the Nx target is keyed on both, a copy left in dist/ is not
+  const age = fs.statSync(out).mtimeMs;
+  const inputs = [moduleFile, resolveInputs(device, FIRMWARE[device]).syx];
+  for (const input of inputs)
+    if (fs.existsSync(input) && fs.statSync(input).mtimeMs > age)
+      throw new Error(`${out} is older than ${input}: ${rerun}`);
   return out;
 }
+
+/** The bound service file `dist/svc-bound/<device>/<name>.dks` (the Nx target `bind` writes it). */
+export const boundPath = (device: Device, name: string) =>
+  path.join(repoRoot(), 'dist/svc-bound', device, `${name}.dks`);
+
+/** The address map of the bound file (the packed map moved by what bind appended; `patchkit bind --addrmap`). */
+export const boundMapPath = (device: Device, name: string) =>
+  boundPath(device, name).replace(/\.dks$/, '.addrmap.json');

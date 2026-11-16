@@ -206,7 +206,9 @@ for (const device of DEVICES) {
         const { fixture, plan, artifacts, rememberEpoch } = context;
         const nofx = await fixture.reload(context.baseline('nofx'));
         // The sine loads; the effect module is REFUSED: its record kind has no owner (the fx service file is not on the card), E_MISSING.
-        const state = await inspectFxBoot(nofx, plan, [SINE], artifacts, 'nofx-boot', [0, loadCode('E_MISSING')]);
+        const state = await inspectFxBoot(nofx, plan, [SINE], artifacts, 'nofx-boot', [0, loadCode('E_MISSING')], {
+          noServices: true,
+        });
         rememberEpoch(state.epoch);
         expect(state.capacity.FX_SLOTS?.used ?? 0, 'no effect row is in use').toBe(0);
         expect((await rows(nofx.session, plan, slots)).map((row) => row[0]), 'every free row stays free').toEqual(

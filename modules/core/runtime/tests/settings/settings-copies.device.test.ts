@@ -71,7 +71,7 @@ for (const device of DEVICES) {
         const after = await kit.after(`copies-${want.name}`, session.cardPath!);
         const [target, keep] = [s.setB, s.setA];
         const rec = decodeSettings(sectorOf(after, target));
-        expect(await written(), `the next write goes to copy ${'AB'[want.next]}`).toEqual([target]);
+        expect(await written(), `the next write goes to the copy at sector ${target}`).toEqual([target]);
         expect(rec?.seq).toBe(want.seq);
         expect(settingsMap(rec).k2).toBe(text('new').toString('hex'));
         expect(sectorOf(after, keep).equals(sectorOf(session.cardPath!, keep)), 'the other copy is untouched').toBe(
