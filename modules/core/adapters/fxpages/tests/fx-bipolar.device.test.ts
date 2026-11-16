@@ -2,7 +2,7 @@ import path from 'node:path';
 import { encoder } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { createFxKitUi } from '@digi/regression/runtime/fx-kit-ui.ts';
-import { bounded, captureNote, compare, frames, REDRAW, rows, SETTLE, word } from '@digi/regression/runtime/fx-live.ts';
+import { bounded, captureNote, compare, frames, rows, word } from '@digi/regression/runtime/fx-live.ts';
 import { SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { bits, cstring, mainPage, openPages, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
 import { inspectFxBoot, selectSine, shot, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
@@ -95,6 +95,10 @@ for (const device of DEVICES) {
         pcm[tag] = file;
       };
       const noFault = async () => expect((await row())[17]).toBe(0);
+      // The row words and the kit are firmware state: a knob change is waited for on them.
+      const rowIs = (what: string, done: (r: number[]) => boolean) =>
+        runtime.ui.wait({ state: row, done, withinMs: 5000, what });
+      const NO_PAGE_STATE = 'no firmware word shows the FX page change (only the page list and its rows)';
 
       await boot('dry', [SINE], false);
       await selectSine(runtime, profile);
@@ -105,8 +109,8 @@ for (const device of DEVICES) {
       const master = await boot('master', [SINE, FX]);
       await selectSine(runtime, profile);
       await openPages(runtime);
-      for (let i = 0; i < 3; i++) await runtime.ui.tap('DOWN', { until: { ms: 300, why: REDRAW } });
-      await runtime.ui.wait({ ms: 600, why: SETTLE });
+      for (let i = 0; i < 3; i++) await runtime.ui.tap('DOWN', { until: { drained: true } });
+      await runtime.ui.wait({ ms: 600, why: NO_PAGE_STATE });
       await shot(runtime.session, artifacts, 'gbp-page-default');
       expect(await word(runtime.session, sym('fxp_count'))).toBe(4);
       expect(
@@ -155,10 +159,14 @@ for (const device of DEVICES) {
         await kit.setRaw('LEVEL', 7, near);
         for (let i = 0; i < 60; i++) {
           await bounded(() => runtime.session.client.inputTurn(encoder('LEVEL'), direction * 8));
-          await runtime.ui.wait({ ms: 2, why: SETTLE });
+          await runtime.ui.wait({ ms: 2, why: 'fast encoder events: the legacy burst spacing' });
         }
-        await runtime.ui.wait({ ms: 100, why: SETTLE });
-        await runtime.ui.wait({ ms: 60, why: SETTLE });
+        await runtime.ui.wait({
+          state: () => kit.raw(7),
+          done: (v: number) => v === target,
+          withinMs: 5000,
+          what: 'the MIX knob is at its end',
+        });
         expect(await kit.raw(7)).toBe(target);
         expect((await words())[1]).toBe(target ? bits(1) : 0);
         await shot(runtime.session, artifacts, tag);
@@ -167,9 +175,9 @@ for (const device of DEVICES) {
       const turn = async (raw: number, tag: string) => {
         await ui.fxPage(3);
         const got = await kit.setRaw('ENC A', 0, raw);
-        await runtime.ui.wait({ ms: 100, why: SETTLE });
-        await shot(runtime.session, artifacts, `gbp-page-bias-${tag}`);
         const value = biasFloat(got);
+        await rowIs('the SHIFT word follows the knob', (r) => r[4] === bits(value));
+        await shot(runtime.session, artifacts, `gbp-page-bias-${tag}`);
         expect(await words()).toEqual([bits(value), bits(1)]);
         bias[tag] = value;
       };
@@ -183,7 +191,7 @@ for (const device of DEVICES) {
       await endpoint(0x7000, 1, 0x7f00, 'gbp-page-mix-top');
       await ui.fxPage(3);
       const halfRaw = await kit.setRaw('LEVEL', 7, 0x4000);
-      await runtime.ui.wait({ ms: 100, why: SETTLE });
+      await rowIs('the MIX word follows the knob', (r) => Math.abs(floatWord(r[13]!) - halfRaw / 0x7f00) < 1e-4);
       mixHalf = floatWord((await row())[13]!);
       expect(Math.abs(mixHalf - halfRaw / 0x7f00)).toBeLessThan(1e-4);
       await mainPage(runtime);
@@ -206,7 +214,7 @@ for (const device of DEVICES) {
       expect(upRaw).not.toBe(saved[0]);
       expect(await words()).toEqual([bits(bias.down!), bits(1)]);
       await ui.fxPage(3);
-      await runtime.ui.wait({ ms: 300, why: SETTLE });
+      await runtime.ui.wait({ ms: 300, why: NO_PAGE_STATE });
       await shot(runtime.session, artifacts, 'gbp-page-loaded');
       await mainPage(runtime);
       await sound('e');
@@ -231,38 +239,39 @@ for (const device of DEVICES) {
       kit = pageKit(runtime, profile);
       ui = createFxKitUi(runtime, plan, profile, artifacts);
       await mainPage(runtime);
-      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
-      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
+      await runtime.ui.tap('FX', { until: { drained: true } });
+      await runtime.ui.tap('FX', { until: { drained: true } });
+      await runtime.ui.wait({ ms: 400, why: NO_PAGE_STATE });
       await shot(runtime.session, artifacts, 'send-page2');
       await setAmount(runtime, profile, 'ENC A', 0, 40);
       await shot(runtime.session, artifacts, 'send-turning');
-      await runtime.ui.wait({ ms: 300, why: SETTLE });
+      await rowIs('the send amount of track 1 reaches the row', (r) => (r[19]! & 0xff) === 40);
       expect(await amounts()).toEqual([40, ...Array(15).fill(0)]);
       await ui.fxPage(3);
-      await runtime.ui.wait({ ms: 300, why: SETTLE });
+      await runtime.ui.wait({ ms: 300, why: NO_PAGE_STATE });
       await shot(runtime.session, artifacts, 'send-gbp-page');
       const sendRaw = await kit.setRaw('ENC A', 0, 0x6800);
-      await runtime.ui.wait({ ms: 100, why: SETTLE });
+      await rowIs('the SHIFT word follows the knob', (r) => r[4] === bits(biasFloat(sendRaw)));
       expect(await words()).toEqual([bits(biasFloat(sendRaw)), bits(1)]);
       expect((await row())[18]).toBe(1);
       expect((await amounts())[0]).toBe(40);
       const half = await kit.setRaw('LEVEL', 7, 0x4000);
-      await runtime.ui.wait({ ms: 100, why: SETTLE });
-      expect(Math.abs(floatWord((await row())[13]!) - half / 0x7f00)).toBeLessThan(1e-4);
+      await rowIs('the MIX word follows the knob', (r) => Math.abs(floatWord(r[13]!) - half / 0x7f00) < 1e-4);
       await noFault();
 
       // Another track's amount does not reach the first track's row words, and the value of track 1 is not touched.
       await mainPage(runtime);
       await selectTrack(runtime, 2);
-      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
-      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
+      await runtime.ui.tap('FX', { until: { drained: true } });
+      await runtime.ui.tap('FX', { until: { drained: true } });
+      await runtime.ui.wait({ ms: 400, why: NO_PAGE_STATE });
       await setAmount(runtime, profile, 'ENC A', 1, 100);
-      await runtime.ui.wait({ ms: 300, why: SETTLE });
+      await rowIs('the send amount of track 2 reaches the row', (r) => ((r[19]! >>> 8) & 0xff) === 100);
       expect(await amounts()).toEqual([40, 100, ...Array(14).fill(0)]);
       await selectTrack(runtime, 1);
       await ui.fxPage(3);
       const otherRaw = await kit.setRaw('ENC A', 0, 0x2800);
-      await runtime.ui.wait({ ms: 100, why: SETTLE });
+      await rowIs('the SHIFT word follows the knob', (r) => r[4] === bits(biasFloat(otherRaw)));
       expect((await row())[4]).toBe(bits(biasFloat(otherRaw)));
       expect(await amounts()).toEqual([40, 100, ...Array(14).fill(0)]);
       await noFault();
