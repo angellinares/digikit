@@ -70,7 +70,7 @@ dkrt_soft_reset:
  * (cf.page.hook.source_key, cf.page.hook.source_turn; SourcePageView on the Digitakt II, MultiSourcePageView on the Digitone II). At
  * the entry 0(sp) = the return address, 4(sp) = the view, 8(sp) = the event; d0/d1/a0/a1 are free. The C function gets (view, event)
  * and returns; keys and ordinary PARAM turns continue with the original stack. A native page's LOCAL/unused turn returns one,
- * which the stock dispatcher treats as consumed (src/rs/src/pageclick.rs). */
+ * which the stock dispatcher treats as consumed (../services/machines/src/slots.rs). */
     .globl dkrt_pagekey_hook
 dkrt_pagekey_hook:
     move.l  8(%sp),-(%sp)       /* event */

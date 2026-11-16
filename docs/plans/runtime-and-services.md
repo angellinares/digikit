@@ -365,7 +365,7 @@ The contract is the ABI in `sdk.toml`, so a Rust service uses the generated bind
 
 `check:layers` enforces that the rest of the runtime reaches a service only through these interfaces (added in R2c; [ARCHITECTURE.md](../ARCHITECTURE.md) says what it checks today).
 
-**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10: `fx` and `machines` are crates `dkrt-svc-fx` and `dkrt-svc-machines` without `module.toml` and `adapter/` yet), and `module:new service` generates it. The template and its `module:check` structure check land in R12-1 (section 13.2), before the `.dks` steps; every service (lfo, fx, machines, samples) uses it. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
+**Template.** A service is a crate `modules/core/services/<name>/` with `src/lib.rs`, `src/records.rs`, `src/slots.rs`, `src/dsp/` (when it has DSP parts) and `tests/` (host tests over `FakeCore`). R12-1 built the template (`sdk/templates/service`, `module:new -- service NAME`) and the structure check (`patchkit service-check`, run by `module:check -- service/NAME`: the layout, at most one exported symbol `dk_module`, declarations equal to `sdk.toml`); fx, machines, samples and lfo are crates in that layout. The `module.toml` (`role = "service"`), `adapter/` and the exported `dk_module` entry that carries the `ServiceRow` come with R12-3.
 
 ## 6. DSP
 

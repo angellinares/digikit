@@ -1,5 +1,5 @@
 //! Sample part of the DSP loader: the track-table record of a DSP section.
-use super::tracks;
+use crate::tracks;
 use dkrt_abi::dsp::{in_sec, rd32le, DspSec, Job, FX_REC};
 use dkrt_abi::mem::rd32;
 use dkrt_abi::service::Claim;
@@ -10,7 +10,23 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
     if sec.version != 5 {
         return OK;
     }
-    let DspSec { s, size, image_off, image_size, reloc_off, nreloc, import_off, nimport, voice_off, nvoice, vstride, fx_off, nfx, bank_off, .. } = *sec;
+    let DspSec {
+        s,
+        size,
+        image_off,
+        image_size,
+        reloc_off,
+        nreloc,
+        import_off,
+        nimport,
+        voice_off,
+        nvoice,
+        vstride,
+        fx_off,
+        nfx,
+        bank_off,
+        ..
+    } = *sec;
     if bank_off < 64 || bank_off & 3 != 0 || !in_sec(bank_off, 32, size) {
         return E_DSP_FORMAT;
     }
@@ -54,8 +70,10 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
     let (records, control) = (rd32le(b.add(8)), rd32le(b.add(12)));
     for k in 0..nreloc {
         let at = rd32(s.add((reloc_off + k * 8) as usize));
-        if (at < records + dkrt_sdk::sample_job::TRACK_RECORDS_BYTES && records < at.saturating_add(6))
-            || (at < control + dkrt_sdk::sample_job::TRACK_CONTROL_BYTES && control < at.saturating_add(6))
+        if (at < records + dkrt_sdk::sample_job::TRACK_RECORDS_BYTES
+            && records < at.saturating_add(6))
+            || (at < control + dkrt_sdk::sample_job::TRACK_CONTROL_BYTES
+                && control < at.saturating_add(6))
         {
             return E_DSP_FORMAT;
         }
@@ -75,6 +93,11 @@ pub(crate) unsafe fn admit(job: &Job) -> i32 {
 pub(crate) unsafe fn claim(c: &mut Claim) {
     let (rec, job, base) = (c.rec, c.job, c.base);
     if !job.bank.is_null() {
-        tracks::reserve(rec, rd32le(job.bank.add(4)), base + rd32le(job.bank.add(8)), base + rd32le(job.bank.add(12)));
+        tracks::reserve(
+            rec,
+            rd32le(job.bank.add(4)),
+            base + rd32le(job.bank.add(8)),
+            base + rd32le(job.bank.add(12)),
+        );
     }
 }

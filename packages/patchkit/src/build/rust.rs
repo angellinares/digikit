@@ -503,6 +503,9 @@ fn build_object(env: &Env, manifest: &Path, out: &Path) -> Result<Vec<String>> {
         if elf::is_empty(&blob)? {
             continue; // a crate with only types (dkrt-sdk) compiles to an object with no sections; its flags are 0
         }
+        if !elf::has_code(&blob)? {
+            continue; // data only (the statics of a service crate whose functions are generic): no code, so no ISA flags to check
+        }
         let mname = m.file_name().unwrap().to_string_lossy().into_owned();
         check_flags(&blob, &format!("archive member {mname}"))?;
         if mname.starts_with(&format!("{crate_name}-"))

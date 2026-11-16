@@ -5,10 +5,10 @@ use dkrt_abi::service::{ServiceRow, ServiceTable};
 
 /// The in-crate services in the order the core calls them (`[[service]]` of sdk/sdk.toml), each with the record kinds it owns.
 pub static SERVICES: [ServiceRow<RealCore>; 4] = [
-    ServiceRow::of::<crate::services::samples::records::Samples>("samples", &dkrt_sdk::records::KINDS_SAMPLES),
+    ServiceRow::of::<dkrt_svc_samples::records::Samples>("samples", &dkrt_sdk::records::KINDS_SAMPLES),
     ServiceRow::of::<dkrt_svc_machines::records::Machines>("machines", &dkrt_sdk::records::KINDS_MACHINES),
     ServiceRow::of::<dkrt_svc_fx::records::Fx>("fx", &dkrt_sdk::records::KINDS_FX),
-    ServiceRow::of::<crate::services::lfo::records::Lfo>("lfo", &dkrt_sdk::records::KINDS_LFO),
+    ServiceRow::of::<dkrt_svc_lfo::records::Lfo>("lfo", &dkrt_sdk::records::KINDS_LFO),
 ];
 
 pub const TABLE: ServiceTable<RealCore> = ServiceTable { rows: &SERVICES, failed: 0, core: &REAL_CORE };

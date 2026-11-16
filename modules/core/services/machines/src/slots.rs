@@ -1,4 +1,4 @@
-//! The encoder click on a machine's page (docs/design/machine-page-click.md).
+//! `machines` service, slots and hooks: the machine page's key and turn slots and the encoder click on it (docs/design/machine-page-click.md).
 //!
 //! A machine module declares `DK_PARAM_ACTION(machine, word, fn)`. The packer lowers it to an ACTION record of the `register` table; `registry::apply`
 //! stores the callback's address per parameter row (`set`). Two hooks at the entry of the machine page's key handler and turn handler
@@ -289,9 +289,9 @@ pub unsafe fn param_set<C: CoreApi, F: Fw>(
     )
 }
 
-/// The click that waits for the next UI pass (for the tests of the registry: what `apply` armed).
-#[cfg(test)]
-pub(crate) unsafe fn pending() -> Pending {
+/// The click that waits for the next UI pass (for the tests of the registry: what `apply` armed). `#[inline]`: no caller in the runtime, so no code in the object.
+#[inline]
+pub unsafe fn pending() -> Pending {
     *addr_of!(PENDING)
 }
 

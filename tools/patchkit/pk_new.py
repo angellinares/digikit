@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Create a run-time content module from a template (`mise run module:new -- machine|fx|tool AUTHOR/NAME [--dir DIR]`).
+"""Create a run-time content module from a template (`mise run module:new -- machine|fx|tool AUTHOR/NAME [--dir DIR]`, or a service crate of the runtime with `module:new -- service NAME`).
 
     uv run python -m tools.patchkit.pk_new machine alice/drone         # a SHARC+ voice machine
     uv run python -m tools.patchkit.pk_new fx alice/crunch --title Crunch --short CRU
     uv run python -m tools.patchkit.pk_new tool alice/hello --dir ~/my-modules
+    uv run python -m tools.patchkit.pk_new service sweep                # a service crate: modules/core/services/sweep
 
 The templates are the source trees in sdk/templates/<kind>/. The tokens `__ID__`, `__AUTHOR__`, `__NAME__` (lower snake),
-`__UPPER__`, `__TITLE__`, `__SHORT__` and `__TAB__` (the first 3 characters of the short name) are replaced in file names and file contents. The module goes to
+`__UPPER__`, `__TITLE__`, `__SHORT__`, `__TAB__`, `__CAMEL__` (the name in Camel case) and `__KEBAB__` (with dashes) (the first 3 characters of the short name) are replaced in file names and file contents. The module goes to
 modules/machines/NAME, modules/fx/NAME or modules/tools/NAME, or to `DIR/NAME` with `--dir` (a folder that PATCHKIT_MODULES
 names finds it). Then the objects are built with `patchkit build` and `patchkit gen` writes the generated
 headers, so the template is known to compile. A run-time machine has no permanent type number: the runtime assigns one at
@@ -25,12 +26,12 @@ ROOT = HERE.parent.parent
 
 MODULES = ROOT / "modules"
 TEMPLATES = ROOT / "sdk" / "templates"
-KIND_DIRS = {"machine": "machines", "fx": "fx", "tool": "tools"}
+KIND_DIRS = {"machine": "machines", "fx": "fx", "tool": "tools", "service": "services"}
 
 AUTHOR_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 NAME_RE = re.compile(r"[a-z][a-z0-9]*(_[a-z0-9]+)*")
 SHORT_RE = re.compile(r"[A-Z0-9]{3,6}")
-TOKEN_RE = re.compile(r"__(ID|AUTHOR|NAME|UPPER|TITLE|SHORT|TAB)__")
+TOKEN_RE = re.compile(r"__(ID|AUTHOR|NAME|UPPER|TITLE|SHORT|TAB|CAMEL|KEBAB)__")
 
 
 def tokens(
@@ -64,6 +65,8 @@ def tokens(
         "TITLE": title,
         "SHORT": short,
         "TAB": short[:3],
+        "KEBAB": name.replace("_", "-"),
+        "CAMEL": "".join(w.capitalize() for w in name.split("_")),
     }
 
 
@@ -85,6 +88,16 @@ def write_template(kind: str, base: Path, values: dict[str, str]) -> list[Path]:
     return written
 
 
+def create_service(name: str, dir_: Path | None = None) -> Path:
+    """A service crate of the runtime from sdk/templates/service: `modules/core/services/NAME` (or `DIR/NAME`). The id is `core/NAME`; there is no author."""
+    if not NAME_RE.fullmatch(name):
+        raise SystemExit(f"a service name is lower snake case: {name!r}")
+    values = {**tokens(f"service/{name}"), "ID": f"core/{name}", "AUTHOR": "core"}
+    base = (dir_ if dir_ is not None else MODULES / "core" / "services") / name
+    write_template("service", base, values)
+    return base
+
+
 def create(
     kind: str,
     id_: str,
@@ -92,6 +105,8 @@ def create(
     title: str | None = None,
     short: str | None = None,
 ) -> Path:
+    if kind == "service":
+        return create_service(id_, dir_)
     values = tokens(id_, title, short)
     base = (dir_ if dir_ is not None else MODULES / KIND_DIRS[kind]) / values["NAME"]
     write_template(kind, base, values)
@@ -101,7 +116,9 @@ def create(
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("kind", choices=sorted(KIND_DIRS))
-    ap.add_argument("id", help="AUTHOR/NAME (for example alice/drone)")
+    ap.add_argument(
+        "id", help="AUTHOR/NAME (for example alice/drone); for a service, NAME"
+    )
     ap.add_argument(
         "--dir",
         type=Path,
@@ -117,6 +134,10 @@ def main(argv: list[str]) -> int:
     base = create(a.kind, a.id, a.dir, a.title, a.short)
     shown = base.relative_to(ROOT) if base.is_relative_to(ROOT) else base
     print(f"created {shown}")
+    if a.kind == "service":
+        print(f"next: register the service (see {shown}/README.md), then")
+        print(f"      mise run module:check -- service/{a.id}")
+        return 0
     import os
 
     from tools.patchkit import patchkit

@@ -47,12 +47,12 @@ pub mod exports {
     /// `dk_param_get` over the real core and the real firmware page. (A host test of the runtime crate has no firmware: it never reaches it.)
     #[cfg(not(test))]
     pub unsafe fn param_get(track: u32, word: u32) -> i32 {
-        dkrt_svc_machines::pageclick::param_get(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word)
+        dkrt_svc_machines::slots::param_get(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word)
     }
     /// `dk_param_set`, as `param_get`.
     #[cfg(not(test))]
     pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
-        dkrt_svc_machines::pageclick::param_set(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word, raw)
+        dkrt_svc_machines::slots::param_set(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word, raw)
     }
     #[cfg(test)]
     pub unsafe fn param_get(_: u32, _: u32) -> i32 {
@@ -68,18 +68,87 @@ pub mod exports {
     }
     #[cfg(test)]
     pub(crate) use dkrt_svc_machines::nativepage::PageSet;
-    pub use crate::services::samples::tracks::{dkrt_pool_done, dkrt_pool_lost, dkrt_project_changed};
-    pub use crate::services::samples::{
-        dk_sample_pool_add, dk_sample_pool_clear, dk_sample_pool_info, dk_sample_pool_open, dk_sample_pool_path, dk_sample_pool_peaks,
-        dk_sample_pool_peaks_window, dk_sample_pool_set, dk_sample_pool_status,
-    };
+    /// The shapes of the lfo service, for the runtime's own tests of the record path.
+    #[cfg(test)]
+    pub(crate) use dkrt_svc_lfo::records::{owner_of, shape, used, MAX_SHAPES, SAMPLES};
+
+    // ---- the sample pool (interface A: the imports of sdk.toml over the samples service) ----------------------------------------
+    // The handle a module holds is its client number (`entry`); each call resolves it inside the service. The service is generic over the core: these wrappers
+    // pass the real one.
+    use crate::core_api::{client, give, own_rec, REAL_CORE};
+    use dkrt_sdk::E_CONTRACT;
+
+    pub unsafe extern "C" fn dk_sample_pool_open(ctx: *mut u8, out: *mut *mut u8) -> i32 {
+        if out.is_null() || own_rec(ctx).is_none() {
+            return E_CONTRACT;
+        }
+        give(out, dkrt_svc_samples::tracks::open_first(&REAL_CORE))
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_add(p: *mut u8, path: *const u8) -> i32 {
+        dkrt_svc_samples::tracks::pool_add(&REAL_CORE, client(p), path)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_clear(p: *mut u8, index: u32) -> i32 {
+        dkrt_svc_samples::tracks::pool_clear(&REAL_CORE, client(p), index)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_status(p: *mut u8, index: u32) -> i32 {
+        dkrt_svc_samples::tracks::status(client(p), index)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_info(p: *mut u8, index: u32, out: *mut u8) -> i32 {
+        dkrt_svc_samples::tracks::info(client(p), index, out)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_path(p: *mut u8, index: u32, buf: *mut u8, cap: u32) -> i32 {
+        dkrt_svc_samples::tracks::path(&REAL_CORE, client(p), index, buf, cap)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_set(p: *mut u8, index: u32, path: *const u8) -> i32 {
+        dkrt_svc_samples::tracks::pool_set(&REAL_CORE, client(p), index, path)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_peaks(p: *mut u8, index: u32, token: u32, out: *mut u8, capacity: u32) -> i32 {
+        dkrt_svc_samples::tracks::peaks(client(p), index, token, out, capacity)
+    }
+
+    pub unsafe extern "C" fn dk_sample_pool_peaks_window(
+        p: *mut u8,
+        index: u32,
+        token: u32,
+        first: u32,
+        frames: u32,
+        columns: u32,
+        out: *mut u8,
+        capacity: u32,
+    ) -> i32 {
+        dkrt_svc_samples::peakwin::window(&REAL_CORE, client(p), index, token, first, frames, columns, out, capacity)
+    }
+
+    // ---- the events the adapters call ------------------------------------------------------------------------------------------
+    /// Adapter to runtime: load `req` finished (`result` 0, E_POOL, E_READ or E_FORMAT).
+    #[no_mangle]
+    pub unsafe extern "C" fn dkrt_pool_done(req: u32, result: i32) {
+        dkrt_svc_samples::tracks::pool_done(req, result)
+    }
+    /// Adapter to runtime: the backing was lost, all handles are invalid.
+    #[no_mangle]
+    pub unsafe extern "C" fn dkrt_pool_lost() {
+        dkrt_svc_samples::tracks::pool_lost(&REAL_CORE)
+    }
+    /// Project adapter to runtime: the current project slot changed.
+    #[no_mangle]
+    pub unsafe extern "C" fn dkrt_project_changed(slot: u32) {
+        dkrt_svc_samples::tracks::project_changed(slot)
+    }
 }
 
 /// Hook at the entry of the machine page's key handler (`dkrt_pagekey_hook`, src/cf/tramp.s; stack: view, event): the machines service sees the key.
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
-    dkrt_svc_machines::pageclick::page_key(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, view, ev)
+    dkrt_svc_machines::slots::page_key(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, view, ev)
 }
 
 /// Hook at the entry of the machine page's turn handler (`dkrt_pageturn_hook`): the machines service sees the turn; the result is nonzero when a
@@ -87,7 +156,7 @@ pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) -> u32 {
-    dkrt_svc_machines::pageclick::page_turn(&crate::core_api::REAL_CORE, view, ev)
+    dkrt_svc_machines::slots::page_turn(&crate::core_api::REAL_CORE, view, ev)
 }
 
 /// The length of a record of `kind`; `E_FORMAT`-worthy kinds are `None`. For the builder lowering (`collect`).
@@ -97,3 +166,5 @@ pub fn len(kind: u32) -> Option<u32> {
 
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod lfo_tests;

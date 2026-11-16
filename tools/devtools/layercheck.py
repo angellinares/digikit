@@ -32,8 +32,8 @@ Rules:
   service-crates
             A service crate (modules/core/services/NAME, linked into the runtime object) depends only on dkrt-abi, dkrt-sdk and dkneeds, and on
             dkrt-test-support as a dev-dependency; it names no firmware crate and no device id, and has no path into the runtime crate. The runtime
-            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`. Final state (R10): only `lfo` and `samples` are folders of
-            the runtime crate's `services/`; every other service is a crate.
+            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`. Final state (R12-1): no service is a folder of the
+            runtime crate's `services/`; every service (fx, machines, samples, lfo) is a crate.
   platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and `fw.rs` at the crate's source root (the declared adapter of
             `dkrt_abi::fw::Fw`: it must contain `impl Fw for`) name the firmware crate dkfw; the rest of the core and the services use the `Platform`
             trait and the `Fw` trait (`dkrt-abi`). No runtime file but `platform.rs` compares the device id with a number
@@ -777,8 +777,8 @@ SERVICE_DEPS = {"dkrt-abi", "dkrt-sdk", "dkneeds"}
 SERVICE_DEV_DEPS = SERVICE_DEPS | {"dkrt-test-support"}
 SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_\w+")
 SERVICE_RUNTIME_FILES = ("handlers.rs", "gen_services.rs")
-# The services that are still folders of the runtime crate (`services/NAME`); the others are crates (`modules/core/services/NAME`).
-RT_LOCAL_SERVICES = {"lfo", "samples"}
+# The services that are folders of the runtime crate (`services/NAME`): none since R12-1; every service is a crate (`modules/core/services/NAME`).
+RT_LOCAL_SERVICES: set[str] = set()
 SERVICE_RUNTIME_REF = re.compile(r"\bdkrt::|\bextern\s+crate\s+dkrt\b")
 RUNTIME_MANIFEST = "modules/core/runtime/src/rs/Cargo.toml"
 DEP_TABLES = ("dependencies", "build-dependencies", "dev-dependencies")
@@ -903,7 +903,7 @@ def check_service_crates(root: Path) -> list[Violation]:
                     rel(root, d),
                     "service-crates",
                     f"the service {d.name} is a folder of the runtime crate",
-                    f"only {', '.join(sorted(RT_LOCAL_SERVICES))} stay in services/; put a service in a crate modules/core/services/{d.name}",
+                    f"no service is a folder of the runtime crate; put a service in a crate modules/core/services/{d.name}",
                 )
             )
     mod_rs = local / "mod.rs"
@@ -917,7 +917,7 @@ def check_service_crates(root: Path) -> list[Violation]:
                         f"{RT_SRC}/services/mod.rs:{n}",
                         "service-crates",
                         f"services/mod.rs declares the service {m.group(1)}",
-                        f"only {', '.join(sorted(RT_LOCAL_SERVICES))} stay in services/",
+                        "no service is a folder of the runtime crate; every service is a crate in modules/core/services",
                     )
                 )
     for f in sorted(src.rglob("*.rs")) if src.is_dir() else []:

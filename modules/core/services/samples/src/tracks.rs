@@ -22,16 +22,17 @@
 //!
 //! TODO (not wired yet): persistence of the selections to the digikit store (they live in memory per project now); a request mailbox
 //! so API calls from the MIDI task cannot interleave with a tick step of the same track (an idle track is safe today).
-use crate::core_api::{CoreApi, Platform, SamplePool, Storage, PLATFORM, REAL_CORE};
-use dkrt_abi::dsp::PH_IDLE;
-use dkrt_abi::link::{LinkResult, Owner, Stream, Ticket};
-use dkrt_abi::storage::EntryKind;
 use core::hint::black_box;
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
+use dkrt_abi::core_api::{CoreApi, LOG_INFO};
+use dkrt_abi::dsp::PH_IDLE;
+use dkrt_abi::link::{LinkResult, Owner, Stream, Ticket};
+use dkrt_abi::platform::SampleHost;
+use dkrt_abi::storage::{EntryKind, Storage};
 use dkrt_sdk::files::SAMPLES;
 use dkrt_sdk::sample_tracks::{
-    rooted, store_inspect, unrooted, Core, Env, FileId, Handle, Inspect, Load, Note, Strack, ID_HASH_VALID, ROOT_DN2, ROOT_DT2,
-    TRACKS,
+    rooted, store_inspect, unrooted, Core, Env, FileId, Handle, Inspect, Load, Note, Strack,
+    ID_HASH_VALID, ROOT_DN2, ROOT_DT2, TRACKS,
 };
 use dkrt_sdk::{logk, E_CONTRACT, E_DSP_XFER, E_NOT_FOUND, E_SEL_PATH};
 
@@ -50,7 +51,15 @@ extern "C" {
     // Optional growth of plug-in point version 1 (dkrt_pool.h): the runtime tests each for 0.
     fn dkpool_cancel(req: u32);
     fn dkpool_peaks(h: *const Handle, out: *mut u8, capacity: u32) -> i32;
-    fn dkpool_window_step(h: *const Handle, path: *const u8, first: u32, frames: u32, columns: u32, out: *mut i16, cursor: *mut u32) -> i32;
+    fn dkpool_window_step(
+        h: *const Handle,
+        path: *const u8,
+        first: u32,
+        frames: u32,
+        columns: u32,
+        out: *mut i16,
+        cursor: *mut u32,
+    ) -> i32;
 }
 
 static mut CORE: Core<CLIENTS, ENTRIES, PROJECTS> = Core::new();
@@ -70,8 +79,8 @@ pub(crate) unsafe fn core_() -> &'static mut Core<CLIENTS, ENTRIES, PROJECTS> {
 }
 
 /// Is a backing adapter of the right version in the image? (The platform's sample-pool provider.)
-unsafe fn pool_ok() -> bool {
-    SamplePool::present(&PLATFORM)
+unsafe fn pool_ok<C: CoreApi>(core: &C) -> bool {
+    core.host().pool_present()
 }
 
 // ---- table writes over the DSP link -------------------------------------------------------------------------------------------
@@ -92,7 +101,12 @@ struct Op {
     /// The record to publish (`Strack` words in order).
     rec: [u32; 8],
 }
-const OP0: Op = Op { kind: OP_NONE, step: 0, tries: 0, rec: [0; 8] };
+const OP0: Op = Op {
+    kind: OP_NONE,
+    step: 0,
+    tries: 0,
+    rec: [0; 8],
+};
 static mut OPS: [[Op; TRACKS]; CLIENTS] = [[OP0; TRACKS]; CLIENTS];
 /// The write in flight: the id of its request and its track, client * TRACKS + track.
 static mut FLIGHT: usize = NO_FLIGHT;
@@ -140,7 +154,10 @@ unsafe fn next_write(c: usize, k: usize, op: &Op) -> Option<(u32, [u32; 7], usiz
 /// Finish the write in flight, then start the next one. Called twice per UI-loop pass.
 unsafe fn pump<C: CoreApi>(api: &C) {
     if FLIGHT != NO_FLIGHT {
-        let done = api.link_result(Ticket { owner: Owner::Tracks, id: FLIGHT_ID });
+        let done = api.link_result(Ticket {
+            owner: Owner::Tracks,
+            id: FLIGHT_ID,
+        });
         if done == LinkResult::Pending {
             return;
         }
@@ -200,11 +217,11 @@ unsafe fn pump<C: CoreApi>(api: &C) {
 // ---- file header and identity ---------------------------------------------------------------------------------------------
 
 /// The device's sample root (`select` paths are root-relative; the runtime keeps the rooted form).
-fn root() -> &'static [u8] {
-    root_of(&PLATFORM)
+fn root<C: CoreApi>(core: &C) -> &'static [u8] {
+    root_of(core.host())
 }
-fn root_of<P: Platform>(p: &P) -> &'static [u8] {
-    if p.samples_in_store() {
+fn root_of<H: SampleHost>(h: &H) -> &'static [u8] {
+    if h.files_in_store() {
         ROOT_DN2
     } else {
         ROOT_DT2
@@ -214,22 +231,33 @@ fn root_of<P: Platform>(p: &P) -> &'static [u8] {
 /// The identity of the sample file `path` (device-rooted, not NUL-terminated) from `Storage::stat`: its size and, when the storage gives one, the
 /// file hash of its table entry (the listing row's). No mtime exists on either device (`mtime` 0): without a hash the identity is size and path. When
 /// `head` is given, the first 64 bytes of the file. The storage routes (store, firmware file system) are the platform's.
-unsafe fn probe_with<P: Platform + Storage>(p: &P, path: &[u8], head: Option<&mut [u8; 64]>) -> Result<FileId, i32> {
+unsafe fn probe_with<H: SampleHost>(
+    h: &H,
+    path: &[u8],
+    head: Option<&mut [u8; 64]>,
+) -> Result<FileId, i32> {
     if path.is_empty() || path.len() >= dkrt_sdk::sample_tracks::PATH {
         return Err(E_SEL_PATH);
     }
-    let rel = unrooted(root_of(p), path);
+    let rel = unrooted(root_of(h), path);
     if rel.is_empty() {
         return Err(E_SEL_PATH);
     }
     let st = match head {
-        Some(h) => p.stat_head(SAMPLES, rel, h)?.0,
-        None => p.stat(SAMPLES, rel)?,
+        Some(head) => h.store().stat_head(SAMPLES, rel, head)?.0,
+        None => h.store().stat(SAMPLES, rel)?,
     };
     if st.kind != EntryKind::File {
         return Err(E_SEL_PATH);
     }
-    let mut id = FileId { root: SAMPLES, size: st.size, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] };
+    let mut id = FileId {
+        root: SAMPLES,
+        size: st.size,
+        mtime: 0,
+        flags: 0,
+        hash_kind: 0,
+        hash: [0; 32],
+    };
     if st.hash_valid {
         id.flags = ID_HASH_VALID;
         id.hash_kind = st.hash_kind as u32;
@@ -238,25 +266,35 @@ unsafe fn probe_with<P: Platform + Storage>(p: &P, path: &[u8], head: Option<&mu
     Ok(id)
 }
 
-unsafe fn probe(path: &[u8], head: Option<&mut [u8; 64]>) -> Result<FileId, i32> {
-    probe_with(&PLATFORM, path, head)
+unsafe fn probe<C: CoreApi>(
+    core: &C,
+    path: &[u8],
+    head: Option<&mut [u8; 64]>,
+) -> Result<FileId, i32> {
+    probe_with(core.host(), path, head)
 }
 
-struct Device;
-impl Env for Device {
+/// The environment the track state machine runs in: the pool adapter's `dkpool_*` calls, the table writes, and the core for the platform facts and the log.
+struct Device<'a, C: CoreApi>(&'a C);
+impl<C: CoreApi> Env for Device<'_, C> {
     fn inspect(&mut self, path: &[u8]) -> Result<Inspect, i32> {
         let mut head = [0u8; 64];
-        let id = unsafe { probe(path, Some(&mut head))? };
+        let id = unsafe { probe(self.0, path, Some(&mut head))? };
         // Size and format only: no PCM is read here (it can be megabytes), the pool adapter reads it.
         // This branch is a format choice (the store identity and header check, or the native header alone), not a storage route: `probe` reads both the same way.
-        if PLATFORM.samples_in_store() {
+        if self.0.host().files_in_store() {
             return store_inspect(id.size, &id.hash, &head);
         }
         let (frames, channels) = dkrt_sdk::sample::native_header(&head, id.size)?;
-        Ok(Inspect { id, frames, rate: dkrt_sdk::sample::RATE, channels })
+        Ok(Inspect {
+            id,
+            frames,
+            rate: dkrt_sdk::sample::RATE,
+            channels,
+        })
     }
     fn stat(&mut self, path: &[u8]) -> Result<FileId, i32> {
-        unsafe { probe(path, None) }
+        unsafe { probe(self.0, path, None) }
     }
     fn load(&mut self, req: u32, id: &FileId, path: &[u8], out: &mut Handle) -> Load {
         // The adapter gets a NUL-terminated copy: the runtime's path buffers are not.
@@ -314,25 +352,60 @@ impl Env for Device {
     fn note(&mut self, n: Note) {
         unsafe {
             match n {
-                Note::Loaded { client, entry, frames, base_l, token } => {
-                    REAL_CORE.log(logk::POOL_LOAD, dkrt_abi::core_api::LOG_INFO, [client << 8 | entry, 0, frames, base_l, token])
-                }
-                Note::Invalid { client, entry, reason, token, count } => {
-                    REAL_CORE.log(logk::POOL_INVALID, dkrt_abi::core_api::LOG_INFO, [client << 8 | entry, reason, token, count, 0])
-                }
+                Note::Loaded {
+                    client,
+                    entry,
+                    frames,
+                    base_l,
+                    token,
+                } => self.0.log(
+                    logk::POOL_LOAD,
+                    LOG_INFO,
+                    [client << 8 | entry, 0, frames, base_l, token],
+                ),
+                Note::Invalid {
+                    client,
+                    entry,
+                    reason,
+                    token,
+                    count,
+                } => self.0.log(
+                    logk::POOL_INVALID,
+                    LOG_INFO,
+                    [client << 8 | entry, reason, token, count, 0],
+                ),
             }
         }
     }
     fn publish(&mut self, client: usize, track: usize, rec: &Strack) {
         unsafe {
-            REAL_CORE.log(logk::POOL_PUBLISH, dkrt_abi::core_api::LOG_INFO, [(client as u32) << 8 | track as u32, rec.token, rec.frames, rec.base_l, rec.base_r]);
+            self.0.log(
+                logk::POOL_PUBLISH,
+                LOG_INFO,
+                [
+                    (client as u32) << 8 | track as u32,
+                    rec.token,
+                    rec.frames,
+                    rec.base_l,
+                    rec.base_r,
+                ],
+            );
             if FORCE == client {
                 return;
             }
             let op = &mut (*addr_of_mut!(OPS))[client][track];
             *op = OP0;
             op.kind = OP_PUBLISH;
-            op.rec = [rec.ready, rec.token, rec.frames, rec.rate, rec.channels, rec.fmt, rec.base_l, rec.base_r];
+            op.rec = [
+                rec.ready,
+                rec.token,
+                rec.frames,
+                rec.rate,
+                rec.channels,
+                rec.fmt,
+                rec.base_l,
+                rec.base_r,
+            ];
         }
     }
 }
@@ -391,18 +464,18 @@ pub unsafe fn ready(rec: usize) {
 /// A module's record went away (its machine rows are already cleared, so no voice runs): unbind its tracks without closing them in
 /// the DSP, release the pool references and free the client slot. A write already in flight ends by itself (its bytes are static, and
 /// the link is serialized, so a later load of the range lands after it).
-pub unsafe fn remove(rec: usize) {
+pub unsafe fn remove<C: CoreApi>(core: &C, rec: usize) {
     let mut i = 0;
     while i < CLIENTS {
         if OWNER[i] == rec {
             FORCE = i;
             let mut n = 0;
-            while n < 4 && !core_().teardown(i, &mut Device) {
+            while n < 4 && !core_().teardown(i, &mut Device(core)) {
                 n += 1;
             }
             FORCE = usize::MAX;
             (*addr_of_mut!(OPS))[i] = [OP0; TRACKS];
-            super::peakwin::reset(i);
+            crate::peakwin::reset(core, i);
             LIVE[i] = false;
             OWNER[i] = usize::MAX;
         }
@@ -422,8 +495,8 @@ pub unsafe fn has(rec: usize) -> bool {
     false
 }
 
-pub unsafe fn tracks(local_id: u32) -> i32 {
-    let owner = REAL_CORE.current_source();
+pub unsafe fn tracks<C: CoreApi>(core: &C, local_id: u32) -> i32 {
+    let owner = core.current_source();
     if owner == 0 {
         return E_NOT_FOUND;
     }
@@ -440,8 +513,8 @@ pub unsafe fn tracks(local_id: u32) -> i32 {
 
 /// `dk_sample_pool_open`: the handle of the module's pool table with the lowest local id (the one table a module declares), as `tracks` gives it for
 /// that id; E_NOT_FOUND without a table.
-pub unsafe fn open_first() -> i32 {
-    let owner = REAL_CORE.current_source();
+pub unsafe fn open_first<C: CoreApi>(core: &C) -> i32 {
+    let owner = core.current_source();
     if owner == 0 {
         return E_NOT_FOUND;
     }
@@ -457,11 +530,15 @@ pub unsafe fn open_first() -> i32 {
     if best == usize::MAX {
         return E_NOT_FOUND;
     }
-    tracks(LOCAL[best])
+    tracks(core, LOCAL[best])
 }
 
 /// The device-rooted copy of a module's root-relative path (a listing row) in `full`, and its length; or a negative error.
-unsafe fn rooted_path(path: *const u8, full: &mut [u8; dkrt_sdk::sample_tracks::PATH]) -> Result<usize, i32> {
+unsafe fn rooted_path<C: CoreApi>(
+    core: &C,
+    path: *const u8,
+    full: &mut [u8; dkrt_sdk::sample_tracks::PATH],
+) -> Result<usize, i32> {
     if path.is_null() {
         return Err(E_SEL_PATH);
     }
@@ -479,15 +556,15 @@ unsafe fn rooted_path(path: *const u8, full: &mut [u8; dkrt_sdk::sample_tracks::
         return Err(E_SEL_PATH);
     }
     // The path is root-relative (a listing row); the runtime keeps and checks the device-rooted form. A DT2 path that starts with '/' stays.
-    rooted(root(), &copy[..n], full)
+    rooted(root(core), &copy[..n], full)
 }
 
 /// `sample_pool_add`: the pool index of the file (a new entry, or the one that already holds the path), or a negative error.
-pub unsafe fn pool_add(handle: u32, path: *const u8) -> i32 {
+pub unsafe fn pool_add<C: CoreApi>(core: &C, handle: u32, path: *const u8) -> i32 {
     if path.is_null() {
         return E_SEL_PATH;
     }
-    if !pool_ok() {
+    if !pool_ok(core) {
         return E_CONTRACT;
     }
     let c = match client(handle) {
@@ -495,22 +572,22 @@ pub unsafe fn pool_add(handle: u32, path: *const u8) -> i32 {
         Err(e) => return e,
     };
     let mut full = [0u8; dkrt_sdk::sample_tracks::PATH];
-    let n = match rooted_path(path, &mut full) {
+    let n = match rooted_path(core, path, &mut full) {
         Ok(n) => n,
         Err(e) => return e,
     };
-    let sr = PLATFORM.irq_mask();
+    let sr = core.host().mask_irq();
     let r = core_().pool_add(c, &full[..n]);
-    PLATFORM.irq_restore(sr);
+    core.host().restore_irq(sr);
     r
 }
 
 /// `sample_pool_set`: load the file into entry `index` (replacing what was there); 0 or a negative error.
-pub unsafe fn pool_set(handle: u32, index: u32, path: *const u8) -> i32 {
+pub unsafe fn pool_set<C: CoreApi>(core: &C, handle: u32, index: u32, path: *const u8) -> i32 {
     if path.is_null() {
         return E_SEL_PATH;
     }
-    if !pool_ok() {
+    if !pool_ok(core) {
         return E_CONTRACT;
     }
     let c = match client(handle) {
@@ -518,23 +595,23 @@ pub unsafe fn pool_set(handle: u32, index: u32, path: *const u8) -> i32 {
         Err(e) => return e,
     };
     let mut full = [0u8; dkrt_sdk::sample_tracks::PATH];
-    let n = match rooted_path(path, &mut full) {
+    let n = match rooted_path(core, path, &mut full) {
         Ok(n) => n,
         Err(e) => return e,
     };
-    let sr = PLATFORM.irq_mask();
+    let sr = core.host().mask_irq();
     let r = core_().pool_set(c, index as usize, &full[..n]);
-    PLATFORM.irq_restore(sr);
+    core.host().restore_irq(sr);
     r
 }
 
 /// `sample_pool_clear`: the entry becomes UNUSED (a hole); the other indexes stay.
-pub unsafe fn pool_clear(handle: u32, track: u32) -> i32 {
+pub unsafe fn pool_clear<C: CoreApi>(core: &C, handle: u32, track: u32) -> i32 {
     match client(handle) {
         Ok(c) => {
-            let sr = PLATFORM.irq_mask();
+            let sr = core.host().mask_irq();
             let r = core_().unbind(c, track as usize);
-            PLATFORM.irq_restore(sr);
+            core.host().restore_irq(sr);
             r
         }
         Err(e) => e,
@@ -549,7 +626,7 @@ pub unsafe fn status(handle: u32, track: u32) -> i32 {
 }
 
 /// `sample_pool_path`: the entry's current selection, root-relative, NUL-terminated, into `buf`; the length without the NUL.
-pub unsafe fn path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 {
+pub unsafe fn path<C: CoreApi>(core: &C, handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 {
     let c = match client(handle) {
         Ok(c) => c,
         Err(e) => return e,
@@ -559,7 +636,7 @@ pub unsafe fn path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 {
     }
     match core_().path(c, track as usize) {
         Ok(stored) => {
-            let p = unrooted(root(), stored);
+            let p = unrooted(root(core), stored);
             if p.len() + 1 > cap as usize {
                 return E_SEL_PATH;
             }
@@ -595,36 +672,37 @@ pub unsafe fn info(handle: u32, track: u32, out: *mut u8) -> i32 {
 }
 
 /// One step of every track, in the UI loop. Without a backing adapter nothing runs.
-pub unsafe fn tick() {
-    if !pool_ok() {
+pub unsafe fn tick<C: CoreApi>(core: &C) {
+    if !pool_ok(core) {
         return;
     }
     // Optional on its own: the adapter delivers completions and finds a stock reset here, before the runtime steps the tracks.
     if black_box(dkpool_tick as *const () as usize) != 0 {
         dkpool_tick();
     }
-    pump(&REAL_CORE);
-    core_().tick(&mut Device);
-    pump(&REAL_CORE);
+    pump(core);
+    core_().tick(&mut Device(core));
+    pump(core);
 }
 
-/// Adapter to runtime: load `req` finished (`result` 0, E_POOL, E_READ or E_FORMAT).
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_pool_done(req: u32, result: i32) {
+/// Adapter to runtime: load `req` finished (`result` 0, E_POOL, E_READ or E_FORMAT). The runtime's `dkrt_pool_done` calls it.
+pub unsafe fn pool_done(req: u32, result: i32) {
     core_().done(req, result);
 }
-/// Adapter to runtime: the backing was lost, all handles are invalid.
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_pool_lost() {
+/// Adapter to runtime: the backing was lost, all handles are invalid. The runtime's `dkrt_pool_lost` calls it.
+pub unsafe fn pool_lost<C: CoreApi>(core: &C) {
     static mut LOST: u32 = 0;
     let n = read_volatile(addr_of!(LOST)).wrapping_add(1);
     *addr_of_mut!(LOST) = n;
-    REAL_CORE.log(logk::POOL_LOST, logk::L_WARN << logk::LEVEL_SHIFT, [n, 0, 0, 0, 0]);
-    core_().lost(&mut Device);
+    core.log(
+        logk::POOL_LOST,
+        logk::L_WARN << logk::LEVEL_SHIFT,
+        [n, 0, 0, 0, 0],
+    );
+    core_().lost(&mut Device(core));
 }
-/// Project adapter to runtime: the current project slot changed.
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_project_changed(slot: u32) {
+/// Project adapter to runtime: the current project slot changed. The runtime's `dkrt_project_changed` calls it.
+pub unsafe fn project_changed(slot: u32) {
     core_().project_changed(slot);
 }
 
@@ -634,14 +712,29 @@ pub(crate) unsafe fn window_hook() -> bool {
 }
 
 /// One step of a peak window (worker task); see `dkpool_window_step` in dkrt_pool.h.
-pub(crate) unsafe fn window_step(h: *const Handle, path: *const u8, first: u32, frames: u32, columns: u32, out: *mut i16, cursor: *mut u32) -> i32 {
+pub(crate) unsafe fn window_step(
+    h: *const Handle,
+    path: *const u8,
+    first: u32,
+    frames: u32,
+    columns: u32,
+    out: *mut i16,
+    cursor: *mut u32,
+) -> i32 {
     dkpool_window_step(h, path, first, frames, columns, out, cursor)
 }
 
 /// Bounded overview copy; no file or PCM access in the UI task.
 pub unsafe fn peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity: u32) -> i32 {
-    let c = match client(handle) { Ok(c) => c, Err(e) => return e };
-    if out.is_null() || (out as usize & 1) != 0 || capacity < 2048 || black_box(dkpool_peaks as *const () as usize) == 0 {
+    let c = match client(handle) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    if out.is_null()
+        || (out as usize & 1) != 0
+        || capacity < 2048
+        || black_box(dkpool_peaks as *const () as usize) == 0
+    {
         return E_CONTRACT;
     }
     match core_().peak_handle(c, track as usize, token) {
@@ -653,8 +746,8 @@ pub unsafe fn peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_api::FakeCore;
-    use crate::core_api::TEST_LOCK as LOCK;
+    use crate::TEST_LOCK as LOCK;
+    use dkrt_test_support::{FakeCore, FakeHost};
 
     /// Client 0, track 1 has an op `kind`; its records and control sets are at fixed L2 addresses.
     unsafe fn seed(kind: u8, rec: [u32; 8]) {
@@ -664,7 +757,12 @@ mod tests {
         LIVE[0] = true;
         RECORDS[0] = 0x1000;
         CONTROL[0] = 0x2000;
-        (*addr_of_mut!(OPS))[0][1] = Op { kind, step: 0, tries: 0, rec };
+        (*addr_of_mut!(OPS))[0][1] = Op {
+            kind,
+            step: 0,
+            tries: 0,
+            rec,
+        };
     }
 
     /// The writer's pass and the link's pass, `n` times (the model's time passes with each call).
@@ -682,8 +780,19 @@ mod tests {
             seed(OP_PUBLISH, [1, 2, 3, 4, 5, 6, 7, 8]);
             let fake = FakeCore::new();
             passes(&fake, 60);
-            let words = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<std::vec::Vec<u8>>();
-            let wire: std::vec::Vec<(u32, u32, std::vec::Vec<u8>)> = fake.link.borrow().t.wire.iter().map(|w| (w.win, w.dst, w.bytes.clone())).collect();
+            let words = |w: &[u32]| {
+                w.iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<std::vec::Vec<u8>>()
+            };
+            let wire: std::vec::Vec<(u32, u32, std::vec::Vec<u8>)> = fake
+                .link
+                .borrow()
+                .t
+                .wire
+                .iter()
+                .map(|w| (w.win, w.dst, w.bytes.clone()))
+                .collect();
             assert_eq!(
                 wire,
                 [
@@ -723,7 +832,11 @@ mod tests {
             assert_eq!(fake.link.borrow().t.wire.len(), 3);
             assert_eq!((*addr_of!(OPS))[0][1].kind, OP_NONE);
             seed(OP_CLOSE, [0; 8]);
-            fake.link.borrow_mut().t.script.extend(std::iter::repeat(Some(92)).take(TRIES as usize));
+            fake.link
+                .borrow_mut()
+                .t
+                .script
+                .extend(std::iter::repeat(Some(92)).take(TRIES as usize));
             passes(&fake, 400);
             assert_eq!((*addr_of!(OPS))[0][1].kind, OP_FAILED);
         }
@@ -731,37 +844,92 @@ mod tests {
 
     const H: [u8; 32] = [7; 32];
 
-    fn sample_files(f: &crate::core_api::FakePlatform) {
-        f.storage.add_file(SAMPLES, b"KICKS/K1", &[3u8; 100], dkrt_abi::storage::HASH_ELEKTRON32, H);
-        f.storage.add_file(SAMPLES, b"KICKS/K2", &[4u8; 100], dkrt_abi::storage::HASH_NONE, [0; 32]);
+    fn sample_files(f: &FakeHost) {
+        f.storage.add_file(
+            SAMPLES,
+            b"KICKS/K1",
+            &[3u8; 100],
+            dkrt_abi::storage::HASH_ELEKTRON32,
+            H,
+        );
+        f.storage.add_file(
+            SAMPLES,
+            b"KICKS/K2",
+            &[4u8; 100],
+            dkrt_abi::storage::HASH_NONE,
+            [0; 32],
+        );
         f.storage.add_dir(SAMPLES, b"KICKS/SUB");
     }
 
     #[test]
     fn a_store_route_device_gives_the_hash_of_the_table_entry() {
-        let f = crate::core_api::FakePlatform::new(dkrt_abi::profiles::DN2);
+        let f = FakeHost::new();
+        f.in_store.set(true);
         sample_files(&f);
         let mut head = [0u8; 64];
         unsafe {
             let id = probe_with(&f, b"samples/KICKS/K1", Some(&mut head)).unwrap();
-            assert_eq!(id, FileId { root: SAMPLES, size: 100, mtime: 0, flags: ID_HASH_VALID, hash_kind: 2, hash: H });
+            assert_eq!(
+                id,
+                FileId {
+                    root: SAMPLES,
+                    size: 100,
+                    mtime: 0,
+                    flags: ID_HASH_VALID,
+                    hash_kind: 2,
+                    hash: H
+                }
+            );
             assert_eq!(&head[..4], [3, 3, 3, 3]);
-            assert_eq!(probe_with(&f, b"samples/KICKS/none", None), Err(E_NOT_FOUND));
+            assert_eq!(
+                probe_with(&f, b"samples/KICKS/none", None),
+                Err(E_NOT_FOUND)
+            );
             assert_eq!(probe_with(&f, b"samples/", None), Err(E_SEL_PATH));
-            assert_eq!(probe_with(&f, b"samples/KICKS/SUB", None), Err(E_NOT_FOUND), "a folder is no sample (it does not open as a file)");
+            assert_eq!(
+                probe_with(&f, b"samples/KICKS/SUB", None),
+                Err(E_NOT_FOUND),
+                "a folder is no sample (it does not open as a file)"
+            );
         }
     }
 
     #[test]
     fn a_firmware_fs_device_has_a_hash_only_when_the_storage_gives_one() {
-        let f = crate::core_api::FakePlatform::new(dkrt_abi::profiles::DT2);
+        let f = FakeHost::new();
         sample_files(&f);
         unsafe {
             let hashed = probe_with(&f, b"/KICKS/K1", None).unwrap();
-            assert_eq!(hashed, FileId { root: SAMPLES, size: 100, mtime: 0, flags: ID_HASH_VALID, hash_kind: 2, hash: H });
+            assert_eq!(
+                hashed,
+                FileId {
+                    root: SAMPLES,
+                    size: 100,
+                    mtime: 0,
+                    flags: ID_HASH_VALID,
+                    hash_kind: 2,
+                    hash: H
+                }
+            );
             let plain = probe_with(&f, b"/KICKS/K2", None).unwrap();
-            assert_eq!(plain, FileId { root: SAMPLES, size: 100, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] });
-            assert!(!plain.same(&FileId { hash_kind: 2, flags: ID_HASH_VALID, hash: H, ..plain }));
+            assert_eq!(
+                plain,
+                FileId {
+                    root: SAMPLES,
+                    size: 100,
+                    mtime: 0,
+                    flags: 0,
+                    hash_kind: 0,
+                    hash: [0; 32]
+                }
+            );
+            assert!(!plain.same(&FileId {
+                hash_kind: 2,
+                flags: ID_HASH_VALID,
+                hash: H,
+                ..plain
+            }));
             assert_eq!(probe_with(&f, b"/", None), Err(E_SEL_PATH));
         }
     }

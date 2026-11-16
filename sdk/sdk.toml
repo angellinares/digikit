@@ -1617,13 +1617,13 @@ DSP_VOICES = { id = 16, fit = true, label = "DSP voices" }   # voices the machin
 
 # The in-crate services of the runtime, in the order the core calls them (samples first: its DSP-section checks and its track-table claim ran before the
 # voice and effect parts, and the unreserve of its table before theirs; machines before fx: the registry applies machines, pages and native pages before
-# effect pages, and the removal runs the other way round). `rust` is the full path of the type that implements `Service`: a folder
-# of the runtime crate (`crate::services::NAME::...`) or a service crate linked into it (`dkrt_svc_NAME::...<crate::core_api::RealCore>`, `modules/core/services/NAME`).
-# `patchkit gen` writes the static table of these rows (modules/core/runtime/src/rs/src/gen_services.rs); a new service is a row here, its crate or folder
+# effect pages, and the removal runs the other way round). `rust` is the full path of the type that implements `Service`: the type of a service crate linked into
+# the runtime (`dkrt_svc_NAME::records::Type`, `modules/core/services/NAME`).
+# `patchkit gen` writes the static table of these rows (modules/core/runtime/src/rs/src/gen_services.rs); a new service is a row here, its crate
 # and its `[records.kinds]`.
 [[service]]
 name = "samples"
-rust = "crate::services::samples::records::Samples"
+rust = "dkrt_svc_samples::records::Samples"
 
 [[service]]
 name = "machines"
@@ -1635,7 +1635,7 @@ rust = "dkrt_svc_fx::records::Fx"
 
 [[service]]
 name = "lfo"
-rust = "crate::services::lfo::records::Lfo"
+rust = "dkrt_svc_lfo::records::Lfo"
 
 # The record kinds of the `register` section of a `.dkm` (docs/plans/runtime-and-services.md R7): one table for the runtime, dkneeds and patchkit
 # (`patchkit gen` writes `records::KINDS` and one `KIND_<NAME>` and `LEN_<NAME>` per kind into gen_sdk.rs and packages/dkneeds/src/gen_limits.rs).
