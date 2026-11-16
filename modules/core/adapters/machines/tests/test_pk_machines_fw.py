@@ -29,6 +29,9 @@ SRC = (
     / "dt2"
     / "machines.s"
 )
+# the hooks of the machines service file (the image keeps the table builder, dispatch, list entry and rank) and the table they read
+HOOKS = ROOT / "modules" / "core" / "services" / "machines" / "dks" / "src" / "hooks-dt2.s"
+TAB = ROOT / "tests" / "fixtures" / "machines-info-dt2.s"
 ROWSIZE = 64
 FIRST = 7
 ROWS = 0x47EC0000
@@ -40,9 +43,10 @@ STUBS = [
     "_mf_t_dispatch",
     "_mf_t_list",
     "_mf_t_rank",
-    "_mf_t_typearg",
+    "dk_tail_09514a38",
     "_mf_x_typearg",
-    "_mf_t_clone5",
+    "_mf_c5ne",
+    "_mf_c5eq",
     "_mf_c0a",
     ("_mf_c0", 8),
     ("_mf_c1", 6),
@@ -119,7 +123,7 @@ def tables():
 def unit():
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
+        [SRC, HOOKS, TAB, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         {
             "_mf_first": FIRST,
@@ -363,7 +367,7 @@ def test_masked_clone_test_maps_added_types_to_their_clone(unit):
     )
     for t, r in zip(ts, res, strict=True):
         want = ENTRIES[t - FIRST]["clone_of"] if FIRST <= t < FIRST + COUNT else t
-        assert r.stub == "_mf_t_clone5" and r.d[0] == want
+        assert r.stub == ("_mf_c5eq" if (want & ~2) == 4 else "_mf_c5ne") and r.d[0] == want
         assert r.d[1] == 9 and r.d[3] == 33 and r.a[0] == 5
 
 
@@ -402,11 +406,11 @@ def test_typearg_answers_fields_clone_types_and_hands_the_rest_on(unit):
             assert r.stub == TYPEARG_EXIT
             assert r.d[0] == e["f"][(SLOTMAP[idx - 25] - 8) // 4]
         elif 25 <= idx <= 34:  # slots 29 and 30: the clone's type replaces the argument
-            assert r.stub == "_mf_t_typearg" and r.stack[4] == e["clone_of"]
+            assert r.stub == "dk_tail_09514a38" and r.stack[4] == e["clone_of"]
         else:
-            assert r.stub == "_mf_t_typearg" and r.stack[4] == FIRST + k
+            assert r.stub == "dk_tail_09514a38" and r.stack[4] == FIRST + k
     for r in res[len(want) :]:
-        assert r.stub == "_mf_t_typearg"
+        assert r.stub == "dk_tail_09514a38"
 
 
 def test_stock_table_copies_append_the_clones_row():

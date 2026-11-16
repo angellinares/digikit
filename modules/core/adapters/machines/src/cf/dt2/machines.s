@@ -251,6 +251,7 @@ mf_clone6:
 | descriptor field offset of mirror index 25 .. 34 (-1: none)
     .section .rodata
     .balign 4
+    .globl mf_slotmap
 mf_slotmap:
     .long   8, 12, 16, 20, -1, -1, 24, 28, 32, 36
 

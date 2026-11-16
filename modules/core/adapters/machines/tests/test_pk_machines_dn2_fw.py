@@ -27,6 +27,10 @@ SRC = (
     / "dn2"
     / "machines.s"
 )
+HOOKS = ROOT / "modules" / "core" / "services" / "machines" / "dks" / "src" / "hooks-dn2.s"
+TAB = ROOT / "tests" / "fixtures" / "machines-info-dn2.s"
+# the stock tail `patchkit bind` makes, by hook: what the type maps continue in
+TAILS = {"typemap0": "dk_tail_02e8a3f1", "typemap1": "dk_tail_763365db", "typemap2": "dk_tail_42d651c5"}
 ROWSIZE = 64
 FIRST = 5
 ROWS = 0x47EC0000
@@ -67,10 +71,11 @@ PAGES = [
 STUBS = [
     "_mf_t_dispatch",
     "_mf_t_list",
-    "_mf_t_group",
-    "_mf_t_typemap0",
-    "_mf_t_typemap1",
-    "_mf_t_typemap2",
+    "_mf_gnext",
+    "_mf_gtaken",
+    "dk_tail_02e8a3f1",
+    "dk_tail_763365db",
+    "dk_tail_42d651c5",
     ("_mf_ft", 6),
     ("_mf_rd", 8),
     ("_mf_ow", 6),
@@ -125,7 +130,7 @@ def unit():
     sym.update({f"_mf_rc{i}": a for i, a in enumerate(RC)})
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
+        [SRC, HOOKS, TAB, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         sym,
         [
@@ -167,8 +172,10 @@ def test_group_sends_added_types_to_the_group_one_path(unit):
         mem, [{"routine": "mf_group", "d": {0: t, 1: 5}} for t in range(0, 12)]
     )
     for t, r in enumerate(res):
-        assert r.stub == "_mf_t_group"
-        assert r.d[0] == (0 if FIRST <= t < FIRST + COUNT else t)
+        d0 = 0 if FIRST <= t < FIRST + COUNT else t
+        # the stock test `moveq #3,D1; cmp.l D0,D1; bge.b T`: taken for the types 0 to 3 and for every added type
+        assert r.stub == ("_mf_gtaken" if 3 >= d0 else "_mf_gnext")
+        assert r.d[0] == d0
 
 
 @pytest.mark.parametrize(
@@ -193,7 +200,7 @@ def test_type_maps_replace_the_argument_by_clone_of(unit, name, off):
         )
     for t, r in zip(ts, unit.run_cases(mem, cases), strict=True):
         want = ENTRIES[t - FIRST][2] if FIRST <= t < FIRST + COUNT else t
-        assert r.stub == "_mf_t_" + name[3:]
+        assert r.stub == TAILS[name[3:]]
         assert r.stack[off // 4] == want
         if (
             name == "mf_typemap2"
@@ -320,7 +327,7 @@ def unit_pg():
     sym.update({f"_mf_rc{i}": a for i, a in enumerate(RC)})
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
+        [SRC, HOOKS, TAB, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         sym,
         ["mf_typemap0", "mf_typemap1", "mf_typemap2", "mf_reader"],
@@ -340,7 +347,7 @@ def test_page_count(unit_pg):
             assert r.stub == "rts" and r.d[0] == own
         else:  # no own pages: the clone mapping and the stock code
             want = ENTRIES[t - FIRST][2] if FIRST <= t < FIRST + COUNT else t
-            assert r.stub == "_mf_t_typemap0" and r.stack[1] == want
+            assert r.stub == TAILS["typemap0"] and r.stack[1] == want
 
 
 def test_page_descriptor(unit_pg):
@@ -368,7 +375,7 @@ def test_page_descriptor(unit_pg):
     for r, k in zip(res[:3], (0, 1, 2), strict=True):
         assert r.stub == "rts" and r.d[0] == PGROWS + k * PGSIZE and r.d[2] == 0xD2D2
     # out of range (and not own): the stock code answers (MIDI's row for a type above 4, the clone's page otherwise)
-    assert [r.stub for r in res[3:]] == ["_mf_t_typemap1"] * 4
+    assert [r.stub for r in res[3:]] == [TAILS["typemap1"]] * 4
     assert (
         res[3].stack[2] == FIRST and res[4].stack[2] == FIRST
     )  # the own type stays above 4
@@ -437,7 +444,7 @@ def test_slot_to_code(unit_pg):
     for r, w, (t, slot) in zip(res[:9], want, probes, strict=True):
         if w is None:  # Mid Clone has no page: clone_of mapped, a0 kept
             assert (
-                r.stub == "_mf_t_typemap2"
+                r.stub == TAILS["typemap2"]
                 and r.stack[3] == ENTRIES[2][2]
                 and r.a[0] == slot
             )
@@ -445,7 +452,7 @@ def test_slot_to_code(unit_pg):
             assert r.stub == "rts" and r.d[0] == w and r.d[2] == 0xD2D2, (t, slot)
     for r, slot in zip(res[9:], (0x10, 0x42, 65), strict=True):
         assert (
-            r.stub == "_mf_t_typemap2"
+            r.stub == TAILS["typemap2"]
             and r.a[0] == slot
             and r.stack[3] == FIRST
             and r.d[1] == 0x64

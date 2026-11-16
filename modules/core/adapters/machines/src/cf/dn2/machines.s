@@ -42,6 +42,7 @@
     .equ REPSIZE,  48          | bytes per std::string representation in mf_strbuf
 
 | ---- mf_ensure: build the run-time tables once. Preserves every register (not the flags).
+    .globl mf_ensure
 mf_ensure:
     tst.b   mf_ready
     bne.w   9f

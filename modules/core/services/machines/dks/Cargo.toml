@@ -14,6 +14,9 @@ dkrt-sdk = { path = "../../../runtime/sdk" }
 dkrt-svc-rt = { path = "../../../runtime/svc-rt" }
 dkrt-svc-machines = { path = ".." }
 
+[dev-dependencies]
+dkrt-test-support = { path = "../../../runtime/test-support" }
+
 # This crate sits inside the repository's cargo workspace tree but is built on its own (`patchkit build`).
 [workspace]
 
