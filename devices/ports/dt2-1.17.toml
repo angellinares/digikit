@@ -393,6 +393,16 @@ mark = "D"
 rule = "fw/machine:cf_func"
 
 [[anchor]]
+name = "cf.machine.site.clone.5.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x4005db02
+len = 2
+sha256 = "f465c3739385890c221dff1a05e578c6cae0d0430e46996d319db7439f884336"
+mark = "D"
+rule = "fw/machine:cf_func"
+
+[[anchor]]
 name = "cf.machine.site.clone.6"
 cpu = "cf"
 kind = "code"
@@ -3747,7 +3757,7 @@ mode = "replace"
 [[hook]]
 name = "cf.machine.hook.clone.5"
 site = "cf.machine.site.clone.5"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.machine.hook.clone.6"
@@ -3777,7 +3787,7 @@ mode = "before"
 [[hook]]
 name = "cf.machine.hook.param_code.args"
 site = "cf.machine.site.param_code.args"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.machine.hook.srcpage"
@@ -3837,22 +3847,22 @@ mode = "replace"
 [[hook]]
 name = "cf.page.hook.source_code"
 site = "cf.page.fn.source_code"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.source_draw"
 site = "cf.page.fn.source_draw"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.source_key"
 site = "cf.page.fn.source_key"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.source_turn"
 site = "cf.page.fn.source_turn"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.tab_label_test"

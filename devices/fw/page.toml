@@ -279,22 +279,24 @@ doc = "Common exit of the sound loader `movem.l (SP),{D2-D4 A2-A6}; lea (0x20,SP
 name = "cf.page.hook.source_key"
 site = "cf.page.fn.source_key"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # view at 4(sp), event at 8(sp); the stock handler always runs after the hook
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/runtime"]
+users = ["core/services/machines"]
 doc = "Entry of the machine page's key handler; the hook sees every key event of the page and never consumes one."
 
 [[hook]]
 name = "cf.page.hook.source_turn"
 site = "cf.page.fn.source_turn"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # view at 4(sp), event at 8(sp); the stock handler always runs after the hook
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/runtime"]
+users = ["core/services/machines"]
 doc = "Entry of the machine page's encoder turn handler; ordinary PARAM turns continue natively, while opt-in native-page LOCAL/unused turns return one to consume."
 
 # Opt-in native callback pages. Current-image reads; see native-page proof notes.
@@ -359,20 +361,22 @@ doc = "Address operand of pea at ParameterPageView generic knob draw+0xda; the o
 name = "cf.page.hook.source_draw"
 site = "cf.page.fn.source_draw"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Draw entry: opt-in page returns directly after bounded callback rendering; every other page resumes its prologue."
 
 [[hook]]
 name = "cf.page.hook.source_code"
 site = "cf.page.fn.source_code"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Encoder code entry: opt-in page returns its declarative code (zero for LOCAL/unused); other mappings resume unchanged."

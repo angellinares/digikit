@@ -332,6 +332,16 @@ mark = "D"
 rule = "fw/machine:cf_func"
 
 [[anchor]]
+name = "cf.machine.site.group.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x4005928a
+len = 2
+sha256 = "1f2e6d00279b4659b6d6f1ad57e12568e4a50f80908af50d1e861001b2be2a3b"
+mark = "D"
+rule = "fw/machine:cf_func"
+
+[[anchor]]
 name = "cf.machine.site.list.alloc"
 cpu = "cf"
 kind = "code"
@@ -3732,7 +3742,7 @@ mode = "replace"
 [[hook]]
 name = "cf.machine.hook.group"
 site = "cf.machine.site.group"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.machine.hook.list.copy_call"
@@ -3752,17 +3762,17 @@ mode = "replace"
 [[hook]]
 name = "cf.machine.hook.param_code.map"
 site = "cf.machine.site.param_code.map"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.machine.hook.type_page.count"
 site = "cf.machine.fn.type_page.count"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.machine.hook.type_page.desc"
 site = "cf.machine.site.type_page.desc"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.machine.hook.type_reader.load"
@@ -3822,22 +3832,22 @@ mode = "replace"
 [[hook]]
 name = "cf.page.hook.source_code"
 site = "cf.page.fn.source_code"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.source_draw"
 site = "cf.page.fn.source_draw"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.source_key"
 site = "cf.page.fn.source_key"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.source_turn"
 site = "cf.page.fn.source_turn"
-mode = "before"
+mode = "replace"
 
 [[hook]]
 name = "cf.page.hook.tab_label_test"
