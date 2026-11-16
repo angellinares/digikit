@@ -1,0 +1,17 @@
+[package]
+name = "dkrt-svc-samples"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The samples service of the digikit runtime: per-track stereo samples, the sample-pool calls and the peak windows, linked into the runtime object (interface B handlers over CoreApi)"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+dkrt-abi = { path = "../../runtime/abi" }
+dkrt-sdk = { path = "../../runtime/sdk" }
+dkneeds = { path = "../../../../packages/dkneeds" }
+
+[dev-dependencies]
+dkrt-test-support = { path = "../../runtime/test-support" }

@@ -25,7 +25,6 @@ shared = [
   "dkrt::handlers",
   "dkrt::gen_services",
   "dkrt::imports",
-  "dkrt::services",    # the service table and its record helpers; each service is below
   "dkrt::arena",
   "dkrt::hash32",
   "dkrt::sha256",
@@ -37,9 +36,9 @@ shared = [
 ]
 
 "S:fx" = ["dkrt_svc_fx"]
-"S:machines" = ["dkrt::services::machines"]
-"S:samples" = ["dkrt::services::samples"]
-"S:lfo" = ["dkrt::services::lfo"]
+"S:machines" = ["dkrt_svc_machines"]
+"S:samples" = ["dkrt_svc_samples"]
+"S:lfo" = ["dkrt_svc_lfo"]
 
 "C:state" = ["dkrt::settings", "dkrt::selection"]
 "C:boot" = ["dkrt::boot", "dkrt::intro", "dkrt::safe_mode", "dkrt::safe_screen"]

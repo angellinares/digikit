@@ -38,8 +38,8 @@ tools/sharc_dev/sharcspec/ghidra/SHARC_VISA/
 
 # Local +Drive sample input (see docs/SAMPLES.md); never committed
 samples/
-# the runtime's samples service is code
-!modules/core/runtime/src/rs/src/services/samples/
+# the samples service crate is code
+!modules/core/services/samples/
 # Local folder of user sample audio; never committed
 sample-test/
 plus_drive/

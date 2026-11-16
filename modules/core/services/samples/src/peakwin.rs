@@ -12,10 +12,9 @@
 //! `cursor`. The UI task does not touch these then. A new key meanwhile goes to `next`; the old job is cancelled and `done`
 //! (UI task) starts the job for `next` after the old one has ended. So two jobs never share a window. A window has at most one job,
 //! so `done` needs no job id.
-use super::tracks::{client, core_, CLIENTS};
-use crate::core_api::{CoreApi, REAL_CORE};
-use dkrt_abi::core_api::JOB_E_CANCELLED;
+use crate::tracks::{client, core_, CLIENTS};
 use core::ptr::{addr_of, addr_of_mut, write_volatile};
+use dkrt_abi::core_api::{CoreApi, JOB_E_CANCELLED};
 use dkrt_sdk::sample_tracks::{Handle, PATH};
 use dkrt_sdk::{E_CONTRACT, E_RANGE};
 
@@ -39,8 +38,22 @@ pub(crate) struct Req {
 }
 
 const REQ0: Req = Req {
-    key: Key { index: 0, token: 0, first: 0, frames: 0, columns: 0 },
-    handle: Handle { id: 0, token: 0, base_l: 0, base_r: 0, frames: 0, rate: 0, channels: 0 },
+    key: Key {
+        index: 0,
+        token: 0,
+        first: 0,
+        frames: 0,
+        columns: 0,
+    },
+    handle: Handle {
+        id: 0,
+        token: 0,
+        base_l: 0,
+        base_r: 0,
+        frames: 0,
+        rate: 0,
+        channels: 0,
+    },
     path: [0; PATH + 1],
 };
 
@@ -65,6 +78,8 @@ pub(crate) struct Window {
     result: [i16; 2 * WINDOW_MAX],
     /// Next frame to read; written by the worker.
     cursor: u32,
+    /// The core that posted the job (a `*const C` of the `C` that `start` was called with): `done` runs without a core argument and needs it to start the next job.
+    core: *const u8,
 }
 
 const WINDOW0: Window = Window {
@@ -77,6 +92,7 @@ const WINDOW0: Window = Window {
     abandon: false,
     result: [0; 2 * WINDOW_MAX],
     cursor: 0,
+    core: core::ptr::null(),
 };
 
 static mut WIN: [Window; CLIENTS] = [WINDOW0; CLIENTS];
@@ -85,18 +101,28 @@ static mut WIN: [Window; CLIENTS] = [WINDOW0; CLIENTS];
 
 #[cfg(not(test))]
 unsafe fn hook_present() -> bool {
-    super::tracks::window_hook()
+    crate::tracks::window_hook()
 }
 
 #[cfg(not(test))]
-unsafe fn hook_step(h: *const Handle, path: *const u8, first: u32, frames: u32, columns: u32, out: *mut i16, cursor: *mut u32) -> i32 {
-    super::tracks::window_step(h, path, first, frames, columns, out, cursor)
+unsafe fn hook_step(
+    h: *const Handle,
+    path: *const u8,
+    first: u32,
+    frames: u32,
+    columns: u32,
+    out: *mut i16,
+    cursor: *mut u32,
+) -> i32 {
+    crate::tracks::window_step(h, path, first, frames, columns, out, cursor)
 }
 
 /// Does the slot of the key still hold the same load?
 #[cfg(not(test))]
 unsafe fn alive(client: usize, key: &Key) -> bool {
-    core_().peak_handle(client, key.index as usize, key.token).is_ok()
+    core_()
+        .peak_handle(client, key.index as usize, key.token)
+        .is_ok()
 }
 
 /// Host test adapter: `HOOK_MORE` steps ask for more, then it fills two values and ends with `HOOK_END`.
@@ -114,7 +140,15 @@ unsafe fn hook_present() -> bool {
 }
 
 #[cfg(test)]
-unsafe fn hook_step(_h: *const Handle, _path: *const u8, first: u32, frames: u32, _columns: u32, out: *mut i16, cursor: *mut u32) -> i32 {
+unsafe fn hook_step(
+    _h: *const Handle,
+    _path: *const u8,
+    first: u32,
+    frames: u32,
+    _columns: u32,
+    out: *mut i16,
+    cursor: *mut u32,
+) -> i32 {
     if HOOK_MORE > 0 {
         HOOK_MORE -= 1;
         return 1;
@@ -134,21 +168,28 @@ unsafe fn alive(_client: usize, _key: &Key) -> bool {
 
 /// The arguments that need no slot: `out` aligned, `columns` in range, enough capacity, a non-empty range.
 fn check_args(out: *const u8, frames: u32, columns: u32, capacity: u32) -> Result<(), i32> {
-    if out.is_null() || (out as usize & 1) != 0 || columns < 1 || columns as usize > WINDOW_MAX || capacity < columns * 4 || frames < 1 {
+    if out.is_null()
+        || (out as usize & 1) != 0
+        || columns < 1
+        || columns as usize > WINDOW_MAX
+        || capacity < columns * 4
+        || frames < 1
+    {
         return Err(E_CONTRACT);
     }
     Ok(())
 }
 
 /// Zero the result, set the cursor and post the job for `cur`. 0, or the error of `worker::post` (the state is Idle then).
-unsafe fn start(w: *mut Window) -> i32 {
+unsafe fn start<C: CoreApi>(core: &C, w: *mut Window) -> i32 {
     let mut i = 0;
     while i < 2 * WINDOW_MAX {
         write_volatile(addr_of_mut!((*w).result[i]), 0);
         i += 1;
     }
     write_volatile(addr_of_mut!((*w).cursor), (*w).cur.key.first);
-    let id = REAL_CORE.job_post(0, Some(step), Some(done), w as *mut u8);
+    (*w).core = core as *const C as *const u8;
+    let id = core.job_post(0, Some(step), Some(done::<C>), w as *mut u8);
     if id > 0 {
         (*w).state = State::Pending;
         (*w).job = id as u32;
@@ -175,15 +216,16 @@ unsafe extern "C" fn step(ctx: *mut u8) -> i32 {
 }
 
 /// UI task, once per job. A newer request waits in `next`: start it. Otherwise take the result.
-unsafe extern "C" fn done(ctx: *mut u8, status: i32) {
+unsafe extern "C" fn done<C: CoreApi>(ctx: *mut u8, status: i32) {
     let w = ctx as *mut Window;
+    let core = &*((*w).core as *const C);
     if (*w).state != State::Pending {
         return;
     }
     if (*w).has_next {
         (*w).cur = (*w).next;
         (*w).has_next = false;
-        start(w);
+        start(core, w);
         return;
     }
     if (*w).abandon {
@@ -206,16 +248,20 @@ unsafe extern "C" fn done(ctx: *mut u8, status: i32) {
 }
 
 /// The key logic of one call with a valid request: the columns when ready (copied to `out`), 0 while pending, or an error.
-unsafe fn lookup(w: *mut Window, req: &Req, out: *mut u8) -> i32 {
+unsafe fn lookup<C: CoreApi>(core: &C, w: *mut Window, req: &Req, out: *mut u8) -> i32 {
     let key = req.key;
     let state = (*w).state;
     if state == State::Pending {
-        let active = if (*w).has_next { (*w).next.key } else { (*w).cur.key };
+        let active = if (*w).has_next {
+            (*w).next.key
+        } else {
+            (*w).cur.key
+        };
         if !(*w).abandon && key == active {
             return 0;
         }
         if !(*w).has_next && !(*w).abandon {
-            REAL_CORE.job_cancel(0, (*w).job);
+            core.job_cancel(0, (*w).job);
         }
         (*w).next = *req;
         (*w).has_next = true;
@@ -224,7 +270,11 @@ unsafe fn lookup(w: *mut Window, req: &Req, out: *mut u8) -> i32 {
     }
     if (*w).cur.key == key {
         if state == State::Ready {
-            core::ptr::copy_nonoverlapping(addr_of!((*w).result) as *const u8, out, key.columns as usize * 4);
+            core::ptr::copy_nonoverlapping(
+                addr_of!((*w).result) as *const u8,
+                out,
+                key.columns as usize * 4,
+            );
             return key.columns as i32;
         }
         if let State::Failed(e) = state {
@@ -232,13 +282,13 @@ unsafe fn lookup(w: *mut Window, req: &Req, out: *mut u8) -> i32 {
         }
     }
     (*w).cur = *req;
-    start(w)
+    start(core, w)
 }
 
 /// The client's module went away: stop its job; no result is kept.
-unsafe fn reset_window(w: *mut Window) {
+unsafe fn reset_window<C: CoreApi>(core: &C, w: *mut Window) {
     if (*w).state == State::Pending {
-        REAL_CORE.job_cancel(0, (*w).job);
+        core.job_cancel(0, (*w).job);
         (*w).has_next = false;
         (*w).abandon = true;
     } else {
@@ -247,14 +297,24 @@ unsafe fn reset_window(w: *mut Window) {
 }
 
 /// Client teardown (`tracks::remove`).
-pub(crate) unsafe fn reset(client: usize) {
+pub(crate) unsafe fn reset<C: CoreApi>(core: &C, client: usize) {
     if client < CLIENTS {
-        reset_window(addr_of_mut!(WIN[client]));
+        reset_window(core, addr_of_mut!(WIN[client]));
     }
 }
 
 /// `sample_pool_peaks_window`, UI task.
-pub(crate) unsafe fn window(handle: u32, index: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32 {
+pub unsafe fn window<C: CoreApi>(
+    core: &C,
+    handle: u32,
+    index: u32,
+    token: u32,
+    first: u32,
+    frames: u32,
+    columns: u32,
+    out: *mut u8,
+    capacity: u32,
+) -> i32 {
     let c = match client(handle) {
         Ok(c) => c,
         Err(e) => return e,
@@ -273,7 +333,13 @@ pub(crate) unsafe fn window(handle: u32, index: u32, token: u32, first: u32, fra
         return E_RANGE;
     }
     let mut req = REQ0;
-    req.key = Key { index, token, first, frames, columns };
+    req.key = Key {
+        index,
+        token,
+        first,
+        frames,
+        columns,
+    };
     req.handle = h;
     match core_().path(c, index as usize) {
         Ok(p) => {
@@ -284,16 +350,23 @@ pub(crate) unsafe fn window(handle: u32, index: u32, token: u32, first: u32, fra
     }
     let w = addr_of_mut!(WIN[c]);
     (*w).client = c;
-    lookup(w, &req, out)
+    lookup(core, w, &req, out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_api::testing::{test_pump, test_reset, TEST_LOCK};
+    use crate::TEST_LOCK;
+    use dkrt_test_support::FakeCore;
 
     fn key(first: u32) -> Key {
-        Key { index: 1, token: 7, first, frames: 1000, columns: 4 }
+        Key {
+            index: 1,
+            token: 7,
+            first,
+            frames: 1000,
+            columns: 4,
+        }
     }
 
     fn req(first: u32) -> Req {
@@ -302,11 +375,11 @@ mod tests {
         r
     }
 
-    unsafe fn setup() {
-        test_reset();
+    unsafe fn setup() -> FakeCore {
         HOOK_MORE = 0;
         HOOK_END = 0;
         ALIVE = true;
+        FakeCore::new()
     }
 
     #[test]
@@ -317,23 +390,29 @@ mod tests {
         assert_eq!(check_args(core::ptr::null(), 10, 4, 16), Err(E_CONTRACT));
         assert_eq!(check_args(unsafe { p.add(1) }, 10, 4, 16), Err(E_CONTRACT));
         assert_eq!(check_args(p, 10, 0, 16), Err(E_CONTRACT));
-        assert_eq!(check_args(p, 10, WINDOW_MAX as u32 + 1, 4096), Err(E_CONTRACT));
+        assert_eq!(
+            check_args(p, 10, WINDOW_MAX as u32 + 1, 4096),
+            Err(E_CONTRACT)
+        );
         assert_eq!(check_args(p, 10, 4, 15), Err(E_CONTRACT));
         assert_eq!(check_args(p, 0, 4, 16), Err(E_CONTRACT));
-        assert_eq!(check_args(p, 10, WINDOW_MAX as u32, WINDOW_MAX as u32 * 4), Ok(()));
+        assert_eq!(
+            check_args(p, 10, WINDOW_MAX as u32, WINDOW_MAX as u32 * 4),
+            Ok(())
+        );
     }
 
     #[test]
     fn new_key_posts_a_job_and_same_key_waits() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            assert_eq!(lookup(&mut w, &req(0), out.as_mut_ptr()), 0);
+            assert_eq!(lookup(&core, &mut w, &req(0), out.as_mut_ptr()), 0);
             assert_eq!(w.state, State::Pending);
             let job = w.job;
-            assert_eq!(lookup(&mut w, &req(0), out.as_mut_ptr()), 0);
+            assert_eq!(lookup(&core, &mut w, &req(0), out.as_mut_ptr()), 0);
             assert_eq!(w.job, job);
             assert!(!w.has_next);
         }
@@ -343,19 +422,19 @@ mod tests {
     fn steps_then_done_make_it_ready_and_copy() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             HOOK_MORE = 2;
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            lookup(&mut w, &req(0), out.as_mut_ptr());
-            test_pump();
-            test_pump();
-            test_pump();
+            lookup(&core, &mut w, &req(0), out.as_mut_ptr());
+            core.job_pump();
+            core.job_pump();
+            core.job_pump();
             assert_eq!(w.state, State::Pending);
-            test_pump();
+            core.job_pump();
             assert_eq!(w.state, State::Ready);
             assert_eq!(w.cursor, 1000);
-            assert_eq!(lookup(&mut w, &req(0), out.as_mut_ptr()), 4);
+            assert_eq!(lookup(&core, &mut w, &req(0), out.as_mut_ptr()), 4);
             assert_eq!(&out[..2], &(-5i16).to_ne_bytes());
             assert_eq!(&out[2..4], &7i16.to_ne_bytes());
         }
@@ -365,26 +444,26 @@ mod tests {
     fn key_change_while_pending_cancels_and_restarts() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             HOOK_MORE = 100;
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            lookup(&mut w, &req(0), out.as_mut_ptr());
+            lookup(&core, &mut w, &req(0), out.as_mut_ptr());
             let first_job = w.job;
-            test_pump();
-            assert_eq!(lookup(&mut w, &req(500), out.as_mut_ptr()), 0);
+            core.job_pump();
+            assert_eq!(lookup(&core, &mut w, &req(500), out.as_mut_ptr()), 0);
             assert!(w.has_next);
-            test_pump(); // the old job ends cancelled, `done` posts the new one
+            core.job_pump(); // the old job ends cancelled, `done` posts the new one
             assert!(!w.has_next);
             assert_eq!(w.state, State::Pending);
             assert_ne!(w.job, first_job);
             assert_eq!(w.cur.key, key(500));
             assert_eq!(w.cursor, 500);
             HOOK_MORE = 0;
-            test_pump();
-            test_pump();
+            core.job_pump();
+            core.job_pump();
             assert_eq!(w.state, State::Ready);
-            assert_eq!(lookup(&mut w, &req(500), out.as_mut_ptr()), 4);
+            assert_eq!(lookup(&core, &mut w, &req(500), out.as_mut_ptr()), 4);
         }
     }
 
@@ -392,18 +471,18 @@ mod tests {
     fn failed_status_stays_until_the_key_changes() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             HOOK_END = -3;
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            lookup(&mut w, &req(0), out.as_mut_ptr());
-            test_pump();
-            test_pump();
+            lookup(&core, &mut w, &req(0), out.as_mut_ptr());
+            core.job_pump();
+            core.job_pump();
             assert_eq!(w.state, State::Failed(-3));
             let job = w.job;
-            assert_eq!(lookup(&mut w, &req(0), out.as_mut_ptr()), -3);
+            assert_eq!(lookup(&core, &mut w, &req(0), out.as_mut_ptr()), -3);
             assert_eq!(w.job, job);
-            assert_eq!(lookup(&mut w, &req(1), out.as_mut_ptr()), 0);
+            assert_eq!(lookup(&core, &mut w, &req(1), out.as_mut_ptr()), 0);
             assert_eq!(w.state, State::Pending);
             assert_ne!(w.job, job);
         }
@@ -413,12 +492,12 @@ mod tests {
     fn cancelled_job_goes_idle() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            lookup(&mut w, &req(0), out.as_mut_ptr());
-            assert_eq!(crate::core_api::testing::cancel(0, w.job), 0);
-            test_pump();
+            lookup(&core, &mut w, &req(0), out.as_mut_ptr());
+            assert_eq!(core.job_cancel(0, w.job), 0);
+            core.job_pump();
             assert_eq!(w.state, State::Idle);
         }
     }
@@ -427,13 +506,13 @@ mod tests {
     fn a_reloaded_slot_goes_idle() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            lookup(&mut w, &req(0), out.as_mut_ptr());
+            lookup(&core, &mut w, &req(0), out.as_mut_ptr());
             ALIVE = false;
-            test_pump();
-            test_pump();
+            core.job_pump();
+            core.job_pump();
             assert_eq!(w.state, State::Idle);
         }
     }
@@ -442,15 +521,15 @@ mod tests {
     fn reset_while_pending_ends_idle_after_the_job() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
-            setup();
+            let core = setup();
             HOOK_MORE = 100;
             let mut w = WINDOW0;
             let mut out = [0u8; 16];
-            lookup(&mut w, &req(0), out.as_mut_ptr());
-            test_pump();
-            reset_window(&mut w);
+            lookup(&core, &mut w, &req(0), out.as_mut_ptr());
+            core.job_pump();
+            reset_window(&core, &mut w);
             assert_eq!(w.state, State::Pending);
-            test_pump();
+            core.job_pump();
             assert_eq!(w.state, State::Idle);
             assert!(!w.abandon);
         }

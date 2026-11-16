@@ -97,6 +97,16 @@ pub fn is_empty(blob: &[u8]) -> Result<bool> {
         .any(|s| s.sh_flags(e) & elf::SHF_ALLOC != 0 && s.sh_size(e) > 0))
 }
 
+/// True when the object has an executable section with content. Only such an object carries the ColdFire ISA flags: one with data alone has flags 0.
+pub fn has_code(blob: &[u8]) -> Result<bool> {
+    let h = Hdr::parse(blob).map_err(bad)?;
+    let e = h.endian().map_err(bad)?;
+    let secs = h.sections(e, blob).map_err(bad)?;
+    Ok(secs
+        .iter()
+        .any(|s| s.sh_flags(e) & elf::SHF_EXECINSTR != 0 && s.sh_size(e) > 0))
+}
+
 /// The executable sections `(name, bytes)` of a relocatable m68k ELF.
 pub fn text_sections(blob: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     check_machine(blob)?;
