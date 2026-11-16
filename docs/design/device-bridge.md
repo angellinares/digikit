@@ -79,6 +79,8 @@ length and the bytes, with the 8 id bytes set to zero (`packages/patchkit/src/im
 stock base's, so these inputs fix the whole container. The packed container cannot be hashed, because repacking changes it once the id is in
 it; the decoded sections have a fixed layout. `prepare` re-reads the id from the finished image by its marker and checks it against the sections.
 
+With the capability `SVC_ABI` INFO ends with 4 more bytes after the image id: the runtime's service ABI fingerprint (`dkrt_abi::service::SVC_ABI`, a `u32`). It is the hash of the `dkrt-abi` boundary files (`patchkit gen`) with the sizes of the shared structs mixed in, so it differs per device; a host compares it with header word 0x3c of a `.dks` and skips a file whose word is 0.
+
 ### 3.4 Failure modes and recovery
 
 | What the user sees | Meaning | Action |

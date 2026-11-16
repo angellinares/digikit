@@ -3,11 +3,14 @@
 //!
 //! ```text
 //! +0  u32 magic "DKTB"
-//! +4  u16 version (1)
+//! +4  u16 version (1 or 2)
 //! +6  u16 n_entries
 //! +8  entries, in ascending tag order, each tag at most once:
 //!       u16 tag, u16 count, u32 payload_bytes (a multiple of 4), the payload
 //! ```
+//!
+//! The writer picks the version by content: 2 if and only if the table has `PROVIDES` or `BIND` items, else 1. A reader accepts both. `PROVIDES`
+//! and `BIND` are valid only in a version 2 table, and the `SLOTS` item has 12 bytes there (8 in version 1).
 //!
 //! Entries (the payload of each of `count` items):
 //! - `NEEDS` (12 bytes): u32 service name hash (`name_hash`), u32 minimum version (major << 16 | minor << 8 | patch), u32 flags (bit 0: hard).
@@ -15,10 +18,14 @@
 //! - `KEYS` (`count` groups of u32 kind, u32 n, then n u32 keys): the identities the module provides for a record kind (machine keys for
 //!   `KIND_MACHINE`, effect ids for `KIND_EFFECT`, a shape id for a service's kind): one owner per (kind, key).
 //! - `KINDS` (12): u32 kind, u32 record length, u32 handler entry (image offset): the record kinds a service module owns.
-//! - `SLOTS` (8): u32 slot id, u32 flags: the plug-in points the module takes (one owner each).
+//! - `SLOTS` (8, or 12 in version 2): u32 slot id, u32 flags, and in version 2 u32 entry (image offset): the plug-in points the module takes
+//!   (one owner each).
 //! - `HOOKS` (8): u32 hook site, u32 entry (image offset): the hook sites the module takes (one owner each).
 //! - `EXPORTS` (8): u32 name hash, u32 entry (image offset): the functions the module offers to other modules.
 //! - `RESOURCES` (8): u32 resource id, u32 limit: the resources a service module adds.
+//! - `PROVIDES` (8, version 2): u32 service name hash, u32 version: the services the module provides.
+//! - `BIND` (`count` items of u32 site hash, u32 firmware address, u32 stock length, u32 trampoline offset (image offset), then the stock
+//!   bytes padded to 4; at most 64 stock bytes): the firmware sites a service is bound to. The entry is used up exactly.
 //!
 //! The packer always writes a table (a module that needs and keeps nothing has the 8-byte head). A file with no table or another magic is the
 //! format of runtime 0.7: the loader refuses it with `E_CONTRACT`.
@@ -31,7 +38,8 @@ pub const H_KEYS_SIZE: u32 = 0x94;
 
 /// "DKTB" (`[limits.format] table_magic`).
 pub const MAGIC: u32 = crate::TABLE_MAGIC;
-/// The table version (`[limits.format] table_version`; a change of this table is a MINOR of the runtime).
+/// The newest table version a reader accepts (`[limits.format] table_version`; a change of this table is a MINOR of the runtime). Versions
+/// `1..=VERSION` are valid.
 pub const VERSION: u16 = crate::TABLE_VERSION as u16;
 /// Bytes of the table head and of an entry head.
 pub const HEAD: usize = 8;
@@ -47,13 +55,25 @@ pub mod tag {
     pub const HOOKS: u16 = 6;
     pub const EXPORTS: u16 = 7;
     pub const RESOURCES: u16 = 8;
+    pub const PROVIDES: u16 = 9;
+    pub const BIND: u16 = 10;
 }
 
-/// Bytes of one item of an entry with a fixed item size; `None` for `KEYS`, whose groups vary.
+/// Most stock bytes of one `BIND` item.
+pub const BIND_STOCK_MAX: usize = 64;
+/// Bytes of the fixed part of one `BIND` item.
+pub const BIND_HEAD: usize = 16;
+
+/// Bytes of one item of an entry with a fixed item size in a version 1 table; `None` for `KEYS` and `BIND`, whose items vary.
 pub fn item_bytes(t: u16) -> Option<usize> {
-    if t == tag::NEEDS || t == tag::KINDS {
+    item_bytes_v(t, 1)
+}
+
+/// Bytes of one item of an entry with a fixed item size in a table of `version`; `None` for `KEYS` and `BIND`.
+pub fn item_bytes_v(t: u16, version: u16) -> Option<usize> {
+    if t == tag::NEEDS || t == tag::KINDS || (t == tag::SLOTS && version >= 2) {
         Some(12)
-    } else if t == tag::KEYS {
+    } else if t == tag::KEYS || t == tag::BIND {
         None
     } else {
         Some(8)
@@ -62,9 +82,14 @@ pub fn item_bytes(t: u16) -> Option<usize> {
 
 /// The 32-bit name hash of a service or an export (FNV-1a), the identity in `NEEDS` and `EXPORTS`.
 pub fn name_hash(s: &str) -> u32 {
+    name_hash_bytes(s.as_bytes())
+}
+
+/// [`name_hash`] of the bytes of a name.
+pub fn name_hash_bytes(s: &[u8]) -> u32 {
     let mut h: u32 = 0x811c_9dc5;
-    for b in s.bytes() {
-        h ^= u32::from(b);
+    for b in s {
+        h ^= u32::from(*b);
         h = h.wrapping_mul(0x0100_0193);
     }
     h
@@ -81,6 +106,7 @@ pub enum KeysError {
     /// A count is above the limit.
     Count,
 }
+// A version 1 table cannot hold a slot with a non-zero entry: `write_table` refuses it with `Format`.
 
 /// One `NEEDS` item: the service (`name_hash`), the version it needs at least, hard (the module cannot load without it) or optional.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +141,38 @@ pub struct Pair {
     pub b: u32,
 }
 
+/// One `SLOTS` item: the slot id, its flags and (version 2 only) the entry (image offset; 0 in a version 1 table).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Slot {
+    pub id: u32,
+    pub flags: u32,
+    pub entry: u32,
+}
+
+/// One `BIND` item as the packer writes it: the site (name hash), its firmware address, the offset of the trampoline in the image and the stock
+/// bytes of the site (at most [`BIND_STOCK_MAX`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Bind<'a> {
+    pub site: u32,
+    pub addr: u32,
+    pub tramp: u32,
+    pub stock: &'a [u8],
+}
+/// One `BIND` item as read from a checked table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BindRef<'a> {
+    pub site: u32,
+    pub addr: u32,
+    pub len: u32,
+    pub tramp: u32,
+    pub stock: &'a [u8],
+}
+
+/// Bytes of the `BIND` item with `n` stock bytes.
+fn bind_item_bytes(n: usize) -> usize {
+    BIND_HEAD + n.div_ceil(4) * 4
+}
+
 /// What the packer writes: every list may be empty.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Table<'a> {
@@ -122,22 +180,41 @@ pub struct Table<'a> {
     pub uses: &'a [Use],
     pub keys: &'a [KeyGroup<'a>],
     pub kinds: &'a [KindDecl],
-    pub slots: &'a [Pair],
+    pub slots: &'a [Slot],
     pub hooks: &'a [Pair],
     pub exports: &'a [Pair],
     pub resources: &'a [Pair],
+    /// (service name hash, version): a table with any is written as version 2.
+    pub provides: &'a [Pair],
+    /// A table with any is written as version 2.
+    pub bind: &'a [Bind<'a>],
 }
 
 impl Table<'_> {
+    /// The version `write_table` writes: 2 if and only if the table has `PROVIDES` or `BIND` items.
+    pub fn version(&self) -> u16 {
+        if self.provides.is_empty() && self.bind.is_empty() {
+            1
+        } else {
+            2
+        }
+    }
+
     /// (tag, items, payload bytes) of each entry, in tag order.
-    fn entries(&self) -> [(u16, usize, usize); 8] {
+    fn entries(&self) -> [(u16, usize, usize); 10] {
         let kb: usize = self.keys.iter().map(|g| 8 + 4 * g.keys.len()).sum();
+        let bb: usize = self
+            .bind
+            .iter()
+            .map(|b| bind_item_bytes(b.stock.len()))
+            .sum();
+        let sw = if self.version() >= 2 { 12 } else { 8 };
         [
             (tag::NEEDS, self.needs.len(), 12 * self.needs.len()),
             (tag::USES, self.uses.len(), 8 * self.uses.len()),
             (tag::KEYS, self.keys.len(), kb),
             (tag::KINDS, self.kinds.len(), 12 * self.kinds.len()),
-            (tag::SLOTS, self.slots.len(), 8 * self.slots.len()),
+            (tag::SLOTS, self.slots.len(), sw * self.slots.len()),
             (tag::HOOKS, self.hooks.len(), 8 * self.hooks.len()),
             (tag::EXPORTS, self.exports.len(), 8 * self.exports.len()),
             (
@@ -145,6 +222,8 @@ impl Table<'_> {
                 self.resources.len(),
                 8 * self.resources.len(),
             ),
+            (tag::PROVIDES, self.provides.len(), 8 * self.provides.len()),
+            (tag::BIND, self.bind.len(), bb),
         ]
     }
 }
@@ -164,10 +243,17 @@ fn put32(out: &mut [u8], at: &mut usize, v: u32) {
     *at += 4;
 }
 
-/// Writes the table to `out` and returns its size. A key group is checked against `MAX_RECORDS`.
+/// Writes the table to `out` and returns its size. A key group is checked against `MAX_RECORDS` and a bind item against `BIND_STOCK_MAX`.
+/// A slot with a non-zero entry in a table that is written as version 1 is `Format`.
 pub fn write_table(t: &Table, out: &mut [u8]) -> Result<usize, KeysError> {
-    if t.keys.iter().any(|g| g.keys.len() > MAX_RECORDS as usize) {
+    if t.keys.iter().any(|g| g.keys.len() > MAX_RECORDS as usize)
+        || t.bind.iter().any(|b| b.stock.len() > BIND_STOCK_MAX)
+    {
         return Err(KeysError::Count);
+    }
+    let version = t.version();
+    if version < 2 && t.slots.iter().any(|s| s.entry != 0) {
+        return Err(KeysError::Format);
     }
     let size = table_size(t);
     if size > out.len() {
@@ -178,7 +264,7 @@ pub fn write_table(t: &Table, out: &mut [u8]) -> Result<usize, KeysError> {
     let n = ents.iter().filter(|e| e.1 != 0).count();
     let mut at = 0;
     put32(out, &mut at, MAGIC);
-    out[at..at + 2].copy_from_slice(&VERSION.to_be_bytes());
+    out[at..at + 2].copy_from_slice(&version.to_be_bytes());
     out[at + 2..at + 4].copy_from_slice(&(n as u16).to_be_bytes());
     at += 4;
     for (tg, count, bytes) in ents {
@@ -214,13 +300,30 @@ pub fn write_table(t: &Table, out: &mut [u8]) -> Result<usize, KeysError> {
                 put32(out, &mut at, x.len);
                 put32(out, &mut at, x.entry);
             }
+        } else if tg == tag::SLOTS {
+            for x in t.slots {
+                put32(out, &mut at, x.id);
+                put32(out, &mut at, x.flags);
+                if version >= 2 {
+                    put32(out, &mut at, x.entry);
+                }
+            }
+        } else if tg == tag::BIND {
+            for x in t.bind {
+                put32(out, &mut at, x.site);
+                put32(out, &mut at, x.addr);
+                put32(out, &mut at, x.stock.len() as u32);
+                put32(out, &mut at, x.tramp);
+                out[at..at + x.stock.len()].copy_from_slice(x.stock);
+                at += x.stock.len().div_ceil(4) * 4;
+            }
         } else {
-            let list = if tg == tag::SLOTS {
-                t.slots
-            } else if tg == tag::HOOKS {
+            let list = if tg == tag::HOOKS {
                 t.hooks
             } else if tg == tag::EXPORTS {
                 t.exports
+            } else if tg == tag::PROVIDES {
+                t.provides
             } else {
                 t.resources
             };
@@ -266,16 +369,17 @@ fn entry(bytes: &[u8], t: u16) -> Option<(usize, &[u8])> {
 }
 
 impl<'a> Keys<'a> {
-    /// `bytes` is exactly the table (`H_KEYS_SIZE` bytes from `H_KEYS_OFF`). Size 0, another magic or another version is `Format`: the file is
-    /// from an older packer.
+    /// `bytes` is exactly the table (`H_KEYS_SIZE` bytes from `H_KEYS_OFF`). Size 0, another magic or a version other than `1..=VERSION` is
+    /// `Format`: the file is from an older or a newer packer. `PROVIDES` and `BIND` in a version 1 table are `Tag`.
     pub fn parse(bytes: &'a [u8]) -> Result<Keys<'a>, KeysError> {
         if bytes.len() < HEAD
             || bytes.len() % 4 != 0
             || u32_at(bytes, 0) != MAGIC
-            || u16_at(bytes, 4) != VERSION
+            || !(1..=VERSION).contains(&u16_at(bytes, 4))
         {
             return Err(KeysError::Format);
         }
+        let version = u16_at(bytes, 4);
         let n = u16_at(bytes, 6) as usize;
         let mut at = HEAD;
         let mut last = 0u16;
@@ -286,7 +390,12 @@ impl<'a> Keys<'a> {
             let tg = u16_at(bytes, at);
             let count = u16_at(bytes, at + 2) as usize;
             let len = u32_at(bytes, at + 4) as usize;
-            if !(tag::NEEDS..=tag::RESOURCES).contains(&tg) || tg <= last {
+            let top = if version >= 2 {
+                tag::BIND
+            } else {
+                tag::RESOURCES
+            };
+            if !(tag::NEEDS..=top).contains(&tg) || tg <= last {
                 return Err(KeysError::Tag);
             }
             last = tg;
@@ -294,9 +403,29 @@ impl<'a> Keys<'a> {
                 return Err(KeysError::Size);
             }
             let body = &bytes[at + ENTRY_HEAD..at + ENTRY_HEAD + len];
-            match item_bytes(tg) {
+            match item_bytes_v(tg, version) {
                 Some(w) => {
                     if count.checked_mul(w) != Some(len) {
+                        return Err(KeysError::Size);
+                    }
+                }
+                None if tg == tag::BIND => {
+                    // the bind items: each (head, stock bytes padded to 4) inside the entry, the entry used up exactly
+                    let mut g = 0;
+                    for _ in 0..count {
+                        if len - g < BIND_HEAD {
+                            return Err(KeysError::Size);
+                        }
+                        let sl = u32_at(body, g + 8) as usize;
+                        if sl > BIND_STOCK_MAX {
+                            return Err(KeysError::Count);
+                        }
+                        g += bind_item_bytes(sl);
+                        if g > len {
+                            return Err(KeysError::Size);
+                        }
+                    }
+                    if g != len {
                         return Err(KeysError::Size);
                     }
                 }
@@ -334,6 +463,11 @@ impl<'a> Keys<'a> {
         u16_at(self.bytes, 6) as usize
     }
 
+    /// The version of the table (1 or 2).
+    pub fn version(&self) -> u16 {
+        u16_at(self.bytes, 4)
+    }
+
     // The readers below are plain index loops, not iterator chains: the runtime and the boot planner call them, and each distinct iterator type is code of
     // its own on the ColdFire. The iterator forms for host tools follow them.
 
@@ -345,9 +479,10 @@ impl<'a> Keys<'a> {
         }
     }
 
-    /// Item `i` of the fixed-size entry `t` as `(first, second, third)` words (0 for a missing word); `None` outside the entry.
+    /// Item `i` of the fixed-size entry `t` as `(first, second, third)` words (0 for a missing word, so the entry of a version 1 slot is 0);
+    /// `None` outside the entry.
     pub fn words(&self, t: u16, i: usize) -> Option<(u32, u32, u32)> {
-        let w = item_bytes(t)?;
+        let w = item_bytes_v(t, self.version())?;
         let (n, body) = entry(self.bytes, t)?;
         if i >= n {
             return None;
@@ -507,8 +642,15 @@ impl<'a> Keys<'a> {
         (0..self.count(t)).filter_map(move |i| me.words(t, i).map(|w| Pair { a: w.0, b: w.1 }))
     }
 
-    pub fn slots(&self) -> impl Iterator<Item = Pair> + 'a {
-        self.pairs(tag::SLOTS)
+    pub fn slots(&self) -> impl Iterator<Item = Slot> + 'a {
+        let me = *self;
+        (0..self.count(tag::SLOTS)).filter_map(move |i| {
+            me.words(tag::SLOTS, i).map(|w| Slot {
+                id: w.0,
+                flags: w.1,
+                entry: w.2,
+            })
+        })
     }
 
     pub fn hooks(&self) -> impl Iterator<Item = Pair> + 'a {
@@ -521,6 +663,38 @@ impl<'a> Keys<'a> {
 
     pub fn resources(&self) -> impl Iterator<Item = Pair> + 'a {
         self.pairs(tag::RESOURCES)
+    }
+
+    /// The services the module provides: (name hash, version).
+    pub fn provides(&self) -> impl Iterator<Item = (u32, u32)> + 'a {
+        self.pairs(tag::PROVIDES).map(|p| (p.a, p.b))
+    }
+
+    /// How many `BIND` items the table has.
+    pub fn bind_count(&self) -> usize {
+        self.count(tag::BIND)
+    }
+
+    /// `BIND` item `i`; `None` outside the entry.
+    pub fn bind(&self, i: usize) -> Option<BindRef<'a>> {
+        let (n, body) = entry(self.bytes, tag::BIND)?;
+        if i >= n {
+            return None;
+        }
+        let mut at = 0usize;
+        let mut k = 0;
+        while k < i {
+            at += bind_item_bytes(u32_at(body, at + 8) as usize);
+            k += 1;
+        }
+        let len = u32_at(body, at + 8);
+        Some(BindRef {
+            site: u32_at(body, at),
+            addr: u32_at(body, at + 4),
+            len,
+            tramp: u32_at(body, at + 12),
+            stock: &body[at + BIND_HEAD..at + BIND_HEAD + len as usize],
+        })
     }
 }
 
@@ -626,8 +800,10 @@ pub fn keys_size(
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     use crate::{KIND_MACHINE, RES_DSP_COST_FX, RES_DSP_COST_VOICE, RES_MACHINE_ROWS};
+    use std::{vec, vec::Vec};
 
     #[test]
     fn a_table_of_every_entry_round_trips() {
@@ -675,19 +851,25 @@ mod tests {
                 len: 24,
                 entry: 0x100,
             }],
-            slots: &[Pair { a: 1, b: 2 }],
+            slots: &[Slot {
+                id: 1,
+                flags: 2,
+                entry: 0,
+            }],
             hooks: &[Pair { a: 3, b: 4 }, Pair { a: 5, b: 6 }],
             exports: &[Pair {
                 a: name_hash("lfo_set"),
                 b: 0x200,
             }],
             resources: &[Pair { a: 40, b: 8 }],
+            ..Table::default()
         };
         let mut out = [0xaau8; 512];
         let n = write_table(&t, &mut out).unwrap();
         assert_eq!(n, table_size(&t));
         assert_eq!(n % 4, 0);
         let k = Keys::parse(&out[..n]).unwrap();
+        assert_eq!(k.version(), 1);
         assert_eq!(k.n_entries(), 8);
         assert!(k.needs().eq(t.needs.iter().copied()));
         assert!(k.uses().eq(t.uses.iter().copied()));
@@ -701,6 +883,204 @@ mod tests {
         assert!(k.hooks().eq(t.hooks.iter().copied()));
         assert!(k.exports().eq(t.exports.iter().copied()));
         assert!(k.resources().eq(t.resources.iter().copied()));
+    }
+
+    fn v2_table<'a>(binds: &'a [Bind<'a>]) -> Table<'a> {
+        Table {
+            needs: &[Need {
+                service: 7,
+                min_version: 0x000800,
+                hard: true,
+            }],
+            slots: &[
+                Slot {
+                    id: 1,
+                    flags: 2,
+                    entry: 0x300,
+                },
+                Slot {
+                    id: 4,
+                    flags: 0,
+                    entry: 0,
+                },
+            ],
+            hooks: &[Pair { a: 3, b: 4 }],
+            provides: &[Pair {
+                a: 0x1111,
+                b: 0x000801,
+            }],
+            bind: binds,
+            ..Table::default()
+        }
+    }
+
+    #[test]
+    fn a_version_2_table_of_every_entry_round_trips() {
+        let stock = [1u8, 2, 3, 4, 5, 6];
+        let binds = [
+            Bind {
+                site: 5,
+                addr: 0x1234,
+                tramp: 0x20,
+                stock: &stock,
+            },
+            Bind {
+                site: 6,
+                addr: 0x5678,
+                tramp: 0x40,
+                stock: &[],
+            },
+        ];
+        let t = v2_table(&binds);
+        assert_eq!(t.version(), 2);
+        let mut out = [0xaau8; 512];
+        let n = write_table(&t, &mut out).unwrap();
+        assert_eq!(n, table_size(&t));
+        assert_eq!(n % 4, 0);
+        let k = Keys::parse(&out[..n]).unwrap();
+        assert_eq!(k.version(), 2);
+        assert!(k.needs().eq(t.needs.iter().copied()));
+        assert!(k.slots().eq(t.slots.iter().copied()));
+        assert!(k.hooks().eq(t.hooks.iter().copied()));
+        assert!(k.provides().eq([(0x1111, 0x000801)]));
+        assert_eq!(k.bind_count(), 2);
+        let b0 = k.bind(0).unwrap();
+        assert_eq!((b0.site, b0.addr, b0.len, b0.tramp), (5, 0x1234, 6, 0x20));
+        assert_eq!(b0.stock, &stock);
+        let b1 = k.bind(1).unwrap();
+        assert_eq!((b1.site, b1.addr, b1.len, b1.tramp), (6, 0x5678, 0, 0x40));
+        assert!(b1.stock.is_empty());
+        assert!(k.bind(2).is_none());
+    }
+
+    #[test]
+    fn a_table_without_provides_and_bind_is_written_as_version_1_with_8_byte_slots() {
+        let t = Table {
+            slots: &[Slot {
+                id: 1,
+                flags: 2,
+                entry: 0,
+            }],
+            ..Table::default()
+        };
+        let mut out = [0u8; 64];
+        let n = write_table(&t, &mut out).unwrap();
+        assert_eq!(n, HEAD + ENTRY_HEAD + 8);
+        assert_eq!(&out[..8], &[b'D', b'K', b'T', b'B', 0, 1, 0, 1]);
+        assert_eq!(&out[HEAD + ENTRY_HEAD..n], &[0, 0, 0, 1, 0, 0, 0, 2]);
+        let k = Keys::parse(&out[..n]).unwrap();
+        assert_eq!(k.version(), 1);
+        assert!(k.slots().eq(t.slots.iter().copied()));
+    }
+
+    #[test]
+    fn a_table_with_provides_is_written_as_version_2_with_12_byte_slots() {
+        let t = Table {
+            slots: &[Slot {
+                id: 1,
+                flags: 2,
+                entry: 0x300,
+            }],
+            provides: &[Pair { a: 9, b: 1 }],
+            ..Table::default()
+        };
+        let mut out = [0u8; 64];
+        let n = write_table(&t, &mut out).unwrap();
+        // head, SLOTS (head + 12), PROVIDES (head + 8)
+        assert_eq!(n, HEAD + ENTRY_HEAD + 12 + ENTRY_HEAD + 8);
+        assert_eq!(&out[4..6], &[0, 2]);
+        assert_eq!(
+            &out[HEAD + ENTRY_HEAD..HEAD + ENTRY_HEAD + 12],
+            &[0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 3, 0]
+        );
+        assert!(Keys::parse(&out[..n])
+            .unwrap()
+            .slots()
+            .eq(t.slots.iter().copied()));
+    }
+
+    #[test]
+    fn a_slot_entry_in_a_version_1_table_is_refused_at_write() {
+        let t = Table {
+            slots: &[Slot {
+                id: 1,
+                flags: 0,
+                entry: 8,
+            }],
+            ..Table::default()
+        };
+        let mut out = [0u8; 64];
+        assert_eq!(write_table(&t, &mut out), Err(KeysError::Format));
+    }
+
+    /// A table with the entries `(tag, count, payload)` and the version `v`.
+    fn raw(v: u16, ents: &[(u16, u16, &[u8])]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&MAGIC.to_be_bytes());
+        b.extend_from_slice(&v.to_be_bytes());
+        b.extend_from_slice(&(ents.len() as u16).to_be_bytes());
+        for (tg, count, body) in ents {
+            b.extend_from_slice(&tg.to_be_bytes());
+            b.extend_from_slice(&count.to_be_bytes());
+            b.extend_from_slice(&(body.len() as u32).to_be_bytes());
+            b.extend_from_slice(body);
+        }
+        b
+    }
+
+    #[test]
+    fn provides_and_bind_in_a_version_1_table_and_other_versions_are_refused_at_parse() {
+        let prov = [0u8; 8];
+        assert_eq!(
+            Keys::parse(&raw(1, &[(tag::PROVIDES, 1, &prov)])).unwrap_err(),
+            KeysError::Tag
+        );
+        assert_eq!(
+            Keys::parse(&raw(1, &[(tag::BIND, 0, &[])])).unwrap_err(),
+            KeysError::Tag
+        );
+        assert!(Keys::parse(&raw(2, &[(tag::PROVIDES, 1, &prov)])).is_ok());
+        assert_eq!(Keys::parse(&raw(0, &[])).unwrap_err(), KeysError::Format);
+        assert_eq!(Keys::parse(&raw(3, &[])).unwrap_err(), KeysError::Format);
+        // a version 1 slot item has 8 bytes, a version 2 item 12
+        assert!(Keys::parse(&raw(1, &[(tag::SLOTS, 1, &[0u8; 8])])).is_ok());
+        assert_eq!(
+            Keys::parse(&raw(2, &[(tag::SLOTS, 1, &[0u8; 8])])).unwrap_err(),
+            KeysError::Size
+        );
+    }
+
+    #[test]
+    fn a_bind_entry_with_leftover_or_missing_bytes_is_refused_at_parse() {
+        // one item with 4 stock bytes: head 16 + 4
+        let mut item = vec![0u8; 20];
+        item[8..12].copy_from_slice(&4u32.to_be_bytes());
+        assert!(Keys::parse(&raw(2, &[(tag::BIND, 1, &item)])).is_ok());
+        let mut more = item.clone();
+        more.extend_from_slice(&[0; 4]); // leftover bytes
+        assert_eq!(
+            Keys::parse(&raw(2, &[(tag::BIND, 1, &more)])).unwrap_err(),
+            KeysError::Size
+        );
+        // the count says 2 items, the payload holds one
+        assert_eq!(
+            Keys::parse(&raw(2, &[(tag::BIND, 2, &item)])).unwrap_err(),
+            KeysError::Size
+        );
+        // the stock length reaches past the entry
+        let mut short = item.clone();
+        short[8..12].copy_from_slice(&8u32.to_be_bytes());
+        assert_eq!(
+            Keys::parse(&raw(2, &[(tag::BIND, 1, &short)])).unwrap_err(),
+            KeysError::Size
+        );
+        // more stock bytes than the limit
+        let mut big = vec![0u8; BIND_HEAD + 68];
+        big[8..12].copy_from_slice(&68u32.to_be_bytes());
+        assert_eq!(
+            Keys::parse(&raw(2, &[(tag::BIND, 1, &big)])).unwrap_err(),
+            KeysError::Count
+        );
     }
 
     #[test]

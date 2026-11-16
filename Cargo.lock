@@ -1233,6 +1233,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dkrt-svc-rt"
+version = "0.1.0"
+dependencies = [
+ "dkrt-abi",
+ "dkrt-sdk",
+]
+
+[[package]]
 name = "dkrt-svc-samples"
 version = "0.1.0"
 dependencies = [

@@ -157,8 +157,8 @@ int32_t dk_record_add(dk_module_ctx *ctx, uint32_t kind, const void *bytes, uint
 /* A service module declares a record kind it owns: `len` is the whole record with its 8-byte header, `handler` the function that handles the records. The runtime compares every dk_service_declare_* call of `init` with the header table (KINDS, SLOTS, HOOKS, EXPORTS, RESOURCES entries) at the commit: a difference refuses the module with DK_E_DECL_KIND. Returns 0, or DK_E_DECL_FULL. Context: init. Since runtime 0.8.0. */
 int32_t dk_service_declare_kind(dk_module_ctx *ctx, uint32_t kind, uint32_t len, const void *handler);
 
-/* A service module declares a plug-in point (slot) it takes. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL. Context: init. Since runtime 0.8.0. */
-int32_t dk_service_declare_slot(dk_module_ctx *ctx, uint32_t slot, uint32_t flags);
+/* A service module declares a plug-in point (slot) it takes, with the function that fills it. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL. Context: init. Since runtime 0.8.0. */
+int32_t dk_service_declare_slot(dk_module_ctx *ctx, uint32_t slot, uint32_t flags, const void *entry);
 
 /* A service module declares a hook site it takes, with the function that runs there. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL. Context: init. Since runtime 0.8.0. */
 int32_t dk_service_declare_hook(dk_module_ctx *ctx, uint32_t site, const void *entry);

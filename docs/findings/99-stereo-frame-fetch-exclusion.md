@@ -198,7 +198,7 @@ the DSP range (1244–1246). These line references describe that pre-fix revisio
 
 `unreserve` cleared ownership/`mod_len` (1010–1039), making the extent eligible
 for first-fit reuse (475–500). The
-[loader](../../modules/core/runtime/src/rs/src/loader.rs) also called `fini`
+[loader](../../modules/core/runtime/src/rs/src/loader/mod.rs) also called `fini`
 (518 onward), released DSP storage and freed CF memory (527–529). This established
 static erroneous reuse eligibility, not observed reuse or callback overlap.
 Existing `PH_QUARANTINE` protected a pending transfer before `fail`, but did not

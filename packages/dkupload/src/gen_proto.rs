@@ -75,6 +75,7 @@ pub const CAP_FILEHASH: u32 = 1 << 12;
 pub const CAP_RENAME: u32 = 1 << 13;
 pub const CAP_READBACK: u32 = 1 << 14;
 pub const CAP_LOADS: u32 = 1 << 15;
+pub const CAP_SVC_ABI: u32 = 1 << 16;
 pub const CAPK_MODULES: u8 = 1;
 pub const CAPK_SELECTION: u8 = 2;
 pub const CAPK_ARENA: u8 = 3;

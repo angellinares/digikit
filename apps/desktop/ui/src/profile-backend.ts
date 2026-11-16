@@ -72,7 +72,12 @@ export interface ProfileDeps {
 /** The debug module is not there: no PEEK capability, or PROFILE_STATE is an unknown command of an older debug module. */
 export const isDebugMissing = (e: unknown): boolean => e instanceof DkError && e.status === 'E_PROTO';
 
-const KINDS: Record<LibraryModule['group'], OwnerKind> = { Machines: 'machine', Effects: 'effect', Tools: 'tool' };
+const KINDS: Record<LibraryModule['group'], OwnerKind> = {
+  Machines: 'machine',
+  Effects: 'effect',
+  Tools: 'tool',
+  Services: 'tool',
+};
 
 const asFault = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 

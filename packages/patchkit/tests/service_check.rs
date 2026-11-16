@@ -216,7 +216,7 @@ fn a_declaration_that_differs_from_the_manifest_fails() {
 
     // a length of another kind, and a declaration that has no manifest entry at all
     let (dir, sdk) = service("decl-pair", &["SWEEP_STEP"]);
-    let rec = fs::read_to_string(dir.join("src/records.rs")).unwrap().replace("unsafe fn declare(_d: &mut Declare) {}", "unsafe fn declare(d: &mut Declare) {\n        d.kind(KIND_SWEEP_STEP, LEN_OTHER);\n        d.slot(1, 0);\n    }");
+    let rec = fs::read_to_string(dir.join("src/records.rs")).unwrap().replace("unsafe fn declare(_d: &mut Declare) {}", "unsafe fn declare(d: &mut Declare) {\n        d.kind(KIND_SWEEP_STEP, LEN_OTHER);\n        d.slot(1, 0, 0);\n    }");
     fs::write(dir.join("src/records.rs"), rec).unwrap();
     let found = problems(&dir, &sdk);
     assert!(

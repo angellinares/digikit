@@ -133,6 +133,61 @@ c-symbol  dkrt_poll_set
 
 `--format json` prints `{identical, functions, data_objects, differences: [{kind, name, detail}]}`.
 
+### Bind a service to your firmware
+
+`patchkit bind IN.dks --firmware FW.syx -o OUT.dks` binds a packed service (`.dks`) to the firmware of the user. A service is packed without
+firmware. Each hook it declares (the `HOOKS` list of its header table) needs a trampoline, and the trampoline copies the stock bytes of the
+hook site. Bind adds both from your own image. The bound file holds firmware bytes: never commit it.
+
+What it writes:
+
+- For each declared hook, a trampoline appended to the image (4-byte aligned). It saves the registers the hook may not clobber, calls the
+  service handler with the arguments the hook declares, restores, runs the displaced instructions (mode `before`) and jumps back to the
+  return address. Mode `replace` has no displaced instructions.
+- One `BIND` item per hook in the v2 header table: the hook name hash, the site address, the trampoline offset and the stock bytes. Every other
+  list of the table stays.
+- The image grows, so the `.bss` moves: base-relative relocations that point into `.bss` are shifted by the growth.
+
+From a clean checkout, with your image in `firmware/` (git ignores it) and the output in `dist/`:
+
+```text
+patchkit pack SERVICE-ID -o dist/service.dks
+patchkit bind dist/service.dks --firmware firmware/IMAGE.syx -o dist/service.bound.dks
+```
+
+`SERVICE-ID` is a service module that declares hooks. The test fixture `test/svc-test` declares one: `cf.menu.hook.settings_list.tail`, the last step of the
+SETTINGS list rebuild.
+Bind creates the output directory and prints one JSON object per hook. This is the format the command prints, not a captured run:
+
+```text
+[
+  {
+    "hook": "cf.menu.hook.settings_list.tail",
+    "site_hash": "0x........",
+    "site_addr": "0x........",
+    "site_len": 8,
+    "stock": "<hex of the stock bytes at the site>",
+    "tramp_off": 1234,
+    "displaced": ["<one line per displaced instruction>"],
+    "ret": "0x........"
+  }
+]
+```
+
+`site_hash` is the name hash of the hook, `tramp_off` the offset of the trampoline in the image, `ret` the address the trampoline jumps back
+to. `displaced` is empty for mode `replace`.
+
+Bind refuses, with an error and no output file:
+
+- The input is not a service (role is not service).
+- The service declares no hooks, or more than 24.
+- The service is bound already (it has `BIND` items).
+- The firmware is not a stock image with a port, or a hook name is not declared on that firmware.
+- A hook handler offset is outside the image.
+- A site holds more than 64 stock bytes.
+- A displaced instruction depends on its address (PC-relative), or the hook mode is not `before` or `replace`.
+- The output path is inside the source tree and not under `dist/` or `out/`. A path outside the tree is allowed.
+
 ### Run it in the emulator
 
 ```sh

@@ -8,7 +8,7 @@
       {
         "files": ["lfo.device.test.ts"],
         "tags": ["S:lfo"],
-        "modules": ["test/lfo-shape", "test/lfo-shape-dup"]
+        "modules": ["digikit/debug", "test/lfo-shape", "test/lfo-shape-dup", "core/lfo"]
       }
     ]
   }

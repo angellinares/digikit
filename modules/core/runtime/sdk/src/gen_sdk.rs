@@ -274,6 +274,7 @@ pub mod proto {
     pub const CAP_RENAME: u32 = 1 << 13;
     pub const CAP_READBACK: u32 = 1 << 14;
     pub const CAP_LOADS: u32 = 1 << 15;
+    pub const CAP_SVC_ABI: u32 = 1 << 16;
     pub const CAPK_MODULES: u8 = 1;
     pub const CAPK_SELECTION: u8 = 2;
     pub const CAPK_ARENA: u8 = 3;
@@ -403,6 +404,8 @@ pub mod load {
     pub const E_PLAN_KEY: i32 = -77;
     pub const E_PLAN_FIT: i32 = -78;
     pub const E_DECL_KIND: i32 = -79;
+    pub const E_SVC_ABI: i32 = -81;
+    pub const E_HOOK_STOCK: i32 = -82;
     pub const STATE_SELECTED: u8 = 0;
     pub const STATE_PLANNED: u8 = 1;
     pub const STATE_REFUSED: u8 = 2;
@@ -800,8 +803,8 @@ pub mod api {
     /// `dk_service_declare_kind`: A service module declares a record kind it owns: `len` is the whole record with its 8-byte header, `handler` the function that handles the records. The runtime compares every dk_service_declare_* call of `init` with the header table (KINDS, SLOTS, HOOKS, EXPORTS, RESOURCES entries) at the commit: a difference refuses the module with DK_E_DECL_KIND. Returns 0, or DK_E_DECL_FULL.
     pub type DkServiceDeclareKindFn = unsafe extern "C" fn(ctx: *mut u8, kind: u32, len: u32, handler: *const u8) -> i32;
 
-    /// `dk_service_declare_slot`: A service module declares a plug-in point (slot) it takes. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL.
-    pub type DkServiceDeclareSlotFn = unsafe extern "C" fn(ctx: *mut u8, slot: u32, flags: u32) -> i32;
+    /// `dk_service_declare_slot`: A service module declares a plug-in point (slot) it takes, with the function that fills it. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL.
+    pub type DkServiceDeclareSlotFn = unsafe extern "C" fn(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32;
 
     /// `dk_service_declare_hook`: A service module declares a hook site it takes, with the function that runs there. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL.
     pub type DkServiceDeclareHookFn = unsafe extern "C" fn(ctx: *mut u8, site: u32, entry: *const u8) -> i32;

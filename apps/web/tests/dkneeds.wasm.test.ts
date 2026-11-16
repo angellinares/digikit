@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'vitest';
+import { H_ROLE, TABLE_VERSION } from '@digi/dk-session';
+import { groupOf } from '@digi/workbench-core/modules/dktransfer.ts';
 import { DkNeeds } from '@digi/workbench-core/modules/dkneeds.ts';
 import type { Needs } from '@digi/workbench-core/modules/fit.ts';
 import { py, readBytes, wasmPath, workDir } from './support/patchkit-env.ts';
@@ -65,3 +67,34 @@ test.skipIf(!existsSync(wasmPath))('what is not a .dkm has no needs and does not
   // the reader still works after refusing files
   assert.equal(reader.of(new Uint8Array(10)), null);
 });
+
+test.skipIf(!existsSync(wasmPath))(
+  'a packed service is a version 2 table with role 1, grouped as Services, and its user is a version 1 module with a need; the reader reads both',
+  async () => {
+    const work = workDir('dkneeds-svc-');
+    const svc = join(work, 'svc-test.dks');
+    const user = join(work, 'svc-test-user.dkm');
+    patchkit('pack', 'test/svc-test', '--device', 'dt2', '-o', svc);
+    patchkit('pack', 'test/svc-test-user', '--device', 'dt2', '-o', user);
+    const [s, u] = [svc, user].map((p) => new Uint8Array(readFileSync(p)));
+    // the table follows the header (H_REG_OFF, word 0x..): its magic, then its u16 version
+    const version = (f: Uint8Array) => {
+      const v = new DataView(f.buffer, f.byteOffset, f.length);
+      const off = v.getUint32(0x90);
+      return v.getUint16(off + 4);
+    };
+    assert.deepEqual([version(s), version(u)], [2, 1]);
+    assert.ok(version(s) <= TABLE_VERSION);
+    assert.deepEqual(
+      [s, u].map((f) => new DataView(f.buffer, f.byteOffset, f.length).getUint32(H_ROLE)),
+      [1, 0],
+    );
+    assert.equal(groupOf(s), 'Services');
+    assert.notEqual(groupOf(u), 'Services');
+    // the wasm reader and the command line agree on a service file too
+    const reader = await DkNeeds.create(readBytes(wasmPath));
+    const cli = JSON.parse(patchkit('needs', '--json', svc, user));
+    assert.deepEqual(reader.of(s), cli[svc]);
+    assert.deepEqual(reader.of(u), cli[user]);
+  },
+);

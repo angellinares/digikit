@@ -176,7 +176,8 @@ fn declared(text: &str) -> (BTreeSet<String>, Vec<String>) {
 }
 
 /// The record kinds the manifest gives to service `name`, and whether it has a `[[service]]` row in this crate.
-fn manifest(sdk: &Path, name: &str) -> Result<(BTreeSet<String>, Option<String>)> {
+/// The record kinds of the service and its `[[service]]` row: `None` without a row, `Some(None)` for a row without `rust` (a service file, `.dks`).
+fn manifest(sdk: &Path, name: &str) -> Result<(BTreeSet<String>, Option<Option<String>>)> {
     let text = std::fs::read_to_string(sdk).map_err(|e| err!("{}: {e}", sdk.display()))?;
     let v: toml::Table = text.parse().map_err(|e| err!("{}: {e}", sdk.display()))?;
     let row = v
@@ -186,9 +187,7 @@ fn manifest(sdk: &Path, name: &str) -> Result<(BTreeSet<String>, Option<String>)
         .flatten()
         .filter_map(|r| r.as_table())
         .find(|r| r.get("name").and_then(|n| n.as_str()) == Some(name))
-        .and_then(|r| r.get("rust"))
-        .and_then(|r| r.as_str())
-        .map(str::to_string);
+        .map(|r| r.get("rust").and_then(|r| r.as_str()).map(str::to_string));
     let kinds = v
         .get("records")
         .and_then(|r| r.get("kinds"))
@@ -298,7 +297,7 @@ pub fn check(dir: &Path, sdk: &Path) -> Result<Vec<String>> {
             "{} has no [[service]] row named `{name}`",
             sdk.display()
         )),
-        Some(r) if !r.starts_with(&format!("{}::", want_pkg.replace('-', "_"))) => {
+        Some(Some(r)) if !r.starts_with(&format!("{}::", want_pkg.replace('-', "_"))) => {
             problem(format!(
                 "the [[service]] row `{name}` has rust = \"{r}\": the type is not in the crate `{}`",
                 want_pkg.replace('-', "_")

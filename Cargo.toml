@@ -39,6 +39,7 @@ members = [
     "modules/core/runtime/abi",
     "modules/core/runtime/fit",
     "modules/core/runtime/link",
+    "modules/core/runtime/svc-rt",
     "modules/core/runtime/test-support",
     "modules/core/services/fx",
     "modules/core/services/machines",

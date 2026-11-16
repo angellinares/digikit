@@ -2,6 +2,9 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "core/runtime",
   "implicitDependencies": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkrt-svc-machines", "dkrt-svc-lfo", "dkrt-svc-samples", "dkneeds", "dkfw"],
+  "metadata": {
+    "runtimeAcceptance": [{ "modules": ["test/svc-test", "test/svc-test-user"] }]
+  },
   "targets": {
     "rust-tests": {
       "executor": "nx:run-commands",
@@ -18,11 +21,11 @@
         "{workspaceRoot}/tools/nx/rust-env.mjs",
         "{workspaceRoot}/modules/core/runtime/tests/platform/contract.toml",
         "{workspaceRoot}/modules/core/runtime/tests/storage/contract.toml",
-        "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine}/module.toml",
-        "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine}/src/**/*",
-        { "dependentTasksOutputFiles": "dist/modules/*/{dyn-fx-gain,sine}.*", "transitive": false }
+        "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine,svc-test,svc-test-user}/module.toml",
+        "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine,svc-test,svc-test-user}/src/**/*",
+        { "dependentTasksOutputFiles": "dist/modules/*/{dyn-fx-gain,sine,svc-test,svc-test-user}.*", "transitive": false }
       ],
-      "dependsOn": ["test/dyn-fx-gain:pack", "test/sine:pack"],
+      "dependsOn": ["test/dyn-fx-gain:pack", "test/sine:pack", "test/svc-test:pack", "test/svc-test-user:pack"],
       "outputs": [],
       "options": {
         "command": "node tools/nx/rust-env.mjs --variant host-dkrt -- cargo test --manifest-path modules/core/runtime/src/rs/Cargo.toml --lib --offline --locked",

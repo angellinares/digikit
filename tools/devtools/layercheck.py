@@ -162,6 +162,9 @@ def check_roles(root: Path, mods: list[Module]) -> list[Violation]:
         r = rel(root, m.dir)
         parts = r.split("/")[2:]  # below modules/core
         want = FOLDER_ROLES.get(parts[0]) if parts else None
+        # the wrapper of a service crate that is also a service file: modules/core/services/NAME/dks
+        if parts[:1] == ["services"] and len(parts) == 3 and parts[2] == "dks":
+            want = "service"
         where = f"{r}/module.toml:{line_of(m.text, 'category', 1)}"
         have = m.mod.get("role")
         if want is None:
@@ -775,7 +778,8 @@ def check_runtime_platform(root: Path) -> list[Violation]:
 SERVICE_CRATES = "modules/core/services"
 SERVICE_DEPS = {"dkrt-abi", "dkrt-sdk", "dkneeds"}
 SERVICE_DEV_DEPS = SERVICE_DEPS | {"dkrt-test-support"}
-SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_\w+")
+# `dkrt_svc_rt` is the support crate of a service file (modules/core/runtime/svc-rt), not a service
+SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_(?!rt\b)\w+")
 SERVICE_RUNTIME_FILES = ("handlers.rs", "gen_services.rs")
 # The services that are folders of the runtime crate (`services/NAME`): none since R12-1; every service is a crate (`modules/core/services/NAME`).
 RT_LOCAL_SERVICES: set[str] = set()

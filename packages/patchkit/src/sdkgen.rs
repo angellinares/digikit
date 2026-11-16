@@ -47,6 +47,8 @@ pub const REGISTERS_MD_OUT: &str = "sdk/dsp/REGISTERS.md";
 pub const LIMITS_RS_OUT: &str = "packages/dkneeds/src/gen_limits.rs";
 /// The generated static table of the runtime's in-crate services, relative to the repository root.
 pub const SERVICES_RS_OUT: &str = "modules/core/runtime/src/rs/src/gen_services.rs";
+/// The generated hash of the `dkrt-abi` boundary files (`SVC_ABI`, docs/plans/runtime-and-services.md section 13.2), relative to the repository root.
+pub const SVC_ABI_OUT: &str = "modules/core/runtime/abi/src/gen_svc_abi.rs";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -170,6 +172,9 @@ struct Import {
     since: Option<String>,
     /// Where the import may be called (`[handle] contexts`).
     context: Option<String>,
+    /// A test-only import (of a test-only service): not in the runtime's table, the public headers or the docs.
+    #[serde(default)]
+    test: bool,
 }
 /// The opaque handle types, services and call contexts of the service imports: `[handle]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
@@ -286,8 +291,13 @@ struct Records {
 #[serde(deny_unknown_fields)]
 struct ServiceDecl {
     name: String,
-    /// The full path of the type that implements `Service` (`crate::services::NAME::...`, or a linked service crate).
-    rust: String,
+    /// The full path of the type that implements `Service` (`crate::services::NAME::...`, or a linked service crate). Without it the service is
+    /// provided by a `.dks` provider, not by a runtime row: it is in no generated table.
+    #[serde(default)]
+    rust: Option<String>,
+    /// A test-only service: not in public SDK headers, docs or templates.
+    #[serde(default)]
+    test: bool,
 }
 /// One record kind: its number, the whole record's length (header included) and the in-crate service that owns it.
 #[derive(Deserialize)]
@@ -373,6 +383,17 @@ struct FormatLimits {
     collect_bytes: u32,
     table_magic: u32,
     table_version: u32,
+    provider_max: u32,
+    bind_max: u32,
+    install_sites: u32,
+}
+/// The value of a `[format] consts` entry (the header offsets), 0 if it is missing.
+fn header_const(sdk: &Sdk, name: &str) -> u32 {
+    sdk.format
+        .consts
+        .iter()
+        .find(|c| c.name == name)
+        .map_or(0, |c| c.value)
 }
 /// The format limits in file order, then the ones that come from other keys: (generated name, value).
 /// `MAX_VOICES` and `MAX_FX` are the contract maxima `machine_rows` and `fx_slots`.
@@ -393,6 +414,9 @@ fn format_limits(sdk: &Sdk) -> Vec<(&'static str, u32)> {
         ("COLLECT_BYTES", f.collect_bytes),
         ("TABLE_MAGIC", f.table_magic),
         ("TABLE_VERSION", f.table_version),
+        ("PROVIDER_MAX", f.provider_max),
+        ("BIND_MAX", f.bind_max),
+        ("INSTALL_SITES", f.install_sites),
         ("MAX_VOICES", sdk.limits.max.machine_rows as u32),
         ("MAX_FX", sdk.limits.max.fx_slots as u32),
     ]
@@ -421,8 +445,12 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
         let _ = writeln!(s, "{indent}    (KIND_{n}, LEN_{n}, {:?}),", k.service);
     }
     let _ = writeln!(s, "{indent}];");
-    for d in &sdk.service {
+    // a table for each in-crate service and for each service file that owns a kind (the `service!` glue of a `.dks` declares them)
+    for d in sdk.service.iter() {
         let own: Vec<_> = kinds.iter().filter(|(_, k)| k.service == d.name).collect();
+        if d.rust.is_none() && own.is_empty() {
+            continue;
+        }
         let _ = writeln!(
             s,
             "{indent}/// The kinds of the `{}` service: (kind, record length).",
@@ -503,24 +531,38 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
 /// `modules/core/runtime/src/rs/src/gen_services.rs`: the static table of the in-crate services (`[[service]]`).
 fn rust_services(sdk: &Sdk) -> String {
     let mut s = format!("// {HEADER}\n\n");
-    s.push_str("use crate::core_api::{RealCore, REAL_CORE};\nuse dkrt_abi::service::{ServiceRow, ServiceTable};\n\n");
+    s.push_str("use crate::core_api::{RealCore, REAL_CORE};\nuse dkrt_abi::service::{rows_with_tail, RowPtrs, ServiceRow, ServiceTable};\n\n");
     s.push_str("/// The in-crate services in the order the core calls them (`[[service]]` of sdk/sdk.toml), each with the record kinds it owns.\n");
-    let _ = writeln!(
-        s,
-        "pub static SERVICES: [ServiceRow<RealCore>; {}] = [",
-        sdk.service.len()
-    );
-    for d in &sdk.service {
+    let rows: Vec<(&ServiceDecl, &String)> = sdk
+        .service
+        .iter()
+        .filter_map(|d| d.rust.as_ref().map(|r| (d, r)))
+        .collect();
+    let _ = writeln!(s, "pub static SERVICES: [ServiceRow; {}] = [", rows.len());
+    let n = rows.len();
+    for (d, rust) in rows {
         let _ = writeln!(
             s,
-            "    ServiceRow::of::<{}>({:?}, &dkrt_sdk::records::KINDS_{}),",
-            d.rust,
+            "    ServiceRow::of::<{}, RealCore>({:?}, &dkrt_sdk::records::KINDS_{}),",
+            rust,
             d.name,
             d.name.to_uppercase()
         );
     }
-    s.push_str(
-        "];\n\npub const TABLE: ServiceTable<RealCore> = ServiceTable { rows: &SERVICES, failed: 0, core: &REAL_CORE };\n",
+    let _ = write!(
+        s,
+        "];\n\n/// The number of in-crate services: the static prefix of the table.\npub const STATIC: usize = {n};\n\n"
+    );
+    let order = sdk
+        .service
+        .iter()
+        .map(|d| format!("{:?}", d.name))
+        .collect::<Vec<_>>();
+    let _ = write!(
+        s,
+        "/// The name of every `[[service]]`, in file order: the ordinal of a service. The rows a `.dks` adds follow the in-crate rows sorted by it (`svc_rows.rs`).\npub const ORDER: [&str; {}] = [{}];\n\n/// The length of the row table: the in-crate rows, then room for `PROVIDER_MAX` rows of loaded service files.\npub const ROWS_LEN: usize = STATIC + dkrt_sdk::PROVIDER_MAX;\n\n/// The row table: the in-crate rows first, then the loaded ones (written by `svc_rows.rs` only; the null tail is not part of any table).\npub static mut ROWS: [*const ServiceRow; ROWS_LEN] = rows_with_tail(&SERVICES);\n\nstatic HEAD: RowPtrs<{n}> = RowPtrs::of(&SERVICES);\n\n/// The table of the in-crate rows alone (the declare check and `is_runtime_service`).\npub const TABLE: ServiceTable = ServiceTable::new(&HEAD.0, &REAL_CORE);\n",
+        order.len(),
+        order.join(", ")
     );
     s
 }
@@ -1265,6 +1307,7 @@ fn python_proto(sdk: &Sdk) -> String {
     for (n, v) in format_limits(sdk) {
         let _ = writeln!(s, "{n} = {v}");
     }
+    let _ = writeln!(s, "H_ROLE = {}", header_const(sdk, "H_ROLE"));
     s.push('\n');
     s.push_str("# the record kinds of a .dkm ([records.kinds])\nRECORD_KIND: dict[str, int] = {\n");
     let mut kinds: Vec<_> = sdk.records.kinds.iter().collect();
@@ -1349,6 +1392,7 @@ fn ts_proto(sdk: &Sdk) -> String {
     for (n, v) in format_limits(sdk) {
         let _ = writeln!(s, "export const {n} = {v};");
     }
+    let _ = writeln!(s, "export const H_ROLE = {};", header_const(sdk, "H_ROLE"));
     s.push_str("\n/** The record kinds of a `.dkm` (`[records.kinds]`). */\nexport const RECORD_KIND = {\n");
     let mut kinds: Vec<_> = sdk.records.kinds.iter().collect();
     kinds.sort_by_key(|(_, k)| k.id);
@@ -2160,8 +2204,18 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
         match (&im.service, &im.since, &im.context) {
             (None, None, None) if im.kind.as_deref() == Some("helper") => {}
             (Some(svc), Some(since), Some(ctx)) => {
-                if !sdk.handle.services.contains(svc) {
+                if !sdk.handle.services.contains(svc)
+                    && !sdk
+                        .service
+                        .iter()
+                        .any(|d| d.rust.is_none() && d.name == *svc)
+                {
                     return Err(err!("{SOURCE}: {what}: unknown service {svc:?}"));
+                }
+                if !im.test && sdk.service.iter().any(|d| d.test && d.name == *svc) {
+                    return Err(err!(
+                        "{SOURCE}: {what}: {svc:?} is a test-only service, so its imports are `test = true`"
+                    ));
                 }
                 if !sdk.handle.contexts.contains(ctx) {
                     return Err(err!("{SOURCE}: {what}: unknown context {ctx:?}"));
@@ -2183,9 +2237,22 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
                 ));
             }
         }
-        v.push((im, sig));
+        // a test-only import is checked but is in no generated output
+        if !im.test {
+            v.push((im, sig));
+        }
     }
     Ok(v)
+}
+
+/// The services provided by a `.dks` (`[[service]]` without `rust`) in the `sdk/sdk.toml` this crate was built with.
+pub fn provider_services() -> std::collections::BTreeSet<String> {
+    sdk_embedded()
+        .service
+        .into_iter()
+        .filter(|d| d.rust.is_none())
+        .map(|d| d.name)
+        .collect()
 }
 
 /// What the packer needs of a service import (`[[import]]` with `service`).
@@ -2822,6 +2889,7 @@ pub(crate) struct AbiInputs {
     /// (name, code, text) of `[load.state]` in code order.
     pub(crate) states: Vec<(String, u8, String)>,
     pub(crate) sel_max: u64,
+    pub(crate) provider_max: u64,
 }
 
 /// `AbiInputs` of a `sdk/sdk.toml` text.
@@ -2847,7 +2915,54 @@ pub(crate) fn abi_inputs(text: &str) -> Result<AbiInputs> {
             v
         },
         sel_max: sdk.limits.max.modules,
+        provider_max: sdk.limits.format.provider_max as u64,
     })
+}
+
+/// The files of `dkrt-abi` that a service file and the runtime share across the boundary (interfaces B and C), relative to the repository root. `gen_svc_abi.rs`
+/// itself and the other files of the crate are not in the list.
+pub const SVC_ABI_FILES: [&str; 6] = [
+    "modules/core/runtime/abi/src/service.rs",
+    "modules/core/runtime/abi/src/core_api.rs",
+    "modules/core/runtime/abi/src/link.rs",
+    "modules/core/runtime/abi/src/dsp.rs",
+    "modules/core/runtime/abi/src/registry.rs",
+    "modules/core/runtime/abi/src/core_imports.rs",
+];
+
+/// FNV-1a (32 bits) over each file as its name, a zero byte, its bytes and a zero byte, in the given order. Never 0 (0 means "no interface B or C" in the
+/// header word).
+pub fn svc_abi_hash(files: &[(&str, &[u8])]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    let mut eat = |b: u8| {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    };
+    for (name, bytes) in files {
+        name.bytes().for_each(&mut eat);
+        eat(0);
+        bytes.iter().copied().for_each(&mut eat);
+        eat(0);
+    }
+    if h == 0 { 1 } else { h }
+}
+
+/// `modules/core/runtime/abi/src/gen_svc_abi.rs`: the hash of `SVC_ABI_FILES` as read under `root`. `dkrt-abi` mixes the sizes of the shared structs into it.
+fn svc_abi_rs(root: &std::path::Path) -> Result<String> {
+    let mut bytes = vec![];
+    for rel in SVC_ABI_FILES {
+        let path = root.join(rel);
+        bytes.push(std::fs::read(&path).map_err(|e| err!("{}: {e}", path.display()))?);
+    }
+    let files: Vec<(&str, &[u8])> = SVC_ABI_FILES
+        .iter()
+        .zip(&bytes)
+        .map(|(n, b)| (*n, b.as_slice()))
+        .collect();
+    Ok(format!(
+        "// {HEADER}\n\n/// The hash of the boundary files of this crate (`patchkit::sdkgen::SVC_ABI_FILES`); `SVC_ABI` mixes the sizes of the shared structs into it.\npub const FILES_HASH: u32 = {:#010x};\n",
+        svc_abi_hash(&files)
+    ))
 }
 
 /// The outputs, reading `sdk/sdk.toml` and the runtime's `abi.toml` under the repository root.
@@ -2859,5 +2974,6 @@ pub fn generate(root: &std::path::Path) -> Result<Vec<(String, String)>> {
     let abi =
         std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
     files.extend(crate::abigen::render(&abi, &abi_inputs(&text)?)?);
+    files.push((SVC_ABI_OUT.to_string(), svc_abi_rs(root)?));
     Ok(files)
 }

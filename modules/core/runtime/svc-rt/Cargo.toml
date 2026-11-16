@@ -1,0 +1,13 @@
+[package]
+name = "dkrt-svc-rt"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The support crate of a service file (.dks): ImportCore (CoreApi over the dkc_* imports), the service! macro (dk_module, dk_svc_abi, the panic handler)"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+dkrt-abi = { path = "../abi" }
+dkrt-sdk = { path = "../sdk" }

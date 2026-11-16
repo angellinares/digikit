@@ -57,8 +57,21 @@ pub struct FakePlatform {
     pub tasks: RefCell<Vec<u32>>,
     pub refuse_task: Cell<bool>,
     pub sems: RefCell<Vec<(u32, &'static str)>>,
+    /// Code memory by address (a byte never written reads 0) and the log of the installer's calls, in order.
+    pub code: RefCell<BTreeMap<u32, u8>>,
+    pub calls: RefCell<Vec<Call>>,
     /// The files of the two roots (`Storage`).
     pub storage: FakeStorage,
+}
+
+/// One logged platform call of the installer path: the mask, the code and slot writes, the flushes and the restore.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Call {
+    Mask,
+    Restore,
+    Write { addr: u32, len: u32 },
+    Word { addr: u32, value: u32 },
+    Flush { addr: u32, len: u32 },
 }
 
 impl FakePlatform {
@@ -91,7 +104,16 @@ impl FakePlatform {
             tasks: RefCell::new(Vec::new()),
             refuse_task: Cell::new(false),
             sems: RefCell::new(Vec::new()),
+            code: RefCell::new(BTreeMap::new()),
+            calls: RefCell::new(Vec::new()),
             storage,
+        }
+    }
+    /// Set code bytes without a log entry (a test's stock image).
+    pub fn put_code(&self, addr: u32, bytes: &[u8]) {
+        let mut m = self.code.borrow_mut();
+        for (i, b) in bytes.iter().enumerate() {
+            m.insert(addr + i as u32, *b);
         }
     }
     pub fn sector(&self, s: u32) -> [u8; 512] {
@@ -119,6 +141,7 @@ impl Platform for FakePlatform {
         self.clock.get()
     }
     fn irq_mask(&self) -> u32 {
+        self.calls.borrow_mut().push(Call::Mask);
         let old = self.sr.get();
         self.sr.set(7);
         self.depth.set(self.depth.get() + 1);
@@ -127,10 +150,27 @@ impl Platform for FakePlatform {
     }
     fn irq_restore(&self, sr: u32) {
         assert!(self.depth.get() > 0, "restore without a mask");
+        self.calls.borrow_mut().push(Call::Restore);
         self.depth.set(self.depth.get() - 1);
         self.sr.set(sr);
     }
-    fn flush(&self, _start: u32, _len: u32) {}
+    fn flush(&self, start: u32, len: u32) {
+        self.calls.borrow_mut().push(Call::Flush { addr: start, len });
+    }
+    unsafe fn read_code(&self, addr: u32, out: &mut [u8]) {
+        let m = self.code.borrow();
+        for (i, b) in out.iter_mut().enumerate() {
+            *b = m.get(&(addr + i as u32)).copied().unwrap_or(0);
+        }
+    }
+    unsafe fn write_code(&self, addr: u32, bytes: &[u8]) {
+        self.calls.borrow_mut().push(Call::Write { addr, len: bytes.len() as u32 });
+        self.put_code(addr, bytes);
+    }
+    unsafe fn write_word(&self, addr: u32, value: u32) {
+        self.calls.borrow_mut().push(Call::Word { addr, value });
+        self.put_code(addr, &value.to_be_bytes());
+    }
     unsafe fn block_read(&self, sector: u32, bytes: u32, buf: *mut u8) -> i32 {
         self.reads.borrow_mut().push((sector, bytes));
         let n = bytes / 512;

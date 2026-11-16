@@ -7,7 +7,7 @@
 //! (`dk_settings_open`, `dk_files_open`, `dk_sample_pool_open`) and each call takes the handle. The handle is the client number the existing code
 //! (`settings.rs`, `files.rs`, `tracks.rs`) keeps, as a pointer. The imports that need no handle point at the functions of `imports.rs`.
 
-use crate::{dlog, files, settings, store, store_writer, MAX_MODULES};
+use crate::{dlog, files, settings, state::REC_MAX, store, store_writer, MAX_MODULES};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
@@ -26,10 +26,10 @@ const NO_CTX: Ctx = Ctx { magic: 0, rec: 0 };
 
 /// The context of each module record; `magic` is `CTX_MAGIC` for a module of the new entry while it is loaded.
 #[no_mangle]
-pub static mut DKRT_CTXS: [Ctx; MAX_MODULES] = [NO_CTX; MAX_MODULES];
+pub static mut DKRT_CTXS: [Ctx; REC_MAX] = [NO_CTX; REC_MAX];
 /// The address of each module record's `tick` (0: none); one aligned store publishes or clears it, as for the slots.
 #[no_mangle]
-pub static mut DKRT_TICKS: [u32; MAX_MODULES] = [0; MAX_MODULES];
+pub static mut DKRT_TICKS: [u32; REC_MAX] = [0; REC_MAX];
 
 /// Make record `rec` a module of the new entry: its context is live from now on.
 pub unsafe fn bind(rec: usize) -> *const Ctx {
@@ -57,12 +57,12 @@ pub unsafe fn stop_tick(rec: usize) {
 
 /// Does record `rec` have a tick?
 pub fn has_tick(rec: usize) -> bool {
-    rec < MAX_MODULES && unsafe { read_volatile(addr_of!(DKRT_TICKS[rec])) != 0 }
+    rec < REC_MAX && unsafe { read_volatile(addr_of!(DKRT_TICKS[rec])) != 0 }
 }
 
 /// Is record `rec` a loaded module (it has a live context)?
 pub unsafe fn is_entry(rec: usize) -> bool {
-    rec < MAX_MODULES && read_volatile(addr_of!(DKRT_CTXS[rec].magic)) == CTX_MAGIC
+    rec < REC_MAX && read_volatile(addr_of!(DKRT_CTXS[rec].magic)) == CTX_MAGIC
 }
 
 /// The context of record `rec` as a pointer (0 when the record is not loaded), for `dkrt_module`.
@@ -79,7 +79,7 @@ unsafe fn ctx_rec(ctx: *mut u8) -> Option<usize> {
     let base = addr_of!(DKRT_CTXS) as usize;
     let at = ctx as usize;
     let size = core::mem::size_of::<Ctx>();
-    if at < base || at >= base + MAX_MODULES * size || (at - base) % size != 0 {
+    if at < base || at >= base + REC_MAX * size || (at - base) % size != 0 {
         return None;
     }
     let rec = (at - base) / size;
