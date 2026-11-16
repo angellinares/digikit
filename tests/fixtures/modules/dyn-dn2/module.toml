@@ -15,8 +15,8 @@ conflicts = []
 [targets]
 "dn2-1.12" = "experimental"
 
-# Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the permanent number is
-# modules/core/adapters/machines/types.toml, [dn2.dynamic] "test/dyn-dn2:dyn_pluck") with one parameter page, as digikit/pluck has
+# Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the runtime assigns the number in the dynamic range of
+# modules/core/adapters/machines/types.toml when it loads the module) with one parameter page, as digikit/pluck has
 # on the Digitone II, but loaded from the card. The declaration is builder calls in init (src/module.c).
 # The DSP is test/sine's, read from its folder; its symbols start with `sn`, so `dsp` names the prefix.
 [[machine]]
