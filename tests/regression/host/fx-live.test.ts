@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { RpcError } from '@digi/control-client';
 import { button, type Session } from '@digi/test-support';
 import { expect, test, vi } from 'vitest';
 import { withWaitApi, type PatchedSession } from '../support.ts';
@@ -69,6 +70,32 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
     hits = 0;
     expectNoFault.mockRejectedValueOnce(new Error('DSP halt'));
     await expect(evidence(runtime, directory, 'fault', overlays, false)).rejects.toThrow('DSP halt');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a case whose tap never started still gets guard and fault evidence, but no PCM checks; other tap errors fail', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-fx-evidence-'));
+  let tapError: Error = new RpcError(-32602, 'pcm.tap was not started');
+  const expectNoFault = vi.fn();
+  const session = {
+    client: {
+      guardReport: vi.fn(async () => ({ total: 0, hits: [] })),
+      call: vi.fn(async (method: string) => {
+        if (method === 'pcm.tap') throw tapError;
+        return { sectors: 0 };
+      }),
+    },
+    status: vi.fn(async () => ({ mode: 'paused' })),
+    expectNoFault,
+  } as unknown as Session;
+  const runtime = { session } as PatchedSession;
+  try {
+    await expect(evidence(runtime, directory, 'idle', [])).resolves.toBeUndefined();
+    expect(expectNoFault).toHaveBeenCalledWith('idle');
+    tapError = new RpcError(-32000, 'no DSP audio session');
+    await expect(evidence(runtime, directory, 'broken', [])).rejects.toThrow('no DSP audio session');
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

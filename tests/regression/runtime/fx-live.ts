@@ -16,6 +16,7 @@ import {
   type Device,
   type RuntimeBaseline,
 } from '@digi/test-support';
+import { RpcError } from '@digi/control-client';
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type TestRuntime } from '../support.ts';
 import { record } from './artifacts.ts';
@@ -496,11 +497,20 @@ export async function evidence(
   const file = path.join(artifacts, `${tag}.overlay.bin`);
   const overlay = await rpc(session, 'card.overlay', { path: file });
   overlays.push(file);
-  const pcm = await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' });
+  // A case that never started the tap (for example one a test replaced by a reload before it played anything) has no PCM
+  // evidence: the other checks still run, and the audible and finite checks apply only to a tap that ran.
+  const pcm = await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' }).catch(
+    (error: unknown) => {
+      if (error instanceof RpcError && /pcm\.tap was not started/.test(error.message)) return undefined;
+      throw error;
+    },
+  );
   record(artifacts, `${tag}-closing`, { guard, overlay, pcm, status: await bounded(() => session.status()) });
   await bounded(() => expectNoGuardHits(session));
-  expect(pcm.non_finite).toBe(0);
-  if (requireAudible) expect(pcm.peak, 'input is audible').toBeGreaterThan(0.01);
+  if (pcm) {
+    expect(pcm.non_finite).toBe(0);
+    if (requireAudible) expect(pcm.peak, 'input is audible').toBeGreaterThan(0.01);
+  }
   await bounded(() => session.expectNoFault(tag));
 }
 
