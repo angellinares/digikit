@@ -34,6 +34,8 @@ struct Link {
     accepted: u32,
     polls: u32,
     no_fx_info: bool,
+    /// The tick callback drop (`dl_tick_cb_drop`) must name the seeded module's range after its `fini`; off for tests of the loader over fakes.
+    strict_tick_drop: bool,
     events: Vec<Event>,
 }
 static mut LINK: Link = Link {
@@ -43,6 +45,7 @@ static mut LINK: Link = Link {
     accepted: 0,
     polls: 0,
     no_fx_info: false,
+    strict_tick_drop: true,
     events: Vec::new(),
 };
 
@@ -161,6 +164,7 @@ unsafe fn seed(completion: Completion, fx: bool, published: bool, queued: bool) 
         accepted: 0,
         polls: 0,
         no_fx_info: false,
+        strict_tick_drop: true,
         events: Vec::new(),
     };
     let s = st();
@@ -531,8 +535,17 @@ pub static dkrt_store_first: u32 = 0;
 pub static dkrt_store_sectors: u32 = 0;
 #[no_mangle]
 pub extern "C" fn dl_tick_cb_drop(start: u32, end: u32) {
-    assert_eq!((start, end), (CF, CF + 256));
-    unsafe { assert!(LINK.events.contains(&Event::Fini)); }
+    unsafe {
+        if LINK.strict_tick_drop {
+            assert_eq!((start, end), (CF, CF + 256));
+            assert!(LINK.events.contains(&Event::Fini));
+        }
+    }
+}
+
+/// The loader tests over fakes use other addresses and no seeded link: the tick callback drop is not checked.
+pub(crate) fn lenient_tick_drop() {
+    unsafe { LINK.strict_tick_drop = false }
 }
 
 /// The other firmware anchors that the platform tests keep reachable: nothing in the host tests may write the card or send MIDI through them

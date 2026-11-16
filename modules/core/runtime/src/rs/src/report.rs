@@ -1,7 +1,6 @@
 //! What the runtime reports: `dkrt_status`, `dkrt_capacity`, `dkrt_diag` and the `dk_debug_*` imports that read the device.
 
 use crate::platform::{self, device};
-use crate::plan;
 use crate::platform::st;
 use crate::state::{init_once, MAX_MODULES, STAGE_BYTES};
 use crate::handlers::services;
@@ -135,7 +134,7 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
     };
     let (set_limit, set_used) = settings::capacity();
     // the DSP load: the headroom and the voices of the device profile; the load is the boot plan's (the module set is fixed per session)
-    let (dsp_used, dsp_top) = plan::planned_dsp();
+    let (dsp_used, dsp_top) = crate::loader::planned_dsp();
     let pf = platform::profile();
     // the services declare their own counts (machine, voice, parameter and page rows, effect and send slots, map entries), per kind
     let table = services();

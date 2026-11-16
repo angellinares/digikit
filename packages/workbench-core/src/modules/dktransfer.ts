@@ -8,6 +8,7 @@ import {
   DkError,
   DkSession,
   HEADER_BYTES,
+  H_ROLE,
   RECORD_KIND,
   TABLE_MAGIC,
   TABLE_VERSION,
@@ -34,7 +35,7 @@ import {
 } from './services.ts';
 import type { DkEntry, DkInfoFull } from '@digi/dk-session';
 
-export type Group = 'Machines' | 'Effects' | 'Tools';
+export type Group = 'Machines' | 'Effects' | 'Tools' | 'Services';
 
 /** One row of the list: a built module (`id` set) or a card file that matches none (`id` null). */
 export interface TransferRow {
@@ -133,15 +134,19 @@ export interface LibraryModule extends HeaderInfo {
 const MAGIC = [0x44, 0x4b, 0x4d, 0x46]; // "DKMF"
 const KEYS_TAG = 3; // the KEYS entry of the header table (packages/dkneeds/src/keys.rs)
 
-/** The group of a .dkm: Machines when the KEYS entry of its header table (the header's 0x90 pair) has machine keys, Effects when it has effect keys, else Tools.
+/** Readers accept the header table versions 1 to TABLE_VERSION (a service is written with 2, a module with 1). */
+const tableVersionOk = (version: number): boolean => version >= 1 && version <= TABLE_VERSION;
+
+/** The group of a .dkm: Services when its role word (header 0x38) is 1, Machines when the KEYS entry of its header table (the header's 0x90 pair) has machine keys, Effects when it has effect keys, else Tools.
  * Without the table (a header alone, or the table of runtime 0.7) it is Tools. */
 export function groupOf(f: Uint8Array): Group {
   const v = new DataView(f.buffer, f.byteOffset, f.length);
   if (f.length < HEADER_BYTES) return 'Tools';
   const off = v.getUint32(0x90);
   const size = v.getUint32(0x94);
-  if (size < 8 || off + size > f.length || v.getUint32(off) !== TABLE_MAGIC || v.getUint16(off + 4) !== TABLE_VERSION)
+  if (size < 8 || off + size > f.length || v.getUint32(off) !== TABLE_MAGIC || !tableVersionOk(v.getUint16(off + 4)))
     return 'Tools';
+  if (v.getUint32(H_ROLE) === 1) return 'Services';
   const kinds = new Set<number>();
   let at = off + 8;
   for (let i = v.getUint16(off + 6); i > 0 && at + 8 <= off + size; i--) {
@@ -173,7 +178,7 @@ export function hasHeaderTable(f: Uint8Array): boolean {
   const off = v.getUint32(0x90);
   const size = v.getUint32(0x94);
   return (
-    size >= 8 && off + size <= f.length && v.getUint32(off) === TABLE_MAGIC && v.getUint16(off + 4) === TABLE_VERSION
+    size >= 8 && off + size <= f.length && v.getUint32(off) === TABLE_MAGIC && tableVersionOk(v.getUint16(off + 4))
   );
 }
 
@@ -213,7 +218,7 @@ export async function libraryModule(
   };
 }
 
-export const GROUP_ORDER: Group[] = ['Machines', 'Effects', 'Tools'];
+export const GROUP_ORDER: Group[] = ['Machines', 'Effects', 'Tools', 'Services'];
 
 /**
  * What would not fit on the target (CAPACITY): `[]` when it fits next to what is loaded now (the fit rule, fit.ts), else one line that says what is

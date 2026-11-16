@@ -16,6 +16,7 @@ fn opts() -> dkm::Options {
         trace: false,
         stereo: false,
         gate: false,
+        service: None,
     }
 }
 

@@ -344,7 +344,8 @@ pub(crate) unsafe fn row_step<C: CoreApi>(
             value: 0,
             published: None,
             last: false,
-            undo: None,
+            has_undo: false,
+            undo: 0,
         });
     }
     let want = *want;
@@ -383,6 +384,7 @@ pub(crate) unsafe fn row_step<C: CoreApi>(
         value,
         published,
         last,
-        undo: if last { Some(FX_FREE_PC) } else { None },
+        has_undo: last,
+        undo: if last { FX_FREE_PC } else { 0 },
     })
 }

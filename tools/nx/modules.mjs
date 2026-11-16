@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { read, records, mergeTests, packDevices, isUploadable } from './module-manifests.mjs';
 import { buildObjectsTarget, packTarget, packAliasesTarget } from './module-build.mjs';
 import { deviceTargets, checkMergeTests, conformanceTarget, testOnlyNodes, regressionNode } from './device-tests.mjs';
+import { serviceLeaves } from './device-test-keys.mjs';
 import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { rigTarget } from './rig-tests.mjs';
 import { testImportInputs } from './ts-imports.mjs';
@@ -134,6 +135,8 @@ export const createNodesV2 = [
           deviceTargets('test-device', root, deviceTests, recs, null, importInputs, pythonInputs, uploadable, {
             twin: true,
             moduleId: m.id,
+            services: serviceLeaves(byId),
+            projectDevices: devices,
             mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
             base: ctx.workspaceRoot,
           }),

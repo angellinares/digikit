@@ -11,7 +11,7 @@ use dkrt_abi::dsp::DspState;
 use dkrt_abi::registry::RegState;
 use dkrt_sdk::api::{JobDoneFn, JobStepFn};
 
-pub use dkrt_abi::core_api::{CoreApi, JOB_E_CANCELLED, LOG_INFO};
+pub use dkrt_abi::core_api::{CoreApi, SampleCore, JOB_E_CANCELLED, LOG_INFO};
 
 // The platform facts a service may read (the device profile, the interrupt mask, the sample-pool provider): the only platform names a service has.
 pub use crate::platform::PLATFORM;
@@ -35,11 +35,14 @@ pub struct RealCore;
 /// The value a function that needs no host test passes to a `CoreApi` call.
 pub const REAL_CORE: RealCore = RealCore;
 
-impl CoreApi for RealCore {
+impl SampleCore for RealCore {
     type Host = crate::platform::RealPlatform;
     fn host(&self) -> &crate::platform::RealPlatform {
         &PLATFORM
     }
+}
+
+impl CoreApi for RealCore {
     unsafe fn dynreg(&self) -> *const u32 {
         registry::info()
     }

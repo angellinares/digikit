@@ -14,7 +14,8 @@ const { modules } = JSON.parse(readFileSync(join(root, 'tests/regression/runtime
 const verdicts = {};
 for (const { dev } of CELLS) {
   for (const id of modules) {
-    const file = join(root, 'dist/modules', dev, `${id.split('/').at(-1)}.dkm`);
+    const base = join(root, 'dist/modules', dev, id.split('/').at(-1));
+    const file = !existsSync(`${base}.dkm`) && existsSync(`${base}.dks`) ? `${base}.dks` : `${base}.dkm`;
     if (!existsSync(file)) throw new Error(`missing ${file}: run nx run ${id}:pack`);
     const out = execFileSync(join(root, 'dist/patchkit/patchkit'), ['--root', root, 'needs', '--json', file], {
       cwd: root,

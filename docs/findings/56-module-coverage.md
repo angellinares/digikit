@@ -95,7 +95,7 @@ What stops a module from writing outside its own memory, and what checks it.
 | machine (DSP) | DSP range from `alloc_range` (first fit, no overlap with other ranges), per-voice state inside the range, voice row from a free list (modules/core/runtime/src/rs/src/dsp.rs) | ranges and row owners cross-checked (modules/core/runtime/src/rs/src/table.rs) | P4a write-set check in the rig (out block, own state, stack, own data); the guard checks only the output; P4c canary on the device is planned |
 | machine (ColdFire tables) | arena block (modules/core/runtime/src/rs/src/arena.rs: first fit, 16-byte aligned, coalescing) | arena bounds per module (table.rs) | P4b memory audit while the UI is driven |
 | fx (run-time) | N | N | the FX rig has a write-set check (`FxRig.foreign_stores`), used for patched-in effects |
-| raw ColdFire code | arena block | arena bounds, relocations and imports checked (modules/core/runtime/src/rs/src/loader.rs) | P4b memory audit; not seen: DMA, host writes, runtime-API stores |
+| raw ColdFire code | arena block | arena bounds, relocations and imports checked (modules/core/runtime/src/rs/src/loader/mod.rs) | P4b memory audit; not seen: DMA, host writes, runtime-API stores |
 
 Gap closed **[C]** by finding 57: `memaudit-*-full` runs the audit with every limit used and three modules refused, and `isolation-*` checks that a reference sound keeps its PCM, ranges and DSP bytes behind the full set.
 The write-set check (P4a) still looks at one module at a time.

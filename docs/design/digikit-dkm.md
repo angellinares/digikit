@@ -1,6 +1,6 @@
 # The `.dkm` module file
 
-Status: built, 2026-10-16 (packer `packages/patchkit/src/dkm.rs`, loader `modules/core/runtime/src/rs/src/loader.rs`). Plan:
+Status: built, 2026-10-16 (packer `packages/patchkit/src/dkm.rs`, loader `modules/core/runtime/src/rs/src/loader/mod.rs`). Plan:
 `docs/plans/digikit-runtime.md` (Module file, Load sequence). Runtime: `docs/design/digikit-runtime.md`. Store the file lives in:
 `docs/design/digikit-store.md`.
 
@@ -31,7 +31,8 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x10 | 32 | sha256 of the whole file with these 32 bytes read as zeros |
 | 0x30 | 4 | `runtime`: the runtime version the module needs, packed `major << 16 \| minor << 8 \| patch`: the newest `since` of the imports it links (0 when it links none). The loader refuses (`E_CONTRACT`) a module whose version has another major or minor than the runtime's (`dkrt_sdk::RUNTIME_VERSION`) or a higher patch (0.x semver). Bit 31 is the **trace flag**: the module was packed with `patchkit pack --trace` (built with `DK_TRACE`); the loader ignores it, the DIGIKIT menu shows `TRACE` for the module (`dkrt_module_header` `flags`), `dkm-info` prints it. A version never reaches bit 31 |
 | 0x34 | 4 | module version, `major << 16 \| minor << 8 \| patch` |
-| 0x38 | 8 | reserved, zero (earlier formats had the (major, minor) pairs of the api, machine, fx and service contracts here; the one version is at 0x30) |
+| 0x38 | 4 | `role`: 0 a module (`.dkm`), 1 a service (`.dks`); another word is `E_FORMAT` (earlier formats had the (major, minor) pairs of the api, machine, fx and service contracts here; the one version is at 0x30) |
+| 0x3c | 4 | `H_SVC_ABI`: the ABI fingerprint of a service file, the value of its data symbol `dk_svc_abi` (`dkrt_abi::service::SVC_ABI`, emitted by `dkrt-svc-rt`'s `service!`); 0 for a module and for a file that uses neither interface B nor C. A word that is not 0 and differs from the runtime's (INFO bytes 41 to 44, capability `SVC_ABI`) is `E_SVC_ABI` |
 | 0x40 | 32 | name, NUL padded |
 | 0x60 | 4 | `image_off` (multiple of 16) |
 | 0x64 | 4 | `image_size`: text and data, as the patch-time linker lays them out at base 0 |

@@ -1,14 +1,17 @@
 //! Host tests of the `lfo` service through the runtime (the crate `dkrt-svc-lfo` has its own over `FakeCore`): the proof that a kind the registry, the collector, the loader, dkneeds and patchkit do not name works end to end
 //! (R7): a fixture's record goes through `dk_record_add`'s collector, the `register` section, the registry walkers and the planner.
-use super::exports::{owner_of, shape, used, MAX_SHAPES, SAMPLES};
+use super::exports::{owner_of, shape, used, Lfo, MAX_SHAPES, SAMPLES};
 use crate::collect::{self, Collect, KeysCopy, Plan, Profile};
 use super::tests::LOCK;
 use crate::plan::{self, Env};
 use crate::registry;
 use dkneeds::keys::{write_table, KeyGroup, Keys, Table};
+use crate::core_api::RealCore;
+use crate::svc_rows;
 use dkrt_abi::plan::{Reason, Verdict};
+use dkrt_abi::service::ServiceRow;
 use dkrt_sdk::proto::*;
-use dkrt_sdk::records::{KIND_LFO_SHAPE, LEN_LFO_SHAPE};
+use dkrt_sdk::records::{KIND_LFO_SHAPE, KINDS_LFO, LEN_LFO_SHAPE};
 use dkrt_sdk::*;
 use std::vec;
 use std::vec::Vec;
@@ -53,6 +56,27 @@ fn section(shapes: &[(u32, i16)]) -> Vec<u8> {
     buf
 }
 
+/// The lfo service as the runtime has it: a service file (`lfo.dks`), not a row of the image. Its row joins the table as `Registry::add` does at the commit of the
+/// loaded file, and leaves it as `Registry::remove` does at the unload.
+struct Loaded;
+
+/// The module record of the service file.
+const FILE_REC: usize = 0;
+
+impl Loaded {
+    fn new() -> Loaded {
+        static ROW: ServiceRow = ServiceRow::of::<Lfo, RealCore>("lfo", &KINDS_LFO);
+        assert_eq!(unsafe { svc_rows::add(FILE_REC, &ROW) }, OK);
+        Loaded
+    }
+}
+
+impl Drop for Loaded {
+    fn drop(&mut self) {
+        unsafe { svc_rows::remove(FILE_REC) };
+    }
+}
+
 fn clear() {
     for owner in 1..=crate::MAX_MODULES as u8 {
         unsafe { registry::remove(owner) };
@@ -62,6 +86,7 @@ fn clear() {
 #[test]
 fn a_shape_record_goes_from_the_builder_call_to_the_table_and_back() {
     let _g = LOCK.lock().unwrap();
+    let _l = Loaded::new();
     clear();
     let sec = section(&[(7, -1000)]);
     // the section is the header and one record of the kind's length
@@ -80,6 +105,7 @@ fn a_shape_record_goes_from_the_builder_call_to_the_table_and_back() {
 #[test]
 fn a_second_owner_of_a_shape_id_and_an_id_twice_or_zero_are_refused() {
     let _g = LOCK.lock().unwrap();
+    let _l = Loaded::new();
     clear();
     let a = section(&[(7, 0)]);
     unsafe {
@@ -131,6 +157,8 @@ fn plan_of(tables: &[Vec<u8>]) -> plan::Plan {
 
 #[test]
 fn the_planner_knows_the_kind_from_the_service_table_refuses_an_unowned_kind_and_a_second_owner() {
+    let _g = LOCK.lock().unwrap();
+    let _l = Loaded::new();
     let one = table(&[(KIND_LFO_SHAPE, &[7])]);
     let same = table(&[(KIND_LFO_SHAPE, &[7, 8])]);
     let other = table(&[(KIND_LFO_SHAPE, &[9])]);

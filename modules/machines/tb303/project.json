@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/tb303.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["S:machines"],
         "modules": ["tom/tb303", "digikit/debug"],
         "plusdrive": true

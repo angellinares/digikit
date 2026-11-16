@@ -57,7 +57,7 @@ Everything moves down a level where it can.
 | 2 | desktop-only TS | `apps/desktop/ui/src/CardPanel.tsx` | 6 tasks: lint, fmt-check, typecheck, test-host, check:ui, build:ui | 0 | about 1 min | none | same |
 | 3 | web-only TS | `apps/web/src/components/CoupledAudio.tsx` | 5 tasks: lint, fmt-check, check, test-host, test-wasm | 0 | about 4 min | none (the wasm tests import the web sources) | same |
 | 4 | core runtime Rust | `modules/core/runtime/src/rs/src/collect.rs` | 94 tasks: runtime and gate-rust-modules rust-tests, rust-fmt, 4 pack, 15 build-objects, objects-check, python-checks and python-tests, smoke, fast-roots | 44 (22 files x dn2/dt2: core/runtime-tests and the other runtime test projects) | about 13 min (199 task-min; smoke bound) | python-checks and python-tests (`modules/**/*`) cannot see a Rust runtime change | runtime change: representative set from T1e (one cell and one quick scenario per module type per device); about 10 device tasks |
-| 5 | service file | `modules/core/runtime/src/rs/src/services/fx/fxsend.rs` | identical to class 4 (94 tasks) | 44 | about 13 min | the whole `modules/core/runtime/**/*` input of every runtime-acceptance project (core-change policy, test-speed item 5): a service edit selects the tests of every service | that service's tagged device tests plus a smoke set (T1e): `fx-*` files only, about 8 device tasks |
+| 5 | service file | `modules/core/services/fx/src/fxsend.rs` | identical to class 4 (94 tasks) | 44 | about 13 min | the whole `modules/core/runtime/**/*` input of every runtime-acceptance project (core-change policy, test-speed item 5): a service edit selects the tests of every service | that service's tagged device tests plus a smoke set (T1e): `fx-*` files only, about 8 device tasks |
 | 6 | SDK header | `sdk/include/dk/core/mem.h` | 91 tasks: 48 pack, 3 pack-aliases, 23 build-objects, objects-check, smoke, rust-tests, test-host, python-checks and python-tests | 4 (`fx-send` of core/fx, digikit/remote) | about 14 min (38 task-min; smoke bound) | `sdk/include/**/*` selects every pack and object build, whether or not the module includes the header | rebuild the modules that include the header (compiler depfiles); device tasks of those modules only. After 2026-11-15: 19 tasks, 2 packs (include scan, test-speed 24) |
 | 7 | module C source | `modules/machines/pluck/src/module.c` | 8 tasks: pack, test-device, gate-rust-modules rust-tests, python-checks, python-tests, fmt-check | 2 | about 5 min | rust-tests (`modules/**/src/**/*`), python-checks and python-tests (`modules/**/*`) | pack plus that module's device tests |
 | 8 | module DSP asm | `modules/machines/pluck/src/dsp/pluck.s` | 7 tasks: as class 7 without fmt-check | 2 | about 5 min | same as class 7 | same |
@@ -112,7 +112,7 @@ Reading the table:
 - Steps: 1 tags and plugin check (host tests on fixture project.json files); 2 `owners.toml`, `patchkit owners`, `objdiff --owners` (Rust units on small .dko fixtures: inlined callee, generic, closure, string change, unmapped path); 3 producer and narrow keys (status below); 4 cut `mergeTests` to the smoke set (waits with step 3); 5 the proof; 6 phase 2.
 - Payoff: T1a classes 4 and 5 go from 44 device tasks (199 task-minutes) to about 12-18. Wall time stays about 13 minutes until phase 2 splits smoke, then about 5 minutes. Effort: about 1 agent-day for steps 1-4, about 1 more for phase 2. Confidence: medium-high that byte-owner keys are safe, medium on the payoff (inlining can spread a change across owners). Risks: a tag too narrow (a storage test broken by a transport change is a miss by design; smoke and `test:full` catch it); DSP data in the runtime may attribute to shared.
 - After R12: services are `.dks` files, so a test that loads a service keys on that file's bytes; the `S:` tags and their `owners.toml` lines are removed as each service becomes a `.dks`: R12-5 (fx), R12-6 (machines), and samples and lfo when they become `.dks`. `C:` tags stay for the core, which remains one object; `C:layout` stays.
-- Step 3 status: the producer (`patchkit:runtime-owners`) and the `owners.toml` fix are in; the key change and the `mergeTests` cut are not. Built and measured: owner keys reduce reruns only slightly while the runtime is one object (one fx function 38 -> 34 files, one storage function 38 -> 31, one shared item 38 -> 77 because adapter tests would key on shared code), since shared code is 54% of the object and the 8 C:layout tests rerun on every runtime change. Decision: the key change and the `mergeTests` cut wait; re-measure after R12, when services are `.dks` files. Adapter tests keep today's behaviour (they do not rerun on runtime changes; the full tier per batch covers them). The reference branch is `test/t1e-step3-keys`.
+- Step 3 status: the producer (`patchkit:runtime-owners`) and the `owners.toml` fix are in; the `mergeTests` cut to the smoke set is in (shot stands for `shot-dt2` and `shot-dn2-audio`); the key change is not. Built and measured: owner keys reduce reruns only slightly while the runtime is one object (one fx function 38 -> 34 files, one storage function 38 -> 31, one shared item 38 -> 77 because adapter tests would key on shared code), since shared code is 54% of the object and the 8 C:layout tests rerun on every runtime change. Decision: the key change waits; re-measure after R12, when services are `.dks` files. Adapter tests keep today's behaviour (they do not rerun on runtime changes; the full tier per batch covers them). The reference branch is `test/t1e-step3-keys`.
 - Depends on: T1c, T1d.
 
 ### T1f SDK-surface fixtures and coverage
@@ -142,6 +142,47 @@ Reading the table:
 - [x] Step 4, `WorkerFactory` and `WasmSource`: `browserWorkers()` and `createFakeWorkers()` replace the five `new Worker` calls (runtime, split session, patch worker); `WasmSource` (`fetchWasmSource`, `hostWasmSource`, `memoryWasmSource`) and the `PatchKitLike` and `NeedsLike` stubs replace the loading of `patchkit.wasm` and the core; `nativeRuntime` moved to the desktop as `createNativeRuntime(host)` over `Host.emu` (ten more typed commands, no dynamic `@tauri-apps/api/core` import), `browserRuntime(onUpdate, { workers, wasm })`. New Vitest files: browser-runtime, web-firmware-env, native-runtime. [DEVELOPMENT.md](../DEVELOPMENT.md) "WorkerFactory, WasmSource and the two runtimes".
 - [x] Step 5, the `node --test` files ported to Vitest: one runner in `apps/web`. The fake devices (`FakeDevice`, `FakeDrive`, `FakeUpgrade`) and the shared helpers are TypeScript in `apps/web/tests/support/`; tests that need no wasm and no command line run in `test-host` (`audio-health`, `icons`, `ready-cache`, `gallery`, `rpcfiles`, `samples`, `dktransfer` with a fit stand-in); the others are `*.wasm.test.ts` in `test-wasm` (`dkneeds`, `fit`, `firmware-kit`, `dksample`, `dkupload`, `patchkit`, `gallery`, `dktransfer`, 120 s per test); the Samples-mode logic test moved to `apps/desktop/ui/tests/samples-core.test.ts`. `node --test` is gone from the `test-wasm` script.
 - [x] Step 6, `packages/workbench-core` and the NodeHost: the code that the site and the desktop app share (`transfer/`, `firmware/`, `jobs/`, `modules/`, `patch/`, `runtime/`, `host/`, `storage`, `blob-store`, `workers`, `wasm-source`; Solid pages and styles in `ui/`) moved out of `apps/web/src`; both apps import `@digi/workbench-core`, the `@web` alias is gone, and oxlint fails an import between the apps (or from workbench-core into an app). `createNodeHost` (`src/node/node-host.ts`) is the `Host` for command lines; `wb ports` and the samples backend choice in `wb` run through it, with the same output. An edit in workbench-core selects 11 tasks: its own `test-host` and `typecheck`, the web `check`, `test-host`, `test-wasm` and `build`, the desktop `test-host`, `typecheck`, `check:ui` and `build:ui`, lint and format; no cargo, wasm build or device target. [DEVELOPMENT.md](../DEVELOPMENT.md) "workbench-core, the two apps and the command line".
+
+### T2 Test pyramid by layer
+
+Runs alongside R12.
+
+**Rule: real modules model the fixtures.** A real module needs no device test of its own when all of these hold: its imports and descriptor features are covered by the fixture contract suite (patchkit coverage plus descriptor coverage, to add); it passes `test-conformance-rig`; its `tests/rig` sound checks pass; the device conformance load passes. A missing feature goes into a fixture, not into a device test.
+
+**Target layout per layer.**
+
+| Layer | Fixtures | Suite |
+| --- | --- | --- |
+| fx | `test/dyn-fx-gain` | one contract suite per adapter per device |
+| machines | `test/sine`, `test/dyn-dn2`, with dynreg and equiv | machine fixture suite per device |
+| services | `svc-echo`, `svc-test`, `lfo-shape` | one suite per service per device, keyed on the `.dks` bytes and the ABI fingerprint after R12-4 |
+| tools | demo fixtures | one load suite per device |
+| L1 adapters | fixtures | one suite per device |
+| transport and storage | fakes | host tests; few device tests at the real boundary |
+
+**Step 1, selection (done, PR 550).** Test-only Rust files are out of the gate and daemon inputs, so host-test-only PRs pay no device gate. `mergeTests` is cut from 14 to a smoke set of 8 files. `mise run test:subset -- <tags>` runs chosen tags. Phantom device halves are gone. Emulator-slot admit expiry is added.
+
+**Step 2, four test-only lanes.**
+
+1. FX contract suite; freqshift drops its adapter legs (about 40 min per full tier).
+2. Machine equiv moves to rig sound checks (about 7 min). The rig references are new pins, reviewed once. Then the analog, bd, pd and pluck PCM pins go. The dynreg DN2 pin stays.
+3. usb-fast mode matrix cut (about 5 min). The upload case stays on DN2 only.
+4. Card-safety, settings and safe-mode duplicates move to host tests (about 2 min).
+
+**Decisions.** freqshift drops its adapter legs now. The file is deleted after descriptor coverage and R12-5. The R12-5 and R12-6 device proofs are fixture suites. `mergeTests` is the smoke set now. Service tests key on `.dks` bytes plus the ABI fingerprint. One bounded zero-DSP FX load run is made when the machine is free.
+
+**Guard rails.**
+
+- A test is deleted only when its replacement is green.
+- An assertion ledger maps each old assertion to its new one.
+- An independent review signs off each deletion.
+- PCM pins change only with Em's approval.
+
+**Measured note.** Owner keys for the single runtime object gave 38 to 34 files only. Re-measure after R12-6.
+
+**Payoff.** Full tier about 2.4 h to about 1.5 h. R12 PR gate about 60 to about 25 min. Host-test-only PRs: 0 device tasks.
+
+**Step 3, harness events.** Tests wait on standard runtime events instead of polling status or returning early. First event: firmware ready. The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `waitForBoot` and the install helpers wait for it with `events.until(..., { emulatedMs })`; the dk-session probe after `restart()` (PR for the storage DT2 race) stays as the fallback for a device without the runtime. Further events, each with a typed helper in `tests/regression/runtime/events.ts`: restart complete, card or store ready, safe mode entered, a module's DSP part loaded, provider installed (the MOD_LOAD provider marker), settings flushed. Proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro.
 
 ## Order
 

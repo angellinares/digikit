@@ -102,7 +102,8 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
                 .as_object()
                 .unwrap()
                 .keys()
-                .all(|k| !k.contains("dynreg"))
+                // (the runtime has functions of its own with `dynreg` in the name, `dkc_dynreg` of the service imports: look for the module's table)
+                .all(|k| k.split(':').nth(1) != Some("dynreg_info"))
         );
         ran += 1;
     }

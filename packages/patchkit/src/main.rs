@@ -37,17 +37,21 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          with --fx-max the effect budget of the tightest device): JSON from devices/*.toml and devices/cycle-factors.json
   uses    set --id MODULE --device SHORT [--dsp-cost-voice N] [--dsp-cost-fx N]   write the measured DSP cost (instructions per block) into
                                          [uses.<device>] of the module's module.toml (only those lines change; comments stay); prints wrote/unchanged PATH
-  pack    MODULE_ID -o OUT.dkm [--addrmap map.json] [--name N] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
+  pack    MODULE_ID -o OUT.dkm [--addrmap map.json] [--name N] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm
+                                         (a `role = \"service\"` module packs to a .dks: OUT must end in .dks; any other module: not .dks);
                                          builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
                                          (--trace: built with DK_TRACE defined, trace bit set in the header; objects cached apart)
                                          --manifest PATH (repeatable, relative to cwd): explicit library instead of discovery; include the module and its requires closure
                                          explicit manifests replace modules/, --modules-dir and PATCHKIT_MODULES
-  pack-all --device SHORT --out DIR ID...  pack many modules for a device in one process into DIR/<last part of id>.dkm, one JSON line each:
+  pack-all --device SHORT --out DIR ID...  pack many modules for a device in one process into DIR/<last part of id>.dkm (.dks for a service), one JSON line each:
                                          {id, file, bytes, sha256}, {id, error} or {id, skipped: \"patch-only\"}; exit 1 when a module failed
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm [--size]   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
+  bind    IN.dks --firmware FW.syx -o OUT.dks   bind a packed service to the firmware: a trampoline and a BIND item for each hook it declares;
+                                         prints the bound hooks as JSON; OUT.dks holds firmware bytes: -o is refused in the source tree
+                                         unless under dist/ or out/
   dkm-identity BEFORE_DIR AFTER_DIR      do two sets of .dkm (patchkit pack-all) differ only in the header table? (image, relocs, imports, DSP section compared)
   fit     --json -                       the fit rule (dkrt-fit): {caps, needs, empty?} on stdin -> {each, set, line}; exit 1 on a bad request
   records --json FILE|-                  the decoded records (counts, params, machines, pages, effects) of a committed record block
@@ -647,6 +651,28 @@ plan.json {}",
                 std::process::exit(1);
             }
         }
+        "bind" => {
+            let dks = read(need(rest)?)?;
+            let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;
+            let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
+            if !patchkit::bind::output_allowed(&a.root, Path::new(&out)) {
+                return Err(Error(format!(
+                    "{out}: the bound file holds firmware bytes and must never be committed: write it under dist/ or out/ (or outside the source tree)"
+                )));
+            }
+            let reg = registry(&a.root)?;
+            let texts = patchkit::fwgen::fw_texts(&a.root)?;
+            let decls: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let (file, hooks) = patchkit::bind::bind(&dks, &read(&fwp)?, &reg, &decls)?;
+            if let Some(d) = Path::new(&out)
+                .parent()
+                .filter(|d| !d.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(d).map_err(|e| Error(format!("{}: {e}", d.display())))?;
+            }
+            write(&out, &file)?;
+            print!("{}", patchkit::bind::bind_json(&hooks));
+        }
         "rebuild" => {
             let fw = Firmware::parse(&read(need(rest)?)?)?;
             let o = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
@@ -669,6 +695,18 @@ plan.json {}",
                 trace: rest.iter().any(|a| a == "--trace"),
             };
             let packed = patchkit::pack::pack_module(&lib, id, &opts)?;
+            let service = packed.dkm.role == patchkit::dkm::ROLE_SERVICE;
+            if service != out.ends_with(".dks") {
+                return Err(Error(if service {
+                    format!(
+                        "{id} is a service (role = \"service\"): its file is a .dks, so -o must end in .dks, not {out}"
+                    )
+                } else {
+                    format!(
+                        "{id} is not a service: its file is a .dkm, so -o must not end in .dks ({out})"
+                    )
+                }));
+            }
             write(&out, &packed.bytes)?;
             if let Some(p) = flag(rest, "--addrmap") {
                 write(&p, packed.addrmap()?.to_json().as_bytes())?;
@@ -738,7 +776,12 @@ plan.json {}",
                     None => serde_json::json!({ "id": id, "skipped": "patch-only" }),
                     Some((_, Ok(p))) => {
                         let leaf = id.rsplit('/').next().unwrap_or(id);
-                        let path = out.join(format!("{leaf}.dkm"));
+                        let ext = if p.dkm.role == patchkit::dkm::ROLE_SERVICE {
+                            "dks"
+                        } else {
+                            "dkm"
+                        };
+                        let path = out.join(format!("{leaf}.{ext}"));
                         match std::fs::write(&path, &p.bytes) {
                             Ok(()) => serde_json::json!({
                                 "id": id,
@@ -1063,6 +1106,10 @@ mod tests {
             fixture.0.join(patchkit::abigen::SOURCE),
         )
         .unwrap();
+        copy_tree(
+            &real.join("modules/core/runtime/abi/src"),
+            &fixture.0.join("modules/core/runtime/abi/src"),
+        );
         let module_dir = fixture.0.join("modules/fixture");
         std::fs::create_dir_all(&module_dir).unwrap();
         std::fs::write(

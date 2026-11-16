@@ -238,3 +238,30 @@ fn the_span_owners_are_the_runtimes_phases_and_poll_slots() {
         std::fs::read_to_string(root().join("modules/core/runtime/src/rs/src/state.rs")).unwrap();
     assert!(state.contains(&format!("pub const POLLS: usize = {};", line("polls = "))));
 }
+
+#[test]
+fn the_service_abi_hash_follows_every_byte_and_the_file_name_and_is_never_zero() {
+    let a = sdkgen::svc_abi_hash(&[("x.rs", b"fn a() {}"), ("y.rs", b"")]);
+    assert_eq!(
+        a,
+        sdkgen::svc_abi_hash(&[("x.rs", b"fn a() {}"), ("y.rs", b"")])
+    );
+    // one byte, the name, the order and the split between two files each change it
+    assert_ne!(
+        a,
+        sdkgen::svc_abi_hash(&[("x.rs", b"fn b() {}"), ("y.rs", b"")])
+    );
+    assert_ne!(
+        a,
+        sdkgen::svc_abi_hash(&[("z.rs", b"fn a() {}"), ("y.rs", b"")])
+    );
+    assert_ne!(
+        a,
+        sdkgen::svc_abi_hash(&[("y.rs", b""), ("x.rs", b"fn a() {}")])
+    );
+    assert_ne!(
+        sdkgen::svc_abi_hash(&[("x", b"ab"), ("y", b"")]),
+        sdkgen::svc_abi_hash(&[("x", b"a"), ("y", b"b")])
+    );
+    assert_ne!(sdkgen::svc_abi_hash(&[]), 0);
+}

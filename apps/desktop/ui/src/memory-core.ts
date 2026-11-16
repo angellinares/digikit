@@ -73,7 +73,12 @@ export const SPECS: Spec[] = [
   { resource: 'MODULES', label: 'Modules', bytes: false, take: () => 1 },
 ];
 
-const KINDS: Record<KnownModule['group'], SegmentKind> = { Machines: 'machine', Effects: 'effect', Tools: 'tool' };
+const KINDS: Record<KnownModule['group'], SegmentKind> = {
+  Machines: 'machine',
+  Effects: 'effect',
+  Tools: 'tool',
+  Services: 'tool',
+};
 
 /** The bars for a device: `caps` is CAPACITY, `loaded` the names MODULES reports (in its order), `library` the local library's modules. */
 export function buildBars(caps: Caps, loaded: string[], library: KnownModule[]): Bar[] {

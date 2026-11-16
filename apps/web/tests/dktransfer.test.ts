@@ -12,6 +12,7 @@ import {
   restarted,
   splitMessages,
   storeSpace,
+  TABLE_VERSION,
   type DkTransport,
 } from '@digi/dk-session';
 import { CAP, CMD, LOG_KIND } from '@digi/dk-session/gen_proto';
@@ -22,6 +23,8 @@ import {
   PROGRESS_EVENTS,
   buildView,
   deleteFiles,
+  groupOf,
+  hasHeaderTable,
   install,
   libraryModule,
   restartDevice,
@@ -64,6 +67,19 @@ test('framing: the vectors of the spec, round trips, partial groups, message spl
     [[0xf0, 1, 0xf7]],
   );
   assert.deepEqual([...s.rest], [0xf0, 2, 3]);
+});
+
+test('header table: versions 1 to TABLE_VERSION are read, a service is grouped as Services, other versions are an older runtime', () => {
+  assert.equal(groupOf(dkm('x/m', { machine: 1, tableVersion: 2 })), 'Machines');
+  assert.equal(hasHeaderTable(dkm('x/m', { machine: 1, tableVersion: 2 })), true);
+  assert.equal(groupOf(dkm('x/s', { role: 1, tableVersion: 2 })), 'Services');
+  assert.equal(groupOf(dkm('x/s', { machine: 1, role: 1 })), 'Services');
+  assert.equal(groupOf(dkm('x/t')), 'Tools');
+  for (const tableVersion of [0, TABLE_VERSION + 1]) {
+    const f = dkm('x/o', { machine: 1, role: 1, tableVersion });
+    assert.equal(hasHeaderTable(f), false, `version ${tableVersion}`);
+    assert.equal(groupOf(f), 'Tools', `version ${tableVersion}`);
+  }
 });
 
 test('session: a runtime without the file hash capability is refused at once, before any file command', async () => {
