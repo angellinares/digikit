@@ -1,7 +1,7 @@
 # On-device sample picker: the SMP pool list
 
 Status: slice 2 accepted by Em on 2026-11-01; reshaped on 2026-11-02 for the sample pool (the machine owns 16 entries, the parameter SMP names the entry of a note, a click on SMP opens this list) and for the UI rules of 2026-11-02 (docs/design/ui-rules.md): the list is the chooser's slot-list mode filled with the pool: YES on a slot opens the browser for that slot, YES on a file loads it into that slot, sets SMP and closes the whole flow, errors show on the page. Built statically, not run in the emulator yet.
-Sources: sdk/include/dk/{ui,files,sample_track,sample_picker,chooser,params}.h, docs/design/sample-api-1.5.md, docs/MODULE-AUTHORING.md, modules/core/runtime/src/rs/src/services/samples/tracks.rs, finding 71.
+Sources: sdk/include/dk/{ui,files,sample_track,sample_picker,chooser,params}.h, docs/design/sample-api-1.5.md, docs/MODULE-AUTHORING.md, modules/core/services/samples/src/tracks.rs, finding 71.
 
 ## 0. Facts that shape the design
 
