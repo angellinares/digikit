@@ -1822,3 +1822,19 @@ fn another_owner_is_still_refused_when_an_allowed_owner_shares_the_registry() {
         "r/fw: registry runtime_only takes no patch-time entry (its rows are made at run time); r/b adds `two`",
     );
 }
+
+#[test]
+fn a_patch_time_effect_row_of_any_module_but_core_dynfx_is_refused() {
+    need_image!(DT2);
+    // an effect is a run-time module: core/fx refuses `[[entry]] registry = "fx"` except for core/dynfx
+    let lib = library(vec![module(
+        "t/fxrow",
+        "requires = [\"core/fx\"]",
+        "[[entry]]\nregistry = \"fx\"\nid = \"gain\"\npc = \"_g_process\"\ndesc = \"_g_desc\"\nstate = \"_g_state\"\n",
+        None,
+    )]);
+    expect_err(
+        run(&lib, &["core/fx", "t/fxrow"]),
+        "core/fx: registry fx takes no patch-time entry (an effect is a run-time module (builder calls in init, packed as a .dkm); a row is filled through core/dsp-link by core/dynfx); t/fxrow adds `gain`",
+    );
+}

@@ -327,7 +327,7 @@ def budget(device: str) -> Budget:
 
 
 # ---- effects (the FX contract, <dk/fx/fx.h>) -------------------------------------------------------------------------------
-# An effect module is a DSP object behind an `[[entry]] registry = "fx"` row. It is run on the concrete core through core/fx
+# An effect module is a run-time module (`DK_FX`) with a DSP object. It is run on the concrete core through core/fx
 # (tests/support/fx_rig.py) one block at a time.
 FX_MAX = max(
     pk_device.limits(d).fx_slots for d in pk_device.digikit_devices()
@@ -341,7 +341,7 @@ class FxSpec:
     sources: tuple[Path, ...]  # the DSP sources of the module
     process: str
     desc: str
-    state: str  # "": a run-time effect (`DK_FX`), whose state the runtime reserves (the rig does the same)
+    state: str  # always "": the runtime reserves the state of a run-time effect (the rig does the same)
 
     @property
     def label(self) -> str:
@@ -349,24 +349,11 @@ class FxSpec:
 
 
 def fx_spec(mid: str) -> FxSpec | None:
-    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row (patched in) and no `DK_FX` record (run time) with a DSP object."""
+    """The spec of effect module MID, or None when it has no `DK_FX` record (a run-time effect) with a DSP object."""
     if mid.split("/")[0] == "core":
         return None
     moddir = modroots.module_dir(mid)
     man = _manifest(moddir)
-    for e in man.get("entry", []):
-        if e.get("registry") == "fx" and isinstance(e.get("pc"), str):
-            sources = tuple(s for d in DEVICES for s in _dsp_sources(man, moddir, d))
-            if not sources:
-                return None
-            return FxSpec(
-                mid,
-                moddir,
-                tuple(dict.fromkeys(sources)),
-                e["pc"],
-                e["desc"],
-                e["state"],
-            )
     for fx in _fx_records(mid, man):
         if isinstance(fx.get("process"), str) and isinstance(fx.get("desc"), str):
             sources = tuple(s for d in DEVICES for s in _dsp_sources(man, moddir, d))

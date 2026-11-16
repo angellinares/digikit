@@ -405,7 +405,6 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `dyn-fx-hang` | A send effect whose process routine never returns (fault trace, log follow) | host, device, rig |
 | `dyn-fx-nan` | A send effect that outputs NaN: the fault count and the row switch-off after eight faults | device, rig |
 | `dyn-guard-nan` | A machine that outputs NaN while a voice is active: the voice guard of `core/dsp-voice` | host, device, rig |
-| `fx-nan` | The negative effect of the conformance suite: writes NaN into its output and must be rejected | rig |
 | `stock-pool` | Calls to the stock DT2 sample loader, reload and purge from the command task and the loader worker | host, device |
 | `track-select` | Adds a sample to the pool of another module's table through SysEx commands | host, device |
 | `dsp-facts` | Probe: cycle counts, instruction semantics and core register values on the SHARC+ core, one framed word per block | host, device |
@@ -425,7 +424,6 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `cf-demo` | *Patch-time.* Code, data and bss placed in `cf.expansion` | assembly, host |
 | `rust-demo` | *Patch-time.* A Rust crate in `cf.expansion` | assembly |
 | `registry-demo` | *Patch-time.* The generic primitives: a registry, a section copied from the image with appended rows, a counting hook | assembly, host |
-| `fx-gain` | *Patch-time.* The effect patched into the chain of `core/fx` (smoke matrix, rig) | assembly, host, rig |
 
 ## The gate
 
@@ -668,7 +666,7 @@ FX rules (the same kit files, `fx.ts` for the master chain): the hook returns
 within 200,000 instructions; registers the stock function expects are preserved; the core/fx fault
 count stays 0; the module stores only to its output block, data, bss and stack; the master stays finite
 within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Negative fixtures:
-`test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
+`test/dyn-dsp-hang` (machine), `test/dyn-fx-nan` (effect). `DIGI_JOBS` sets the worker count.
 A change in a machine or effect module, `core/dsp-voice`, `core/fx` or the kit selects the suite.
 
 ### SHARC-only rig (`sharc-rig`, T1g slice)

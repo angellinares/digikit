@@ -205,8 +205,8 @@ test.skipIf(!need)('wasm adds the requirements of the selection like the CLI', a
   const { x, put, get, text } = await load();
   const [bp, bl] = put(readFileSync(writeBundle(work)));
   for (const [dev, mod] of [
-    ['dt2', 'test/fx-gain'],
-    ['dn2', 'test/fx-gain'],
+    ['dt2', 'core/dynfx'],
+    ['dn2', 'core/dynfx'],
   ] as const) {
     const out = join(work, `${dev}-machine-only.syx`);
     // the CLI prints what it added

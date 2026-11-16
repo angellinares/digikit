@@ -59,6 +59,7 @@ At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; th
 - `test/fx-gain` (0.5): master exactly 0.5 x stock; ring A and the ring C master pair equal the conversions of that master (largest error 0.00 LSB on DT2, 0.48
   on DN2); both are half of stock (within 2); ring C words 2 to 15 bit-identical to stock; PCM -6.0206 dB, largest error 0.5 ulp.
 - Gain word set to 1.0, and the row's `enabled` word cleared in mid-run (`dsp.patch`): master and both rings equal stock again after the fade.
+- **[O]** The check of rings A and C (DAC and USB ring against the master) no longer runs: `pk_proof_fx.py`, `fx_rings.py` and the patch-time fixtures `fx-gain` and `fx-nan` were deleted (docs/plans/ledgers/fixture-consolidation.md). The master is checked by the fx contract device tests; nothing reads rings A and C now.
 
 ## Costs **[D]**
 

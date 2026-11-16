@@ -35,21 +35,11 @@ def test_the_budget_follows_the_headroom_of_the_device():
         assert b.note_on_block == b.headroom
 
 
-def test_fx_specs_find_the_fixtures():
-    gain = c.fx_spec("test/fx-gain")
-    assert gain is not None
-    assert (gain.process, gain.desc, gain.state) == (
-        "_fg_process",
-        "_fg_desc",
-        "_fg_state",
-    )
-    assert c.fx_spec("core/fx") is None  # a framework renders no effect of its own
-    assert c.fx_spec("test/sine") is None  # a machine is no effect
-    assert not c.is_machine_module("test/fx-gain")
-
-
 def test_run_time_effects_are_effect_specs_too():
     """A `DK_FX` record (a run-time effect: no state symbol) is an effect spec."""
     s = c.fx_spec("test/dyn-fx-gain")
     assert s is not None
     assert (s.process, s.desc, s.state) == ("_dg_process", "_dg_desc", "")
+    assert c.fx_spec("core/fx") is None  # a framework renders no effect of its own
+    assert c.fx_spec("test/sine") is None  # a machine is no effect
+    assert not c.is_machine_module("test/dyn-fx-gain")

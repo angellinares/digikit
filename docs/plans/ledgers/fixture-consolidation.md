@@ -1,0 +1,30 @@
+# Ledger: fixture consolidation (one canonical fixture per contract feature)
+
+Status: written in phase 1 without any build or test run; the tests named below have not run. Phase 2 runs the host checks and lists the device tests that must run.
+
+Why: AGENTS.md "fixtures are DRY": one canonical fixture per contract feature, shared parts in one source, a variant only where a test needs a distinct module identity. The fixture set had two parallel effect paths (patch-time `fx-gain` and `fx-nan`, run-time `dyn-fx-*`), five copies of one gain DSP, four fault injectors that differ in one line, and fixtures that no test reads.
+
+## Step 1: the patch-time effect path is deleted
+
+The registry `fx` of `core/fx` refuses an `[[entry]]` row of every module except `core/dynfx` (`refuse_entries`, `refuse_entries_except`; the pattern of `machines`/`core/dynreg`). Run-time effects fill the rows that `core/dynfx` reserves.
+
+| Deleted | Old assertion | New location |
+| --- | --- | --- |
+| Fixture `fx-gain` (patch-time effect, 0.5 gain) | Master block halved through the adapter (`test_fx.py` `test_the_fixture_test_fx_gain_halves_the_master_through_the_adapter`) | The adapter's block, clobber and context rules stay in `test_fx.py` (the tests on `FxRig` rows with an inline source, lines 90 to 140 and 269); the halving of a real effect is `fx-contract.device.test.ts` (wet compare 0.5) and `packages/sharc-rig-kit/conformance/fx.test.ts` on `test/dyn-fx-gain`. |
+| same | `_fg_gain` word is 0.5 | DROPPED: not a contract feature. The runtime knob is checked by `expectGainRow` in `fx-contract.device.test.ts`. |
+| same | Cost of one block below 860 instructions | `test_fx.py` (the 281 budget test) and the conformance budget check. |
+| same | `test_the_fixture_puts_one_row_in_the_chain_on_both_devices`: `fx.count == 1`, `fx.row_size == 96`, symbols `_fg_process` and `_fg_state` in the plan | `test_core_dynfx_reserves_three_free_rows_in_the_chain_on_both_devices` (`core/fx,core/dynfx`: `fx.count == 3`, `row_size == 96`). The symbol asserts are DROPPED (there is no patch-time symbol any more). |
+| same | `test_fx_specs_find_the_fixtures` (`fx_spec("test/fx-gain")` returns `_fg_*`; `core/fx` and `test/sine` are no effect specs; fx-gain is no machine) | The `core/fx`, `test/sine` and `is_machine_module` asserts moved to `test_run_time_effects_are_effect_specs_too` on `test/dyn-fx-gain`. The patch-time branch of `fx_spec` and `fxSpec` is deleted, so the `_fg_*` assert has no subject. |
+| same | Smoke cell `dt2-1.17:core/fx,test/fx-gain` and its 16 goldens | The goldens of the cell `core/fx` are the same 16 hashes (checked on the old `goldens.json`); the cell `core/fx` stays. Audible output with an effect: `fx-contract` wet compare and `fx-live` `requireAudible`. |
+| same | wasm test `wasm adds the requirements of the selection like the CLI` used `test/fx-gain` | Uses `core/dynfx` on both devices; the regex `added by requires: .*core/fx` is unchanged. |
+| same | `tools/gate/smoke/project.json` input line | Removed. |
+| Fixture `fx-nan` (patch-time effect writing NaN) | Conformance negative: the guard rejects it (`spec.ts` `FX_NEGATIVE`) | `test/dyn-fx-nan` stays in `FX_NEGATIVE` (same expected text `guard stepped in`). NaN behaviour: `test_fx.py` (216 to 252), `fault-trace.device.test.ts`, the conformance negatives. |
+| `tools/patchkit/pk_proof_fx.py`, `fx_rings.py` and their two entries in `pk_proofs.py` (DT2 and DN2) | Empty chain: PCM, master and rings A and C equal stock | `fx-contract` (plain vs dry compare), the `core/fx` smoke cell, `test_fx.py` (empty chain, lines 35 and 47). |
+| same | Gain 0.5: master and USB/DAC rings halved | `fx-contract` (wet compare 0.5). |
+| same | Gain word 1.0 equals stock | `fx-pages.device.test.ts` (knob ratio, line 51). |
+| same | `enabled` cleared in mid-run: master equals stock after the fade | `test_fx.py` (150) and the `fx-contract` deselect. |
+| same | Send part of the proof | `fx-send` rig and device tests (DT2 and DN2), `fx-routes-persist`. |
+| same | Rings A (DAC) and C (USB) against the master | DROPPED. Only `fx_rings.py` and `pk_proof_fx.py` read rings A and C. Gap: nothing checks that the hook output reaches the DAC and USB rings; the hook changes only the master literal by design. One line in finding 55. |
+| `[[entry]] registry = "fx"` text in `modules/README.md`, `core/fx/README.md`, `core/fx/module.toml`, `pk_conform.py`, `spec.ts`, `typed.rs` comment | Describe the patch-time path | Rewritten for run-time effects only. |
+
+Test added: `packages/patchkit/tests/prims.rs` `a_patch_time_effect_row_of_any_module_but_core_dynfx_is_refused` (the real `core/fx` registry, a synthetic module with an `fx` entry, the registry's reason in the error).

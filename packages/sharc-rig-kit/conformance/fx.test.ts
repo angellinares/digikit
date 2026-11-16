@@ -6,7 +6,7 @@
  * for every block, that the hook returns, the context and the stock function's registers come back, the adapter did not have to refuse the block, the module
  * wrote only memory it owns, the master stays bounded and the instruction count is within the budget (src/checks.ts).
  *
- * One run per module with `DIGI_JOBS` at a time. Select with DIGI_CONFORM_MODULES=test/fx-gain,... (`mise run module:check NAME` sets it). Reports go to
+ * One run per module with `DIGI_JOBS` at a time. Select with DIGI_CONFORM_MODULES=test/dyn-fx-gain,... (`mise run module:check NAME` sets it). Reports go to
  * `DIGI_CONFORM_REPORTS`, else dist/conformance-rig/ of the worktree (never committed).
  */
 import path from 'node:path';

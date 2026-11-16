@@ -69,15 +69,8 @@ hook = "dsp.fx.hook.send"
 to = "_fxs_entry"
 devices = ["dt2", "dn2"]
 
-# Effect modules add rows with `[[entry]] registry = "fx"`:
-#
-#     [[entry]]
-#     registry = "fx"
-#     id = "gain"
-#     pc = "_fg_process"        # the process routine's symbol in the module's DSP object
-#     desc = "_fg_desc"         # its dk_fx_desc (<dk/fx/fx.h>)
-#     state = "_fg_state"       # its state block (state_bytes of the desc)
-#
+# An effect is a run-time module (builder calls in init, packed as a .dkm). Its row is filled through core/dsp-link by core/dynfx, the only
+# module that adds patch-time rows (df0 to df2, free until a run-time effect takes them). patchkit refuses an `[[entry]] registry = "fx"` of any other module.
 # The chain runs in module order. The scan ends at the zero row patchkit appends (terminator); at most DK_FX_MAX (4) effects
 # (packages/patchkit/tests/sdkgen.rs checks this number against <dk/fx/fx.h>).
 [[registry]]
@@ -87,6 +80,8 @@ max = 4
 limit = "fx_slots"
 region = "dsp.l2"
 terminator = true
+refuse_entries = "an effect is a run-time module (builder calls in init, packed as a .dkm); a row is filled through core/dsp-link by core/dynfx"
+refuse_entries_except = ["core/dynfx"]
 
 # A row is 24 words (the send route's words 18 to 22 are described below the list):
 #   0 pc (0 ends the table, 0xffffffff is a free row that the adapter skips: core/dynfx), 1 desc, 2 state, 3 enabled (1: on), 4 to 11 the
