@@ -1648,7 +1648,6 @@ rust = "dkrt_svc_samples::records::Samples"
 
 [[service]]
 name = "machines"
-rust = "dkrt_svc_machines::records::Machines"
 
 [[service]]
 name = "fx"
