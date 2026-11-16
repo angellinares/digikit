@@ -50,6 +50,7 @@ pub mod logk {
     pub const MODULE_COMMIT: u16 = 44;
     pub const MODULE_LATCH: u16 = 45;
     pub const DSP_LINK: u16 = 46;
+    pub const FW_READY: u16 = 47;
     pub const MENU_SELECT: u32 = 1;
     pub const MENU_RESTART: u32 = 2;
     pub const MENU_DEBUG: u32 = 3;

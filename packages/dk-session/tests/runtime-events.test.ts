@@ -217,6 +217,22 @@ test('typed waits match on decoded fields', async () => {
   assert.equal((await ev.untilInputTaken(7, -1)).seq, 7);
 });
 
+test('untilFwReady matches the FW_READY of this boot, also when it was logged before the wait, and fails with the last events when it is missing', async () => {
+  const log = new FakeLog();
+  log.add('BOOT_START');
+  log.add('UI_FIRST', [450, 0, 2]);
+  log.add('FW_READY', [450]);
+  const { ev } = make(log);
+  await ev.listen({ fromBoot: true });
+  const ready = await ev.untilFwReady();
+  assert.equal(ready.seq, 3);
+  assert.equal(ready.args[0], 450);
+  // another boot without it
+  log.reset();
+  log.add('BOOT_START');
+  await assert.rejects(ev.untilFwReady({ withinMs: 100 }), /FW_READY: not seen within 100 ms[\s\S]*BOOT_START/);
+});
+
 test('onWait reports success and failure', async () => {
   const log = new FakeLog();
   const records: WaitRecord[] = [];
