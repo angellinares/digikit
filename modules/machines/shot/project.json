@@ -22,8 +22,8 @@
       {
         "files": ["tests/shot-dn2-link.device.test.ts"],
         "devices": ["dn2"],
-        "tags": ["S:fx", "S:machines", "S:samples"],
-        "modules": ["digikit/shot", "digikit/debug", "test/track-select", "test/dyn-fx-gain"],
+        "tags": ["S:machines", "S:samples"],
+        "modules": ["digikit/shot", "digikit/debug", "test/track-select", "test/dyn-fx-gain", "core/services/fx"],
         "plusdrive": true,
         "dksampleWasm": true
       },

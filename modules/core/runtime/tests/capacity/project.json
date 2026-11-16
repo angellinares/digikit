@@ -23,7 +23,7 @@
         "files": [
           "commit.device.test.ts"
         ],
-        "tags": ["C:loading", "S:fx", "S:machines"],
+        "tags": ["C:loading", "S:machines"],
         "modules": [
           "test/commit-demo"
         ],

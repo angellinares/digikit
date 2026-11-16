@@ -27,7 +27,7 @@ import { trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
 import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
@@ -106,10 +106,6 @@ for (const device of DEVICES) {
           symbols: [
             'DKRT_BOOT',
             'fx.rows',
-            'DKRT_FXP',
-            'fxp_count',
-            'fxp_list_buf',
-            'fxp_rows',
             'params.fp0.index',
             'pf_table',
           ],
@@ -123,7 +119,8 @@ for (const device of DEVICES) {
 
       test('preserves stock pixels/audio, maps page knobs, and removes the effect through SELECT/restart', async () => {
         const { fixture, plan, profile, artifacts, slots } = context;
-        const sym = (name: string) => planSymbol(plan, name);
+        // `fxp_rows` and the other cells of the page hooks are the fx service file's (`symbolsOf`, bound after each boot by `inspectFxBoot`)
+        const sym = (name: string) => symbolsOf(fixture.runtime, plan)(name);
         const inspect = async (runtime: TestRuntime, tag: string, effect: boolean, afterEpoch?: number) => {
           const state = await inspectFxBoot(runtime, plan, effect ? [SINE, GAIN] : [SINE], artifacts, tag, undefined, {
             afterEpoch,

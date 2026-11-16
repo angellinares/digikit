@@ -9,7 +9,7 @@ import { trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
-import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 import type { Device } from '@digi/test-support';
 
 // Shared setup of the track FX send page device tests (fx-track-route-*.device.test.ts). Every file runs its legs from an overlay-free card
@@ -46,7 +46,8 @@ function makeTrackRoute(
 ) {
       const pcm = new Map<string, string>();
       const locks = new Map<string, { overlay: string; cc: string; shown: number }>();
-      const sym = (name: string) => planSymbol(context.plan, name);
+      // the cells of the page hooks and `DKRT_FXS` are the fx service file's: `symbolsOf` has them after a boot with an effect (`inspectFxBoot`)
+      const sym = (name: string) => symbolsOf(context.fixture.runtime, context.plan)(name);
       const chain = (runtime: TestRuntime) => rows(runtime.session, context.plan, context.slots);
       const amounts = async (runtime: TestRuntime, row = 0) => {
         const words = (await chain(runtime))[row]!.slice(19, 23);

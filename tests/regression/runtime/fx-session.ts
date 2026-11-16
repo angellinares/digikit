@@ -12,6 +12,8 @@ import { cachedCard, cardKey, fileSha } from './card-cache.ts';
 import { plusdriveBinary } from './card-kit.ts';
 import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
+import { boundService, neededServices, SERVICE_MODULES } from './service-files.ts';
+import { bindServiceSymbols, rememberShipMap } from './service-symbols.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { pollEmulated } from './waits.ts';
 import { analysisJson, bounded, evidence, options, pickSine, word, type Rt } from './fx-live.ts';
@@ -58,6 +60,8 @@ export interface FxCardPreset {
   selection: string[];
   /** UTF-8 settings keys and hex-encoded byte values. */
   settings?: [string, string][];
+  /** No service files on the card: an effect module in the selection is refused (the fx service is missing) and the FX pages stay stock. */
+  noServices?: boolean;
 }
 export interface PreparedFxSessionOptions {
   image: {
@@ -171,6 +175,8 @@ export async function inspectFxBoot(
   await drainInputs(session);
   await bounded(() => session.client.call('run.mode', { mode: 'paused' }));
   const fields = await Promise.all(Array.from({ length: 10 }, (_, i) => word(session, boot + i * 4)));
+  // the symbols of the fx service file for this boot (`symbolsOf`); a boot without the service has none
+  await bindServiceSymbols(runtime, plan, 'fx');
   expect(fields.slice(0, 4)).toEqual([0x444b4254, 1, 0, 0]);
   expect(fields.slice(7, 10)).toEqual([expectedResults.length, expectedNames.length, 1]);
   const status = await bounded(() => session.status());
@@ -241,6 +247,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
           { modules },
         );
         planSymbol(prepared.plan, 'DKRT_BOOT');
+        rememberShipMap(prepared.plan, prepared.planFile);
         profile = await analysisJson<FxProfile>(
           'tools.patchkit.pk_digikit_fxroutes',
           ['profile', '--device', device],
@@ -266,6 +273,13 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
           )
             throw new Error(`invalid route preset selection ${tag}`);
           const files = inventory.map((id, index) => ({ name: `m${index}.dkm`, file: moduleArtifact(device, id) }));
+          // the services the inventory needs (fx.dks), bound to the stock firmware, go to digikit/services; a preset with `noServices` has none (the effect is refused)
+          const services = await Promise.all(
+            (preset.noServices ? [] : neededServices(files.map((f) => f.file))).map(async (name) => ({
+              name: `${name}.dks`,
+              file: await boundService(device, name, moduleArtifact(device, SERVICE_MODULES[name]!)),
+            })),
+          );
           // The card is built in WORK (`<work>/card/card.img`).
           const produce = async (work: string) => {
             // The seed stays in the card dir: tests read the built modules from it.
@@ -273,6 +287,9 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
             const destination = path.join(seed, 'digikit', 'modules');
             fs.mkdirSync(destination, { recursive: true });
             for (const f of files) fs.copyFileSync(f.file, path.join(destination, f.name));
+            const serviceDir = path.join(seed, 'digikit', 'services');
+            fs.mkdirSync(serviceDir, { recursive: true });
+            for (const f of services) fs.copyFileSync(f.file, path.join(serviceDir, f.name));
             fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), preset.selection.join('\n') + '\n');
             const out = path.join(work, 'card', 'card.img');
             fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -308,6 +325,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
             const key = cardKey(device, {
               kind: 'fx-route-preset',
               modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
+              services: (preset.noServices ? [] : services).map((f) => ({ name: f.name, sha: fileSha(f.file) })),
               selection: preset.selection,
             });
             cardImage = await cachedCard(key, produce);

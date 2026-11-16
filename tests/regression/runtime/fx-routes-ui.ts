@@ -1,6 +1,7 @@
 import { REDRAW, rows, word, type Rt } from './fx-live.ts';
 import { readTextRows, withPausedFxProtocol, shot } from './fx-session.ts';
-import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
+import { type RuntimePlan } from './runtime-plan.ts';
+import { symbolsOf } from './service-symbols.ts';
 
 export const MASTER = 1;
 export const SEND_ROUTE = 2;
@@ -8,7 +9,8 @@ export const SEND_ROUTE = 2;
 /** The MODULES route panel's published diagnostics and its real front-panel navigation. */
 export function routeUi(runtime: Rt, plan: RuntimePlan, artifacts: string, slots: number) {
   const { session } = runtime;
-  const sym = (name: string) => planSymbol(plan, name);
+  // `fxp_send_count` and `DKRT_FXS` are the fx service file's (`symbolsOf`, bound after each boot by `inspectFxBoot`); the `DK_*` cells are the image's
+  const sym = (name: string) => symbolsOf(runtime, plan)(name);
   const cell = (name: string) => word(session, sym(name));
   const bytes = (value: number, count: number) =>
     Array.from({ length: count }, (_, i) => (value >>> (24 - 8 * i)) & 0xff);
@@ -72,7 +74,8 @@ export function routeUi(runtime: Rt, plan: RuntimePlan, artifacts: string, slots
     },
     sendUsed: async () => (await withPausedFxProtocol(runtime, (dk) => dk.capacity())).SEND_SLOTS,
     fxPageOrder: async () => {
-      const base = sym('fxpages_info');
+      // the service's copy of the table (`DKRT_FXP_TAB`): the image table has no state pointers
+      const base = sym('DKRT_FXP_TAB');
       const first = await word(session, base + 4 * 5);
       const list = await word(session, base + 4 * 7);
       const count = await word(session, await word(session, base + 4 * 9));

@@ -3,7 +3,8 @@ import { REDRAW, SETTLE, bounded, rows, word, type Rt } from './fx-live.ts';
 import { openPages } from './fx-pages-ui.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword, kitMenu, kitSlotOne } from './fx-track-ui.ts';
-import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
+import { type RuntimePlan } from './runtime-plan.ts';
+import { symbolsOf } from './service-symbols.ts';
 
 export type FxKitObservation = [ms: number, row: number, p0: number, mix: number];
 
@@ -44,7 +45,8 @@ export async function watchFxKitRows(
 /** Shared firmware KIT menus, preserving the persistence runner's cursor resets and settling. */
 export function createFxKitUi(runtime: Rt, plan: RuntimePlan, profile: FxProfile, artifacts: string) {
   const { session } = runtime;
-  const cell = (name: string) => word(session, planSymbol(plan, name));
+  // `fxp_nload` and the other hook cells are the fx service file's (`symbolsOf`, bound after each boot by `inspectFxBoot`)
+  const cell = (name: string) => word(session, symbolsOf(runtime, plan)(name));
   const slot = async (n: number) => {
     await kitSlotOne(runtime);
     for (let i = 1; i < n; i++) await runtime.ui.tap('DOWN', { until: { ms: 80, why: REDRAW } });

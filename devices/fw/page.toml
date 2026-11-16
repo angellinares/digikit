@@ -8,7 +8,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_ptr", hash = "7160f06f3d6124dc745cdb7c75628c47", offset = 0x6c2, len = 4 }
 rule.dn2 = { kind = "cf_ptr", hash = "8fb9057131b85c6b6ab80d28a4e37a8b", offset = 0x67c, len = 4 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The pointer operand (4 bytes) of `move.l #list,D0` in the FX view builder: the rodata list {12} of the track FX key's one-page view. core/fxpages substitutes its own list."
 
 [[data]]
@@ -18,7 +18,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_ptr", hash = "7160f06f3d6124dc745cdb7c75628c47", offset = 0x7fa, len = 12 }
 rule.dn2 = { kind = "cf_ptr", hash = "8fb9057131b85c6b6ab80d28a4e37a8b", offset = 0x7b4, len = 12 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages. The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count."
 
 # The page descriptor accessor (FUN_400c898a on 1.17): `moveq 0x20,D1; move.l (4,SP),D0` (6 bytes), then the bound check, the row address and `rts`.
@@ -31,7 +31,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "2f139e6b0d70fdc22d64ca72a71f88c9", offset = 0x0, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "78edf1e40ff808780fc20e11fa31d3b4", offset = 0x0, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The page descriptor accessor `row = f(int page)`: entry `moveq N,D1; move.l 4(SP),D0` (6 bytes), then the bound check, the row address and rts. core/fxpages hooks it."
 
 # ---- the machine's SRC page (Digitakt II SourcePageView, Digitone II MultiSourcePageView): the encoder click ----
@@ -69,7 +69,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "baec8deb33854d1a7ac48e9cef2774ea", offset = 0x134, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "134772a1ba6366ed7046889536674b96", offset = 0x134, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "FxPageView::vfunc_4 (draw): `cmp.l D0,D5; beq.w <after the graph>` (6 bytes; D5 = 15, D0 = the page number) before the filter graph; the branch target is at +0x1c4. FxPageView::vfunc_4 (0x4006f5e4): `cmp.l D0,D5; beq.w <after the graph>` with D5 = 0x13; the branch target is at +0x1c4."
 
 # The initialiser of the kit's effect value array (FUN_400e5698(array): 0x92 bytes zeroed, then the default of each of the 71 parameter codes; called by the kit
@@ -83,7 +83,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "8d1db0c6e713e00d9191111226e258ae", offset = 0x5c, len = 8 }
 rule.dn2 = { kind = "cf_func", hash = "77836acd2395bf50b1af9bcd04bbbe1e", offset = 0x5c, len = 8 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "Common exit of the kit's effect value array initialiser, `movem.l (SP),{D2 A2-A5}; lea (0x20,SP),SP` (8 bytes; a2 = the array); core/fxpages gives each effect row its defaults here."
 
 # The loader of the kit's effect value array (FUN_400daf54(array, storage), called by the kit loader FUN_400db898 for Load Kit, a pattern's kit and a project load):
@@ -96,7 +96,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "5c9666e3948285d6d01efc932404808b", offset = 0x32, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "ae2cb9f9c5021edb353ca8bd68eb7375", offset = 0x32, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The loader of the kit's effect value array (FUN_400daf54(array, storage), called by the kit loader FUN_400db898 for Load Kit, a pattern's kit and a project load): after its table loop, `move.l (0x98,A0),(0x8e,A1)` (6 bytes; A0 = the storage record, A1 = the array)."
 
 # The saver (FUN_400daf98(storage, array), called by the kit saver FUN_400dbdca): after its table loop and the clear of the 4 bytes at +0x9c,
@@ -109,7 +109,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "075bbe00a9e7ec3e8e70a78898611ee3", offset = 0x40, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "72cfca259b20ad2a989d78e670ada50a", offset = 0x40, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The saver (FUN_400daf98(storage, array), called by the kit saver FUN_400dbdca): after its table loop and the clear of the 4 bytes at +0x9c, `move.l (0x8e,A3),(0x98,A2)` (6 bytes; A2 = the storage record, A3 = the array)."
 
 # The track FX key's page list (FX routing, finding 64): the same builder FUN_40066584 builds the main screen view and, for the FX key, a one-page view from the rodata list {12}
@@ -124,7 +124,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "7160f06f3d6124dc745cdb7c75628c47", offset = 0x6c0, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "8fb9057131b85c6b6ab80d28a4e37a8b", offset = 0x67a, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The track FX key's page list (FX routing, finding 64): the same builder FUN_40066584 builds the main screen view and, for the FX key, a one-page view from the rodata list {12} (page 12: BR, OVER, SRR, SR.RT, DEL, REV, CHR, OD.RT): `move.l #list,D0` (6 bytes) with the count `moveq 1,D1` pushed before it; the stock list's address is the operand (+2)."
 
 [[site]]
@@ -134,7 +134,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "7160f06f3d6124dc745cdb7c75628c47", offset = 0x7ea, len = 2 }
 rule.dn2 = { kind = "cf_func", hash = "8fb9057131b85c6b6ab80d28a4e37a8b", offset = 0x7a4, len = 2 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The `moveq N,D1` (2 bytes) in the FX view builder that pushes the stock page count, N in the byte at +1; core/fxpages reads it as the stock count."
 
 [[site]]
@@ -144,7 +144,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "7160f06f3d6124dc745cdb7c75628c47", offset = 0x7f8, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "8fb9057131b85c6b6ab80d28a4e37a8b", offset = 0x7b2, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The FX view's builder (FUN_40066584, the constructor of the main screen view): `move.l #<list>,D0` (6 bytes) with the count `moveq 3,D1` pushed just before it. The FX view's builder (0x40060e72): `move.l #<list>,D0` with `moveq 3,D1` before it."
 
 # The end of the firmware's sound loader FUN_400db3b2 (A2 = the Sound object, A3 = the record, D0 = the result; it zeroes the object's 71 parameter halfwords first): the common exit,
@@ -157,7 +157,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "d5cd38f131d3119fd16d700d526b4fb9", offset = 0x450, len = 8 }
 rule.dn2 = { kind = "cf_func", hash = "f766c42c6be0674aadb1177f3f536367", offset = 0x3d8, len = 8 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The end of the firmware's sound loader FUN_400db3b2 (A2 = the Sound object, A3 = the record, D0 = the result; it zeroes the object's 71 parameter halfwords first): the common exit, `movem.l (SP),{D2 D3 D4 A2 A3 A4 A5 A6}; lea (0x20,SP),SP` (8 bytes), then the `rts`."
 
 # FxPageView's tab label (FUN_40074d88): `move.b #0xd,D1b; cmp.l D0,D1` (6 bytes) of the third page test (DEL), the `bne.b` after it is the stock one. The
@@ -170,7 +170,7 @@ cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "ac7642057ecf0a7193cfff5c94a8c9ad", offset = 0x40, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "42e5d8c79170ce23d2ad591391433214", offset = 0x40, len = 6 }
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "FxPageView's tab label (FUN_40074d88): `move.b #0xd,D1b; cmp.l D0,D1` (6 bytes) of the third page test (DEL), the `bne.b` after it is the stock one."
 
 # Hook points. Contracts are read from the core/fxpages stubs (mark D). All resume at the site end or another address in
@@ -184,7 +184,7 @@ mode = "replace"
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # page at 4(sp); own pages rts, others re-enter at site+6
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "Page descriptor accessor `row = f(int page)`, entry `moveq FX_PAGE_FIRST-1,D1; move.l 4(SP),D0` (6 bytes); the hook answers the run-time effect pages and the send page with its own rows."
 
 [[hook]]
@@ -195,7 +195,7 @@ mode = "replace"
 regs = { in = ["d0"], clobbers = ["d0", "d1", "a0", "ccr"] }   # effect path pushes the row name and jumps to site+0x1e [O]
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "FxPageView tab label, the third page test `move.b #n,D1b; cmp.l D0,D1` (6 bytes); the hook draws the name of an effect page's row through the label code's common tail."
 
 [[hook]]
@@ -206,7 +206,7 @@ mode = "replace"
 regs = { in = ["d0", "d5"], clobbers = ["ccr"] }   # exits: site+6 (draw the graph) or site+0x1c4 (the beq.w target)
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "FxPageView::vfunc_4 draw `cmp.l D0,D5; beq.w <after the graph>` (6 bytes) before the filter graph; the hook skips the graph for the effect pages too."
 
 [[hook]]
@@ -217,7 +217,7 @@ mode = "replace"
 regs = { in = [], clobbers = ["d0", "ccr"] }   # rewrites the pushed page count at (sp)
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The FX view builder `move.l #<list>,D0` (6 bytes) with the count pushed just before it; the hook hands the builder the run-time page list and its count."
 
 [[hook]]
@@ -228,7 +228,7 @@ mode = "replace"
 regs = { in = ["a0", "a1"], clobbers = ["d0", "d1", "a0", "a2", "a3", "ccr"] }
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "Loader of the kit's effect value array after its table loop, `move.l (0x98,A0),(FX_TAIL_OFF,A1)` (6 bytes; a0 = the storage record, a1 = the array); the hook restores the effect values."
 
 [[hook]]
@@ -239,7 +239,7 @@ mode = "replace"
 regs = { in = ["a2", "a3"], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "Saver of the kit's effect value array after its table loop, `move.l (FX_TAIL_OFF,A3),(0x98,A2)` (6 bytes; a2 = the storage record, a3 = the array); the hook writes the effect values and IDs."
 
 [[hook]]
@@ -250,7 +250,7 @@ mode = "replace"
 regs = { in = ["a2"], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # the displaced movem/lea are repeated
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "Common exit of the effect value array initialiser `movem.l (SP),{D2 A2-A5}; lea (0x20,SP),SP` (8 bytes; a2 = the array or 0); the hook gives each effect row its defaults."
 
 [[hook]]
@@ -261,7 +261,7 @@ mode = "replace"
 regs = { in = [], clobbers = ["d0", "ccr"] }   # rewrites the pushed page count at (sp)
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "The track FX key's one-page view in the FX view builder, `move.l #list,D0` (6 bytes) with the count pushed before it; the hook adds the send page to the list."
 
 [[hook]]
@@ -272,7 +272,7 @@ mode = "replace"
 regs = { in = ["d0"], clobbers = ["ccr"] }   # the displaced movem/lea are repeated
 devices = ["dt2", "dn2"]
 mark = "D"
-users = ["core/fxpages"]
+users = ["core/services/fx"]
 doc = "Common exit of the sound loader `movem.l (SP),{D2-D4 A2-A6}; lea (0x20,SP),SP` (8 bytes; a2 = the Sound, d0 = the result); the hook counts the load."
 
 [[hook]]

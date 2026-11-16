@@ -154,15 +154,7 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
         : image === 'track-base'
           ? [...commonSymbols, 'dynreg_info']
           : image === 'track'
-            ? [
-                ...commonSymbols,
-                'dynreg_info',
-                'fxpages_info',
-                'fxp_send_row',
-                'fxp_send_count',
-                'fxp_nload',
-                'DKRT_FXS',
-              ]
+            ? [...commonSymbols, 'dynreg_info', 'fxpages_info']
             : [
                 ...commonSymbols,
                 'DK_FXR_PEND',
@@ -176,8 +168,6 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
                 'DK_PANEL_N',
                 'DK_ROUTE_N',
                 'DK_ROUTE_ITEM',
-                'fxp_send_count',
-                'DKRT_FXS',
                 'fxpages_info',
               ];
       expect(requestedSymbols).toEqual(expectedSymbols);

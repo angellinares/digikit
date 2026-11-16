@@ -4,7 +4,8 @@ import type { TestRuntime } from '../support.ts';
 import { REDRAW, SETTLE, bounded, rpc, word, type Rt } from './fx-live.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword } from './fx-track-ui.ts';
-import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
+import { type RuntimePlan } from './runtime-plan.ts';
+import { symbolsOf } from './service-symbols.ts';
 
 export const bits = (value: number) => {
   const bytes = Buffer.alloc(4);
@@ -98,13 +99,14 @@ export async function stockPages(rt: Rt, artifacts: string, tag: string) {
 }
 
 export async function pageState(runtime: Pick<TestRuntime, 'session'>, plan: RuntimePlan) {
-  const base = planSymbol(plan, 'DKRT_FXP');
+  const sym = symbolsOf(runtime, plan);
+  const base = sym('DKRT_FXP');
   const words = async (offset: number, count: number) =>
     Promise.all(Array.from({ length: count }, (_, i) => word(runtime.session, base + offset + 4 * i)));
   const owner = Buffer.alloc(4);
   owner.writeUInt32BE(await word(runtime.session, base + 28));
   return {
-    count: await word(runtime.session, planSymbol(plan, 'fxp_count')),
+    count: await word(runtime.session, sym('DKRT_FXP_COUNT')),
     owner: [...owner],
     sent: await word(runtime.session, base + 16),
     errors: await word(runtime.session, base + 20),

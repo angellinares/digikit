@@ -5,8 +5,8 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/freqshift.device.test.ts"],
-        "tags": ["S:fx"],
-        "modules": ["test/sine", "digikit/freqshift"],
+        "tags": ["A:core/fx"],
+        "modules": ["test/sine", "digikit/freqshift", "core/services/fx"],
         "sources": [
           "tools/patchkit/pk_digikit_fxshift.py",
           "tools/patchkit/pk_digikit_fxsend.py",

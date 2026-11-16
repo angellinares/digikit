@@ -353,6 +353,7 @@ fn invalidation_missing_ack_retains_and_stops() {
 #[test]
 fn fx_partial_cleanup_does_not_discard_publication() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _fx = crate::handlers::fx_fixture::LoadedFx::new();
     unsafe {
         seed(Completion::ErrorAt(3), true, true, true);
         pass();
@@ -363,6 +364,7 @@ fn fx_partial_cleanup_does_not_discard_publication() {
 #[test]
 fn missing_fx_info_retains_published_row() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _fx = crate::handlers::fx_fixture::LoadedFx::new();
     unsafe {
         seed(Completion::Ack, true, true, true);
         let _reset = NoFxInfoGuard;
@@ -403,6 +405,7 @@ fn acknowledged_voice_cleanup_reclaims_and_advances_queue() {
 #[test]
 fn acknowledged_fx_cleanup_reclaims_after_all_words() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _fx = crate::handlers::fx_fixture::LoadedFx::new();
     unsafe {
         successful_case(true, true);
         assert_eq!(LINK.accepted, 11);
@@ -458,6 +461,7 @@ fn attribution_names_the_module_of_every_site_the_watch_reports() {
     use crate::handlers::services;
     use dkrt_sdk::fault::{SITE_FX_MASTER, SITE_FX_SEND, SITE_NONE, SITE_VOICE};
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _fx = crate::handlers::fx_fixture::LoadedFx::new();
     unsafe {
         seed(Completion::Ack, false, true, false);
         let d = dsp::ds();

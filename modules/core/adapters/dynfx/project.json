@@ -7,10 +7,11 @@
         "files": [
           "tests/fx-chain.device.test.ts"
         ],
-        "tags": ["A:core/dynfx", "S:fx"],
+        "tags": ["A:core/dynfx"],
         "modules": [
           "test/dyn-fx-gain",
-          "test/sine"
+          "test/sine",
+          "core/services/fx"
         ],
         "aliases": {
           "test/dyn-fx-gain-2": "test/dyn-fx-gain",
@@ -29,10 +30,11 @@
         "files": [
           "tests/fx-reuse.device.test.ts"
         ],
-        "tags": ["A:core/dynfx", "S:fx"],
+        "tags": ["A:core/dynfx"],
         "modules": [
           "test/dyn-fx-gain",
-          "test/sine"
+          "test/sine",
+          "core/services/fx"
         ],
         "sources": [
           "tools/patchkit/hook_ab.py"
