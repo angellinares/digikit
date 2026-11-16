@@ -561,6 +561,7 @@ mod tests {
             runtime_min: 0,
             trace: false,
             role: ROLE_SERVICE,
+            svc_abi: 0,
             sha256: String::new(),
             image,
             bss,

@@ -445,8 +445,12 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
         let _ = writeln!(s, "{indent}    (KIND_{n}, LEN_{n}, {:?}),", k.service);
     }
     let _ = writeln!(s, "{indent}];");
-    for d in sdk.service.iter().filter(|d| d.rust.is_some()) {
+    // a table for each in-crate service and for each service file that owns a kind (the `service!` glue of a `.dks` declares them)
+    for d in sdk.service.iter() {
         let own: Vec<_> = kinds.iter().filter(|(_, k)| k.service == d.name).collect();
+        if d.rust.is_none() && own.is_empty() {
+            continue;
+        }
         let _ = writeln!(
             s,
             "{indent}/// The kinds of the `{}` service: (kind, record length).",

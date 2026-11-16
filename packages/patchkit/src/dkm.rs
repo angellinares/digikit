@@ -166,6 +166,45 @@ pub fn needs_of_imports<'a>(
     by.into_values().collect()
 }
 
+/// A hard NEED on the owning service of each record kind in `kinds` (the kinds of a module's `KEYS`, `[records.kinds] service`), only when that service has no
+/// `rust` row, so a `.dks` provides it. A service in the runtime image is always there: modules whose kinds it owns stay byte-identical until it moves out.
+/// The needs stay sorted by service name hash; a kind that is no record kind adds none.
+fn record_kind_needs(needs: &mut Vec<dkneeds::keys::Need>, kinds: &[u32]) {
+    let providers = crate::sdkgen::provider_services();
+    for kind in kinds {
+        let Some((_, _, service)) = dkneeds::KINDS.iter().find(|k| k.0 == *kind) else {
+            continue;
+        };
+        if !providers.contains(*service) {
+            continue;
+        }
+        let h = dkneeds::keys::name_hash(service);
+        match needs.iter_mut().find(|n| n.service == h) {
+            Some(n) => n.hard = true,
+            None => needs.push(dkneeds::keys::Need {
+                service: h,
+                min_version: 0,
+                hard: true,
+            }),
+        }
+    }
+    needs.sort_by_key(|n| n.service);
+}
+
+/// The `KINDS` of a service file: each record kind `service` owns (`[records.kinds]`) with `init` as the handler entry. The `service!` macro of `dkrt-svc-rt`
+/// declares every kind with the address of `init`, and the loader compares the declarations with this table.
+fn service_kinds(service: &str, init: u32) -> Vec<dkneeds::keys::KindDecl> {
+    dkneeds::KINDS
+        .iter()
+        .filter(|k| k.2 == service)
+        .map(|k| dkneeds::keys::KindDecl {
+            kind: k.0,
+            len: k.1,
+            entry: init,
+        })
+        .collect()
+}
+
 /// The header table to write: `reg` is the table the caller built (empty: a module that takes and keeps nothing) with the `NEEDS` entry replaced by
 /// the needs of `imports`.
 ///
@@ -176,6 +215,7 @@ fn table_with_needs(
     provides: &[dkneeds::keys::Pair],
     exports_add: &[dkneeds::keys::Pair],
     hooks_add: &[dkneeds::keys::Pair],
+    kinds_add: &[dkneeds::keys::KindDecl],
 ) -> Result<Vec<u8>> {
     use dkneeds::keys::{Bind, KeyGroup, Keys, Pair, Table, write_table};
     let keys = if reg.is_empty() {
@@ -183,7 +223,11 @@ fn table_with_needs(
     } else {
         Some(Keys::parse(reg).map_err(|e| err!("header table: {e:?}"))?)
     };
-    let needs = needs_of_imports(imports.iter().copied());
+    let mut needs = needs_of_imports(imports.iter().copied());
+    if let Some(k) = &keys {
+        let kinds: Vec<u32> = k.key_groups().map(|g| g.0).collect();
+        record_kind_needs(&mut needs, &kinds);
+    }
     let (mut uses, mut kinds, mut slots, mut hooks, mut exports, mut resources) =
         (vec![], vec![], vec![], vec![], vec![], vec![]);
     let mut groups: Vec<(u32, Vec<u32>)> = vec![];
@@ -209,6 +253,7 @@ fn table_with_needs(
     }
     exports.extend_from_slice(exports_add);
     hooks.extend_from_slice(hooks_add);
+    kinds.extend_from_slice(kinds_add);
     provided.extend_from_slice(provides);
     let key_groups: Vec<KeyGroup> = groups
         .iter()
@@ -530,8 +575,8 @@ fn pack_inner(
     }
 
     // the header table: the packer's uses and keys (none: a module that keeps nothing) and the needs of the imports the module links
-    let (provides, svc_exports, svc_hooks) = match &o.service {
-        None => (vec![], vec![], vec![]),
+    let (provides, svc_exports, svc_hooks, svc_kinds) = match &o.service {
+        None => (vec![], vec![], vec![], vec![]),
         Some(s) => {
             let mut hk: Vec<dkneeds::keys::Pair> = vec![];
             for (hook, entry) in &s.hooks {
@@ -569,10 +614,11 @@ fn pack_inner(
                 }],
                 ex,
                 hk,
+                service_kinds(&s.service, init.unwrap_or(0)),
             )
         }
     };
-    let table = table_with_needs(reg, &imports, &provides, &svc_exports, &svc_hooks)?;
+    let table = table_with_needs(reg, &imports, &provides, &svc_exports, &svc_hooks, &svc_kinds)?;
     emit(&EmitParts {
         name: &o.name,
         version: o.version,
@@ -1009,6 +1055,95 @@ mod tests {
         assert_eq!(get(&pack(&o, &opts()).unwrap(), H_SVC_ABI), 0xabcd_0123);
         // an object without the symbol leaves the word zero
         assert_eq!(get(&pack(&object(), &opts()).unwrap(), H_SVC_ABI), 0);
+    }
+
+    /// The header table of `o` packed with `service` as the provided service of the file.
+    fn service_table(service: &str, o: &Dko) -> (Dkm, Vec<u8>) {
+        let opts = Options {
+            service: Some(Provided {
+                service: service.into(),
+                exports: vec![],
+                hooks: vec![],
+            }),
+            ..opts()
+        };
+        let f = pack(o, &opts).unwrap();
+        (Dkm::parse(&f).unwrap(), f)
+    }
+
+    #[test]
+    fn a_service_file_records_init_as_the_handler_of_each_kind_its_service_owns() {
+        use dkneeds::keys::{Keys, KindDecl};
+        // `lfo` has no `rust` row: a `.dks` owns lfo_shape, and the `service!` glue declares it with the address of `init`
+        let (d, _) = service_table("lfo", &object());
+        let k = Keys::parse(&d.register).unwrap();
+        assert!(k.kinds().eq([KindDecl {
+            kind: dkneeds::KIND_LFO_SHAPE,
+            len: dkneeds::LEN_LFO_SHAPE,
+            entry: d.init.unwrap(),
+        }]));
+        assert_ne!(d.init, Some(0), "the object's init is no stub at offset 0");
+        // a service that owns no kind (svc-test) has an empty KINDS: its file is as before
+        let (d, _) = service_table("svc-test", &object());
+        assert_eq!(Keys::parse(&d.register).unwrap().kinds().count(), 0);
+        // a module that provides nothing has none either
+        let d = Dkm::parse(&pack(&object(), &opts()).unwrap()).unwrap();
+        assert_eq!(Keys::parse(&d.register).unwrap().kinds().count(), 0);
+    }
+
+    /// The table of a module whose KEYS name the record kinds `kinds` (one key each), packed as a `.dkm`.
+    fn needs_of_keys(kinds: &[u32]) -> Vec<dkneeds::keys::Need> {
+        use dkneeds::keys::{KeyGroup, Keys, Table, table_size, write_table};
+        let ks = [7u32];
+        let groups: Vec<KeyGroup> = kinds
+            .iter()
+            .map(|k| KeyGroup {
+                kind: *k,
+                keys: &ks,
+            })
+            .collect();
+        let t = Table {
+            keys: &groups,
+            ..Table::default()
+        };
+        let mut reg = vec![0u8; table_size(&t)];
+        write_table(&t, &mut reg).unwrap();
+        let f = pack_keys(Some(&object()), &reg, &[], &opts()).unwrap();
+        Keys::parse(&Dkm::parse(&f).unwrap().register)
+            .unwrap()
+            .needs()
+            .collect()
+    }
+
+    #[test]
+    fn a_record_kind_of_a_service_file_is_a_hard_need_and_a_kind_of_an_in_crate_service_is_none() {
+        // lfo_shape: its service (lfo) is provided by a .dks, so the module needs it
+        let needs = needs_of_keys(&[dkneeds::KIND_LFO_SHAPE]);
+        let lfo = dkneeds::keys::name_hash("lfo");
+        let own: Vec<_> = needs.iter().filter(|n| n.service == lfo).collect();
+        assert_eq!(own.len(), 1);
+        assert!(own[0].hard);
+        // machines and effects are owned by services in the image: the table gets no need for them
+        assert!(
+            needs_of_keys(&[
+                dkneeds::KIND_MACHINE,
+                dkneeds::KIND_EFFECT,
+                dkneeds::KIND_PAGE
+            ])
+            .iter()
+            .all(|n| n.service != lfo),
+        );
+        // the same kind twice is one need
+        let twice = needs_of_keys(&[dkneeds::KIND_LFO_SHAPE, dkneeds::KIND_LFO_SHAPE]);
+        assert_eq!(twice.iter().filter(|n| n.service == lfo).count(), 1);
+        // no KEYS, no record kind
+        let f = pack(&object(), &opts()).unwrap();
+        assert!(
+            dkneeds::keys::Keys::parse(&Dkm::parse(&f).unwrap().register)
+                .unwrap()
+                .needs()
+                .all(|n| n.service != lfo)
+        );
     }
 
     #[test]
