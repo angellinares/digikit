@@ -7,6 +7,7 @@
         "files": [
           "tests/equiv.device.test.ts"
         ],
+        "tags": ["C:dsp", "S:machines"],
         "modules": [
           "fadedlimes/analog"
         ],

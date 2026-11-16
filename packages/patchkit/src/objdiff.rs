@@ -25,6 +25,9 @@ pub struct Difference {
     pub kind: String,
     pub name: String,
     pub detail: String,
+    /// The owner of the item (`--owners`: `S:fx`, `shared`, `S:fx,shared` when old and new differ); empty without owners.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub owner: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
@@ -70,7 +73,12 @@ impl Report {
             self.data_objects
         );
         for d in &self.differences {
-            s.push_str(&format!("{:9} {}\n", d.kind, d.name));
+            let owner = if d.owner.is_empty() {
+                String::new()
+            } else {
+                format!("  [{}]", d.owner)
+            };
+            s.push_str(&format!("{:9} {}{owner}\n", d.kind, d.name));
             for l in d.detail.lines() {
                 s.push_str(&format!("            {l}\n"));
             }
@@ -133,6 +141,17 @@ fn norm_name_with(name: &str, erase: &[String]) -> String {
     out
 }
 
+/// A name with its module path: `_RNvNtCs..4dkrt3foo4rd32` is `dkrt::foo::rd32`. A name that is not Rust-mangled stays exact.
+pub(crate) fn full_name(name: &str) -> String {
+    if !name.starts_with("_R") {
+        return name.to_string();
+    }
+    match rustc_demangle::try_demangle(name) {
+        Ok(d) => format!("{d:#}"),
+        Err(_) => name.to_string(),
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Class {
     Text,
@@ -140,11 +159,11 @@ enum Class {
     Anon,
 }
 
-struct Item {
+pub(crate) struct Item {
     /// normalized name (`Anon`: empty)
     name: String,
     /// the section's name in the object (for messages)
-    raw: String,
+    pub(crate) raw: String,
     class: Class,
     align: u32,
     size: u32,
@@ -153,10 +172,26 @@ struct Item {
     bytes: Vec<u8>,
     /// (offset, type, normalized target + addend)
     relocs: Vec<(u64, String, String)>,
+    /// The demangled name with its module path (`dkrt::fx::send::apply`); a C symbol keeps its exact name; an anonymous
+    /// constant has none.
+    pub(crate) full: String,
+    /// The names of the sections whose relocations point into this item.
+    pub(crate) refs: Vec<String>,
 }
 
 impl Item {
-    fn sig(&self) -> String {
+    pub(crate) fn is_anon(&self) -> bool {
+        self.class == Class::Anon
+    }
+
+    /// A Rust item (its section name carries a mangled path), not a C symbol or an anonymous constant.
+    pub(crate) fn is_rust(&self) -> bool {
+        self.class != Class::Anon && split_prefix(&self.raw).1.starts_with("_R")
+    }
+
+    /// Hash of the item's content without its position: alignment, size, bytes with relocated fields zeroed, and the normalized
+    /// relocation targets.
+    pub(crate) fn sig(&self) -> String {
         let mut h = Sha256::new();
         h.update(self.align.to_be_bytes());
         h.update(self.size.to_be_bytes());
@@ -209,8 +244,8 @@ struct Piece {
     shown: String,
 }
 
-struct Loaded {
-    items: Vec<Item>,
+pub(crate) struct Loaded {
+    pub(crate) items: Vec<Item>,
     externs: BTreeSet<String>,
     /// content hash -> piece (the string constants of the object as one multiset)
     pieces: BTreeMap<String, Piece>,
@@ -236,7 +271,7 @@ fn trim_zeros(b: &[u8]) -> &[u8] {
     &b[..n]
 }
 
-fn load(o: &Dko, strict: bool) -> Result<Loaded> {
+pub(crate) fn load(o: &Dko, strict: bool) -> Result<Loaded> {
     let secs: HashMap<&str, &DkoSection> =
         o.sections.iter().map(|s| (s.name.as_str(), s)).collect();
     let defined: HashMap<&str, (&str, u64)> = o
@@ -397,6 +432,18 @@ fn load(o: &Dko, strict: bool) -> Result<Loaded> {
             _ => format!("{}{}{:+}", p, norm_name(rest), off),
         })
     };
+    // who refers into each section (the owner of an anonymous constant is the owner of its users)
+    let mut referred_by: HashMap<&str, BTreeSet<&str>> = HashMap::new();
+    for r in &o.relocs {
+        if let Some((t, _)) = resolve(&r.symbol, r.addend) {
+            if t.name != r.section {
+                referred_by
+                    .entry(t.name.as_str())
+                    .or_default()
+                    .insert(r.section.as_str());
+            }
+        }
+    }
     let mut items = vec![];
     for s in &o.sections {
         if locations.contains(s.name.as_str()) || pool.contains(s.name.as_str()) {
@@ -440,6 +487,17 @@ fn load(o: &Dko, strict: bool) -> Result<Loaded> {
             bss: s.kind == "bss",
             bytes,
             relocs,
+            full: if class == Class::Anon {
+                String::new()
+            } else {
+                full_name(rest)
+            },
+            refs: referred_by
+                .get(s.name.as_str())
+                .into_iter()
+                .flatten()
+                .map(|n| n.to_string())
+                .collect(),
         });
     }
     let externs = o
@@ -604,6 +662,16 @@ pub fn diff(old: &Dko, new: &Dko) -> Result<Report> {
 
 /// Compare two objects; with `strict` a panic location (file, line, column) is compared like any constant.
 pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
+    diff_owned(old, new, strict, None)
+}
+
+/// `diff_with`, and with `owners` each difference names the owner of its item (`owners.toml`, see `crate::owners`).
+pub fn diff_owned(
+    old: &Dko,
+    new: &Dko,
+    strict: bool,
+    owners: Option<&crate::owners::Owners>,
+) -> Result<Report> {
     if old.arch != "cf" || new.arch != "cf" {
         return Err(err!(
             "objdiff compares ColdFire objects (got {} and {})",
@@ -632,11 +700,36 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
         rep.warnings.extend(erase_collisions("old", &a));
         rep.warnings.extend(erase_collisions("new", &b));
     }
-    let mut push = |kind: &str, name: String, detail: String| {
+    // raw section name -> owner, per side
+    let who = |items: &[Item]| -> Result<HashMap<String, String>> {
+        let Some(owners) = owners else {
+            return Ok(HashMap::new());
+        };
+        let w = crate::owners::assign(items, owners)?;
+        Ok(items
+            .iter()
+            .zip(w)
+            .map(|(i, o)| (i.raw.clone(), o.to_string()))
+            .collect())
+    };
+    let (wa, wb) = (who(&a)?, who(&b)?);
+    let owner_of = |old: Option<&Item>, new: Option<&Item>| -> String {
+        let mut v: Vec<&str> = vec![];
+        for (i, w) in [(old, &wa), (new, &wb)] {
+            if let Some(o) = i.and_then(|i| w.get(&i.raw)) {
+                if !v.contains(&o.as_str()) {
+                    v.push(o);
+                }
+            }
+        }
+        v.join(",")
+    };
+    let mut push = |kind: &str, name: String, detail: String, owner: String| {
         rep.differences.push(Difference {
             kind: kind.into(),
             name,
             detail,
+            owner,
         })
     };
     // group by (class, name)
@@ -647,14 +740,22 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
     b.iter().for_each(|i| gb.entry(key(i)).or_default().push(i));
     let (mut funcs, mut datas) = (0usize, 0usize);
     let keys: BTreeSet<_> = ga.keys().chain(gb.keys()).cloned().collect();
-    let flag = |kind_only: &str, i: &Item, push: &mut dyn FnMut(&str, String, String)| {
+    let flag = |kind_only: &str,
+                i: &Item,
+                is_old: bool,
+                push: &mut dyn FnMut(&str, String, String, String)| {
         let kind = if c_visible(i) { "c-symbol" } else { kind_only };
         let detail = if c_visible(i) {
             format!("exact-name symbol {} ({kind_only})", i.raw)
         } else {
             String::new()
         };
-        push(kind, describe(i), detail);
+        let owner = if is_old {
+            owner_of(Some(i), None)
+        } else {
+            owner_of(None, Some(i))
+        };
+        push(kind, describe(i), detail, owner);
     };
     for k in keys {
         let mut xs = ga.remove(&k).unwrap_or_default();
@@ -679,8 +780,9 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
             }
         }
         if k.0 == Class::Anon as u8 {
-            xs.iter().for_each(|x| flag("only-old", x, &mut push));
-            ys.iter().for_each(|y| flag("only-new", y, &mut push));
+            xs.iter().for_each(|x| flag("only-old", x, true, &mut push));
+            ys.iter()
+                .for_each(|y| flag("only-new", y, false, &mut push));
             continue;
         }
         xs.sort_by_key(|x| x.sig());
@@ -692,12 +794,22 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
                     "c-symbol",
                     describe(xs[j]),
                     format!("renamed {} -> {}", xs[j].raw, ys[j].raw),
+                    owner_of(Some(xs[j]), Some(ys[j])),
                 );
             }
-            push("differs", describe(xs[j]), explain(xs[j], ys[j]));
+            push(
+                "differs",
+                describe(xs[j]),
+                explain(xs[j], ys[j]),
+                owner_of(Some(xs[j]), Some(ys[j])),
+            );
         }
-        xs[n..].iter().for_each(|x| flag("only-old", x, &mut push));
-        ys[n..].iter().for_each(|y| flag("only-new", y, &mut push));
+        xs[n..]
+            .iter()
+            .for_each(|x| flag("only-old", x, true, &mut push));
+        ys[n..]
+            .iter()
+            .for_each(|y| flag("only-new", y, false, &mut push));
     }
     // the string constants as one multiset
     let mut strings = 0usize;
@@ -709,6 +821,7 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
                 "only-old",
                 format!("string constant {:?} of {} bytes", x.shown, x.size),
                 format!("old {} times, new {} times", x.count, n),
+                String::new(),
             );
         }
     }
@@ -719,15 +832,26 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
                 "only-new",
                 format!("string constant {:?} of {} bytes", y.shown, y.size),
                 format!("old {} times, new {} times", n, y.count),
+                String::new(),
             );
         }
     }
     datas += strings;
     for e in ae.difference(&be) {
-        push("extern", e.clone(), "undefined symbol only in old".into());
+        push(
+            "extern",
+            e.clone(),
+            "undefined symbol only in old".into(),
+            String::new(),
+        );
     }
     for e in be.difference(&ae) {
-        push("extern", e.clone(), "undefined symbol only in new".into());
+        push(
+            "extern",
+            e.clone(),
+            "undefined symbol only in new".into(),
+            String::new(),
+        );
     }
     rep.functions = funcs;
     rep.data_objects = datas;
@@ -735,19 +859,22 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
     Ok(rep)
 }
 
-/// `patchkit objdiff OLD NEW [--format text|json] [--strict] [--erase TYPE]...`; returns the exit code.
+/// `patchkit objdiff OLD NEW [--format text|json] [--strict] [--erase TYPE]... [--owners owners.toml]`; returns the exit code.
 pub fn run(rest: &[String]) -> Result<i32> {
-    const U: &str = "usage: patchkit objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict] [--erase TYPE]...";
+    const U: &str = "usage: patchkit objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict] [--erase TYPE]... [--owners owners.toml]";
     let mut strict = false;
     let mut erase: Vec<String> = vec![];
     let mut files = vec![];
     let mut format = "text".to_string();
+    let mut owners_file: Option<String> = None;
     let mut it = rest.iter();
     while let Some(a) = it.next() {
         if a == "--format" {
             format = it.next().ok_or_else(|| Error(U.into()))?.clone();
         } else if a == "--strict" {
             strict = true;
+        } else if a == "--owners" {
+            owners_file = Some(it.next().ok_or_else(|| Error(U.into()))?.clone());
         } else if a == "--erase" {
             erase.push(it.next().ok_or_else(|| Error(U.into()))?.clone());
         } else if a.starts_with("--") {
@@ -764,7 +891,15 @@ pub fn run(rest: &[String]) -> Result<i32> {
         Dko::parse(&std::fs::read_to_string(f).map_err(|e| Error(format!("{f}: {e}")))?)
             .map_err(|e| Error(format!("{f}: {e}")))
     };
-    let rep = diff_with(&read(&files[0])?, &read(&files[1])?, strict)?;
+    let owners = owners_file
+        .map(|f| crate::owners::Owners::read(std::path::Path::new(&f)))
+        .transpose()?;
+    let rep = diff_owned(
+        &read(&files[0])?,
+        &read(&files[1])?,
+        strict,
+        owners.as_ref(),
+    )?;
     if format == "json" {
         println!("{}", serde_json::to_string_pretty(&rep)?);
     } else {

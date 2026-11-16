@@ -209,6 +209,11 @@ reference executions exactly within the configured numerical model. Explicitly
 resetting both histories and controls reproduces block zero. Store checks bound
 writes to declared state, audio and stack, with exact stage-write counts.
 
+The evidence is `modules/core/adapters/dsp-stereo-proof/tests/dsp-stereo-shadow-replay.rig.test.ts`.
+The rig test checks halt, shadow-equals-mono state and audio, store bounds and
+per-word write counts; the read address checks wait for roadmap item T1i (rig
+read hook).
+
 Six focused tests pass without skips. Negative controls detect copying controls
 after left processing, clearing right histories between blocks, and restoring
 initial controls between repeated occurrences. The harness also checks original

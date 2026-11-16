@@ -87,6 +87,95 @@ host tests: their checks stay device tests until the logic is split out.
 - **fx-track-route**, **shot-dn2**: split the composite tests so they run in parallel.
 - **bootscreen** "reset from the intro callback": drop if `safe-mode` and `boot.rs` cover the counter.
 
+## Tags (T1e step 1)
+
+`tags` on each `metadata.runtimeAcceptance` record (vocabulary: `tools/nx/acceptance-tags.mjs`). Assigned by reading the files and this audit; a file that spans areas got the wider set. **[?]** marks a guess: `platform-contract` (all areas it touches), `safe-mode` (C:layout for the hang and cut cases), `inferred-needs` (loads machines and fx), `commit`, `dynreg/equiv`, `shot-dn2-link` (loads an fx), `bootscreen*` and `usb-fast` (tool modules outside debug, remote and probe get `M:` tags).
+
+| File (under modules/, tests/) | Tags |
+| --- | --- |
+| `core/adapters/dynfx/tests/fx-chain.device.test.ts` | A:core/dynfx, S:fx |
+| `core/adapters/dynfx/tests/fx-reuse.device.test.ts` | A:core/dynfx, S:fx |
+| `core/adapters/dynreg/tests/equiv.device.test.ts` | A:core/dynreg, C:dsp, S:machines |
+| `core/adapters/dynreg/tests/roundtrip.device.test.ts` | A:core/dynreg, C:state |
+| `core/adapters/fx/tests/fx-routes-panel.device.test.ts` | A:core/fx, C:state, S:fx |
+| `core/adapters/fx/tests/fx-routes-persist.device.test.ts` | A:core/fx, C:state, S:fx |
+| `core/adapters/fx/tests/fx-send-dn2.device.test.ts` | A:core/fx, S:fx |
+| `core/adapters/fx/tests/fx-send.device.test.ts` | A:core/fx, S:fx |
+| `core/adapters/fx/tests/patched-dsp-startup.device.test.ts` | A:core/fx, C:boot, C:dsp |
+| `core/adapters/fxpages/tests/fx-kit-persist.device.test.ts` | A:core/fxpages, C:state, S:fx |
+| `core/adapters/fxpages/tests/fx-pages.device.test.ts` | A:core/fxpages, S:fx |
+| `core/adapters/fxpages/tests/fx-track-route-kit.device.test.ts` | A:core/fxpages, C:state, S:fx |
+| `core/adapters/fxpages/tests/fx-track-route-limit.device.test.ts` | A:core/fxpages, S:fx |
+| `core/adapters/fxpages/tests/fx-track-route-lock.device.test.ts` | A:core/fxpages, S:fx |
+| `core/adapters/fxpages/tests/fx-track-route-send.device.test.ts` | A:core/fxpages, S:fx |
+| `core/adapters/fxpages/tests/fx-track-route-stock.device.test.ts` | A:core/fxpages, S:fx |
+| `core/adapters/input/tests/input-adapter.device.test.ts` | A:core/input |
+| `core/adapters/introblank/tests/introblank-rec.device.test.ts` | A:core/introblank, C:boot |
+| `core/adapters/introblank/tests/introblank.device.test.ts` | A:core/introblank, C:boot |
+| `core/adapters/overdrive/tests/overdrive-type.device.test.ts` | A:core/overdrive, S:fx |
+| `core/adapters/plusdrive-write/tests/plusdrive-write.device.test.ts` | A:core/plusdrive-write, C:storage |
+| `core/adapters/sdhc-large/tests/sdhc-large.device.test.ts` | A:core/sdhc-large, C:storage |
+| `core/adapters/usb-bulk-audio/tests/usb-bulk-audio.device.test.ts` | A:core/usb-bulk-audio, C:transport |
+| `core/adapters/usb-bulk/tests/usb-bulk.device.test.ts` | A:core/usb-bulk, C:transport |
+| `core/apps/digikit-menu/tests/fits.device.test.ts` | A:core/digikit-menu, C:loading |
+| `core/apps/digikit-menu/tests/needs.device.test.ts` | A:core/digikit-menu, C:loading |
+| `core/apps/digikit-menu/tests/zero/menu.device.test.ts` | A:core/digikit-menu |
+| `core/runtime/tests/addrmap.device.test.ts` | C:layout |
+| `core/runtime/tests/boot-restart.device.test.ts` | C:boot, C:dsp, C:loading |
+| `core/runtime/tests/capacity/capacity.device.test.ts` | C:loading |
+| `core/runtime/tests/capacity/commit.device.test.ts` | C:loading, S:fx, S:machines |
+| `core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` | C:loading, S:fx, S:machines |
+| `core/runtime/tests/card-safety.device.test.ts` | C:storage |
+| `core/runtime/tests/crash-capture.device.test.ts` | C:diagnostics, C:layout |
+| `core/runtime/tests/debug-guard.device.test.ts` | C:diagnostics, C:dsp, C:layout |
+| `core/runtime/tests/entry/entry.device.test.ts` | C:loading |
+| `core/runtime/tests/fault-trace.device.test.ts` | C:diagnostics, C:dsp, C:layout |
+| `core/runtime/tests/file-write/file-write-cut.device.test.ts` | C:layout, C:storage |
+| `core/runtime/tests/file-write/file-write.device.test.ts` | C:storage |
+| `core/runtime/tests/fixtures/module-load.device.test.ts` | C:loading |
+| `core/runtime/tests/lfo/lfo.device.test.ts` | S:lfo |
+| `core/runtime/tests/log-names.device.test.ts` | C:diagnostics, C:layout |
+| `core/runtime/tests/memaudit.device.test.ts` | C:layout |
+| `core/runtime/tests/modules-capacity.device.test.ts` | C:loading |
+| `core/runtime/tests/platform-contract.device.test.ts` | C:boot, C:storage, C:tick, C:transport |
+| `core/runtime/tests/safe-mode.device.test.ts` | C:boot, C:layout, C:storage |
+| `core/runtime/tests/samples-live.device.test.ts` | C:storage, S:samples |
+| `core/runtime/tests/samples-store-live.device.test.ts` | C:storage, S:samples |
+| `core/runtime/tests/service-commands/service-commands.device.test.ts` | C:transport |
+| `core/runtime/tests/settings/settings-api.device.test.ts` | C:state, C:storage |
+| `core/runtime/tests/settings/settings-cards.device.test.ts` | C:boot, C:state, C:storage |
+| `core/runtime/tests/settings/settings-copies.device.test.ts` | C:boot, C:state, C:storage |
+| `core/runtime/tests/settings/settings.device.test.ts` | C:boot, C:state, C:storage |
+| `core/runtime/tests/storage/storage.device.test.ts` | C:storage |
+| `core/runtime/tests/store-format.device.test.ts` | C:loading, C:storage |
+| `core/runtime/tests/transfer-live.device.test.ts` | C:storage, C:transport |
+| `core/runtime/tests/upload-depth.device.test.ts` | C:transport |
+| `core/runtime/tests/upload-faults.device.test.ts` | C:layout, C:storage, C:transport |
+| `core/runtime/tests/upload.device.test.ts` | C:storage, C:transport |
+| `fx/freqshift/tests/freqshift.device.test.ts` | S:fx |
+| `machines/analog/tests/equiv.device.test.ts` | C:dsp, S:machines |
+| `machines/bd/tests/equiv.device.test.ts` | C:dsp, S:machines |
+| `machines/pd/tests/equiv.device.test.ts` | C:dsp, S:machines |
+| `machines/pluck/tests/equiv.device.test.ts` | C:dsp, S:machines |
+| `machines/shot/tests/shot-dn2-audio.device.test.ts` | C:dsp, S:machines, S:samples |
+| `machines/shot/tests/shot-dn2-lease.device.test.ts` | S:machines, S:samples |
+| `machines/shot/tests/shot-dn2-link.device.test.ts` | S:fx, S:machines, S:samples |
+| `machines/shot/tests/shot-dn2-pool.device.test.ts` | S:machines, S:samples |
+| `machines/shot/tests/shot-dn2-supersede.device.test.ts` | M:digikit/remote, S:machines, S:samples |
+| `machines/shot/tests/shot-dt2.device.test.ts` | S:machines, S:samples |
+| `machines/shot/tests/shot-picker.device.test.ts` | S:machines, S:samples |
+| `machines/tb303/tests/tb303.device.test.ts` | S:machines |
+| `tests/fixtures/modules/native-page/tests/native-page.device.test.ts` | A:core/ui |
+| `tests/fixtures/modules/ui-demo/tests/zero/ui.device.test.ts` | A:core/ui |
+| `tests/regression/emulator/reply-inflight.test.ts` | C:transport |
+| `tests/regression/emulator/sharc-semantics.test.ts` | C:dsp, M:digikit/probe |
+| `tools/bootscreen/tests/bootscreen-fault.device.test.ts` | C:boot, M:tools/bootscreen |
+| `tools/bootscreen/tests/bootscreen-safe.device.test.ts` | C:boot, M:tools/bootscreen |
+| `tools/bootscreen/tests/bootscreen.device.test.ts` | C:boot, M:tools/bootscreen |
+| `tools/debug/tests/debug-module.device.test.ts` | M:digikit/debug |
+| `tools/probe/tests/sharc-probe.device.test.ts` | C:dsp, M:digikit/probe |
+| `tools/remote/tests/remote-input.device.test.ts` | M:digikit/remote |
+| `tools/usb-fast/tests/usb-fast.device.test.ts` | C:storage, C:transport, M:digikit/usb-fast |
 ## SHARC need (T1d, first changes)
 
 The rows above lack a SHARC column; the full column comes with T1e. Rows checked so far:

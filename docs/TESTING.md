@@ -603,6 +603,15 @@ asked for. With `watch` ranges (pcs) it also returns the stores of instructions 
 (a frame halfword, the trig bit, a release byte). `sharc-rig --serve` keeps the core between lines: the first line is a request, every
 later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case block by block and stops at its first failure.
 
+The stock DSP image can be the base core. The setup line takes `image`, the loader stream of firmware section 7 as hex. The rig reads it with the boot crate's own `LoadedMemory::from_stream`
+(`packages/emulator/boot/src/dsp_stream.rs`, compiled into the rig by path: a dependency would change `Cargo.lock`, an input of the device tests) and loads it before `code`, so
+linked code and hooks go over the stock bytes. A call takes `stock_reads: [[loader_byte_address, count]]` and answers `stock`, the bytes of the image as loaded (hex, `null` when the stream does not write all of them).
+`breaks` on a call replaces the setup's breaks for that call, and `resume: true` continues from the pc the last call stopped at (the stacks and registers stay; `regs` are still set), as `Runner.run` does after a breakpoint. A zero-step
+resume reads DM without ending a stopped call. `specials: {"MSF": [mask, bits]}` sets an 80-bit multiplier register (hex strings) before a call and `read_specials` answers it after. An address like 0x2010f000 or 0x80100000 is a byte address: a read count steps by one byte, so a rig that reads words asks for each word.
+`packages/sharc-rig-kit/src/stock.ts` finds `out/sections/<id>/section_7_BLOB.bin`, checks its hash and gives the hex; a test that needs it skips with `stockSkipReason` (a describe title) when the firmware was not extracted.
+`StereoRig` (`stereo.ts`) is the DN2 1.12 stereo rig on it: `dsp-voice-dn2-stereo.s` linked beside the stock image, the pan hook patched in at 0x1c9af6, `StereoSession` for one core.
+The tests are `modules/core/adapters/dsp-voice/tests/dsp-stereo-*.rig.test.ts` (`pnpm nx:pilot run core/dsp-voice:test-rig`) and `modules/core/adapters/dsp-stereo-proof/tests/*.rig.test.ts` (`core/dsp-stereo-proof:test-rig`, over `openImageSession`).
+
 A call with `"profile": true` also returns `profile`, one `[pc, count]` row per pc it executed, in pc order (the counts add up to `instructions`). Without the option
 nothing is counted and the answer has no `profile` key. `MachineRig` takes `profile: true` and puts the rows in `MachineBlock.profile`. The rig is a producer for `wb profile report`
 ([INSTRUMENTATION.md](INSTRUMENTATION.md#profiles)), the profiler of the emulator and the device: `packages/sharc-rig-kit/src/profile.ts` writes the counts as a `dk.profile/1` (`rigProfile`, raw SHARC counters
@@ -937,6 +946,52 @@ Compiler depfiles provide separate evidence. For the `HERMETIC` `rust-tests`, ru
 dep-info files under `dist/cargo-tests` against the crate, its path dependencies and its extra inputs.
 Dep-info does not show run-time reads (`std::fs`), so a crate is `HERMETIC` only if its tests read no
 firmware, generated core or `out/` data.
+
+### Owner hashes (`patchkit owners`)
+
+T1e keys a device test on the bytes of the service or area that it proves, not on the whole runtime. The runtime is one object, so
+`modules/core/runtime/owners.toml` maps the module path prefixes of its items to tags (`S:fx`, `C:storage`, ...) and lists the `shared`
+set (the standard library, `dkrt_abi`, `dkrt_sdk`, the entry points, the platform and others). The longest prefix at a `::` boundary wins.
+A C symbol is shared. An anonymous constant (a string, a table) belongs to the owner of the items that use it when they have one owner,
+and is shared otherwise. The tags of a test are the `tags` of its `metadata.runtimeAcceptance` record (vocabulary and check:
+`tools/nx/acceptance-tags.mjs`; assignments: [ledger](plans/ledgers/device-test-audit.md#tags-t1e-step-1)). Device test keys do not use owner hashes yet (measured: [test-architecture](plans/test-architecture.md#t1e-service-scoped-selection)).
+
+`pnpm nx:pilot run patchkit:runtime-owners` (cached; depends on `patchkit:cli`) writes `dist/bytes/owners/`: one `<tag>.sha256` per owner of the runtime object and `shared.sha256` (from `patchkit owners`), `other-objects.sha256` (the other objects of the runtime module) and `layout.sha256` (the whole runtime object).
+
+```text
+$ patchkit owners modules/core/runtime/build/runtime.dko.json --out out/owners
+C:boot            22 items  cdc8cfe737173616
+C:diagnostics     40 items  f014789d84b40177
+C:dsp             28 items  0d59faae70bd3eaf
+C:loading         91 items  a9f5f478b8913ee2
+C:state           23 items  c23cfcc4d10c01aa
+C:storage        108 items  1d186a24994f2818
+C:tick             1 items  182559b316337832
+C:transport       37 items  16a32570dac04169
+S:fx              42 items  9c8a45d2b5ad5ba9
+S:lfo             23 items  7239c5a2fb8f71e4
+S:machines        40 items  a809be9c324d5eca
+S:samples         56 items  b8727e23ad0bcdc8
+shared           483 items  3bfc451eb35f79d7
+```
+
+The command writes `<tag>.sha256` for every tag and `shared.sha256` into `--out`. `--owners FILE` names another map (default
+`modules/core/runtime/owners.toml`). Each hash is over the sorted position-free signatures of the owner's items (the item signature of
+`patchkit objdiff`), so moving an item inside the object or inside its owner changes nothing; an inlined callee changes its caller's owner.
+A Rust item that no prefix matches is an error that lists the module paths (two components) with their item counts: add them to
+`owners.toml`; when unsure, add the path to `shared`.
+
+`objdiff --owners owners.toml OLD NEW` adds the owner of each differing item, so it shows why an owner hash changed:
+
+```text
+$ patchkit objdiff OLD.dko.json NEW.dko.json --owners modules/core/runtime/owners.toml
+differences: 1 (813 functions and 333 data objects match)
+differs   info::<RealCore>  [S:fx]
+            first difference at +0x3 (bytes); old, then new
+              +0x0000  598f         subq.l
+            - +0x0002  2ebc00000000 move.l  [reloc +0x2 fxpages_info+0]
+            + +0x0002  2e00         move.l
+```
 
 ### Daemon store
 

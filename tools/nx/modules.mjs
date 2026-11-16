@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { read, records, mergeTests, packDevices, isUploadable } from './module-manifests.mjs';
 import { buildObjectsTarget, packTarget, packAliasesTarget } from './module-build.mjs';
 import { deviceTargets, checkMergeTests, conformanceTarget, testOnlyNodes, regressionNode } from './device-tests.mjs';
+import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { rigTarget } from './rig-tests.mjs';
 import { testImportInputs } from './ts-imports.mjs';
 import { pythonImportInputs } from './py-imports.mjs';
@@ -34,6 +35,10 @@ export const createNodesV2 = [
         const parsed = read(ctx.workspaceRoot, f);
         return [parsed.module.id, { file: f, manifest: parsed.module, objects: parsed.object ?? [] }];
       }),
+    );
+    // id -> { category, root }, for the module tags of metadata.runtimeAcceptance (acceptance-tags.mjs).
+    const moduleInfo = new Map(
+      [...byId].map(([id, { file, manifest }]) => [id, { category: manifest.category, root: dirname(file) }]),
     );
     const coreManifests = [...byId.values()]
       .filter(({ manifest }) => manifest.category === 'core')
@@ -72,6 +77,7 @@ export const createNodesV2 = [
     ];
     for (const pf of projectFiles) {
       const dir = dirname(pf);
+      checkAcceptanceTags(dir, records(join(ctx.workspaceRoot, dir)), [], moduleInfo);
       for (const rec of records(join(ctx.workspaceRoot, dir))) {
         for (const id of rec.modules ?? []) packable.add(id);
         for (const source of Object.values(rec.aliases ?? {})) packable.add(source);
@@ -121,6 +127,7 @@ export const createNodesV2 = [
           },
         };
       checkMergeTests(ctx.workspaceRoot, root, deviceTests, false);
+      checkAcceptanceTags(root, recs, deviceTests, moduleInfo);
       if (shipped && deviceTests.length)
         Object.assign(
           targets,
@@ -137,7 +144,7 @@ export const createNodesV2 = [
       if (Object.keys(targets).length) project.targets = targets;
       return [f, { projects: { [root]: project } }];
     });
-    testOnlyNodes(ctx.workspaceRoot, testOwners, byId, coreBuilds, importInputs, pythonInputs, nodes);
+    testOnlyNodes(ctx.workspaceRoot, testOwners, byId, moduleInfo, coreBuilds, importInputs, pythonInputs, nodes);
     if (matched.includes('tests/regression/project.json')) nodes.push(regressionNode(ctx.workspaceRoot, importInputs));
     return nodes;
   },
