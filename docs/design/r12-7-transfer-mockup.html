@@ -73,15 +73,15 @@ progress::-webkit-progress-bar{background:var(--track)}progress::-webkit-progres
 </div></section>
 
 <section class="state"><h2>3. Refusal: service version does not match the device runtime</h2>
-<p>All checks ran before the first upload. Nothing was uploaded; the card is unchanged. The text names the module, the service and both versions.</p>
+<p>All checks ran before the first upload. pluck is named and skipped; freqshift installs. The text names the module, the service and both versions.</p>
 <div class="pane">
 <div class="colhead"><div style="display:flex;gap:8px;align-items:center"><input class="tick" type="checkbox" checked><h3>On your computer</h3><span class="selcount">2</span></div><span class="sp"></span><button class="act primary">Install</button></div>
-<div class="err"><div><b>pluck not installed.</b> It needs the machines service, and this workbench has no machines service for the runtime on your device (runtime 0.5.2, service built for 0.5.0). Nothing was uploaded. Update the workbench, or flash a matching runtime from the Firmware page.<br><span style="opacity:.85">freqshift is not affected, but nothing from this selection was uploaded either.</span></div></div>
+<div class="err"><div><b>pluck not installed.</b> It needs the machines service, and this workbench has no machines service for the runtime on your device (runtime 0.5.2, service built for 0.5.0). Nothing was uploaded for pluck. Update the workbench, or flash a matching runtime from the Firmware page.<br><span style="opacity:.85">freqshift was installed.</span></div><button class="act">Flash</button></div>
 <ul class="rows">
 <li class="sel"><input class="tick" type="checkbox" checked><span class="name"><span class="nm">pluck</span><span class="rtag">machine</span><span class="rtag warn" title="machines service built for 0.5.0, device runtime is 0.5.2">service mismatch</span></span><span class="vers">0.3.1</span><span class="size">18.2 KB</span></li>
 <li class="sel"><input class="tick" type="checkbox" checked><span class="name"><span class="nm">freqshift</span><span class="rtag">effect</span></span><span class="vers">0.2.0</span><span class="size">9.7 KB</span></li>
 </ul>
-<div class="bar"><div class="barline"><span class="msg">Install failed: no files uploaded</span></div><progress class="failed" max="100" value="0"></progress></div>
+<div class="bar"><div class="barline"><span class="msg">Installed freqshift. pluck was not installed (service mismatch)</span><span class="stats">1 of 2 files</span></div><progress max="100" value="100"></progress></div>
 </div></section>
 
 <section class="state"><h2>4. Uninstall: module and its now-unused service in one click</h2>

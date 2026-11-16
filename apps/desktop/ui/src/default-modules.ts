@@ -8,18 +8,27 @@ import {
   type DefaultProgress,
 } from '@digi/workbench-core/firmware/default-modules-core.ts';
 import type { FirmwareEnv } from '@digi/workbench-core/firmware/env.ts';
-import { install, restartDevice, type LibraryModule } from '@digi/workbench-core/modules/dktransfer.ts';
+import {
+  install,
+  restartDevice,
+  type InstallDeps,
+  type LibraryModule,
+} from '@digi/workbench-core/modules/dktransfer.ts';
 import type { TransferApp } from '@digi/workbench-core/transfer/app.ts';
 import { entries, waitForRuntime } from './default-modules-data';
 
-/** The operations of the install run over a session and the library of built modules. */
-export function sessionOps(s: DkSession, library: LibraryModule[]): DefaultOps {
+/** The operations of the install run over a session and the library of built modules; with `deps` each module comes with the services it needs. */
+export function sessionOps(s: DkSession, library: LibraryModule[], deps?: InstallDeps): DefaultOps {
   const by = new Map(library.map((m) => [m.id, m]));
   return {
     pathOf: (id) => by.get(id)?.path,
     waitForRuntime: () => waitForRuntime(s),
     async upload(id) {
-      const r = await install(s, [id], library);
+      const r = await install(s, [id], library, undefined, deps);
+      if (r.refused?.length)
+        throw new Error(
+          `not installed: it needs the ${r.refused[0]!.service} service and the workbench has no matching one (${r.refused[0]!.kind})`,
+        );
       return r.uploaded.includes(id) ? 'uploaded' : 'same';
     },
     loaded: async () => (await s.modules()).map((m) => m.name),
@@ -35,12 +44,13 @@ export function createDesktopDefaultModules(app: () => TransferApp): NonNullable
   return {
     entries,
     async install(where, device, ids, progress: (p: DefaultProgress) => void, opts) {
-      const { target, connection, loadLibrary } = app();
+      const { target, connection, loadLibrary, installDeps } = app();
       // after a flash the old session may be of the port before the restart
       if (where === 'device') target.resetSession();
       const s = await (where === 'emulator' ? target.emulatorSession() : target.session());
       const library = await loadLibrary(device);
-      return connection.asked(() => installDefaults(sessionOps(s, library), ids, progress, opts));
+      const deps = await installDeps(device);
+      return connection.asked(() => installDefaults(sessionOps(s, library, deps), ids, progress, opts));
     },
   };
 }

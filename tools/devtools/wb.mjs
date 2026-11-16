@@ -12,6 +12,8 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store ls [PREFIX]
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store put LOCAL REMOTE
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store rm REMOTE
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] transfer install ID... [--stock STOCK.syx]   (modules with the services they need; tools/devtools/wb_transfer.mjs)
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] transfer delete PATH...
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] log card [on|off|get [--out DIR]]
 //     node tools/devtools/wb.mjs [--format json|text] addrmap lookup ADDR... | module analyse DKM DKO | profile report FILE | profile record --seconds N --out FILE [--cpu cf|sharc]
 //
@@ -53,6 +55,7 @@ import { Sample, prepareUpload } from '../../packages/dk-session/src/dksample.ts
 import { openSamples, skipVerifyAfterBulk } from '../../packages/dk-session/src/samples.ts';
 import { createNodeHost } from '../../packages/workbench-core/src/node/node-host.ts';
 import { profCommand, profSpans } from './wb_prof.mjs';
+import { transferCommand } from './wb_transfer.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // the patchkit rule (tools/emulator/native_target.py): a worktree builds into its own target dir; no generated core is the "nogen" key
@@ -60,7 +63,7 @@ const targetRoot = existsSync(path.join(root, '.git', 'HEAD'))
   ? path.join(root, 'out/native/target')
   : path.join(root, 'dist/native-target');
 const usage =
-  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | samples rm FOLDER... | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE | log card [on|off|get [--out DIR]] | profile spans [--start|--stop|--reset] [--out FILE]';
+  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | samples rm FOLDER... | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE | transfer install ID... [--stock STOCK.syx] | transfer delete PATH... | log card [on|off|get [--out DIR]] | profile spans [--start|--stop|--reset] [--out FILE]';
 
 // options anywhere on the line; the rest are the command words
 const args = process.argv.slice(2);
@@ -90,6 +93,7 @@ for (let i = 0; i < args.length; i++) {
     a === '--bulk-bin' ||
     a === '--speed' ||
     a === '--out' ||
+    a === '--stock' ||
     [
       '--format',
       '--map',
@@ -553,6 +557,10 @@ if (SPANS) {
     else if (what === 'get') await cardLogGet(session);
     else if (what === undefined) console.log(cardLogText(await session.cardLog()));
     else fail(usage);
+  });
+} else if (cmd === 'transfer') {
+  await withSession(async (session) => {
+    status = await transferCommand({ host, session, sub, rest, opts, fail });
   });
 } else if (cmd === 'store' && sub === 'ls') {
   await withSession(async (session) => {

@@ -136,6 +136,30 @@ export function buildModuleData(root = repoRoot) {
   return { bundle: { ports, modules, devices } };
 }
 
+/** The texts of the `devices/fw/` declaration files (`subsystems.toml` at the top left out), in the order `patchkit::fwgen::fw_texts` reads them. */
+function fwTexts(root, dir = join(root, 'devices', 'fw'), top = true) {
+  const out = [];
+  const byName = (x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0);
+  for (const e of readdirSync(dir, { withFileTypes: true }).sort(byName)) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) out.push(...fwTexts(root, full, false));
+    else if (e.name.endsWith('.toml') && !(top && e.name === 'subsystems.toml')) out.push(readFileSync(full, 'utf8'));
+  }
+  return out;
+}
+
+/**
+ * `{ports, fw}`: what `pk_bind` reads besides the stock image to bind a service file (the Transfer page does it on the user's machine). It holds no module
+ * and no firmware: the ports are the hashes and hook sites, `fw` the argument plan of each hook.
+ */
+export function buildBindBundle(root = repoRoot) {
+  const ports = readdirSync(join(root, 'devices', 'ports'))
+    .filter((f) => f.endsWith('.toml'))
+    .sort()
+    .map((f) => readFileSync(join(root, 'devices', 'ports', f), 'utf8'));
+  return { ports, fw: fwTexts(root) };
+}
+
 const SOURCE_MAX = 256 * 1024;
 
 /** The files of a module that the site shows: module.toml, README.md and src/** (text only), relative to the module, sorted. */
@@ -232,7 +256,23 @@ export function shipModules(out, root = repoRoot) {
       source: files,
     });
   }
-  const index = { modules };
+  // the unbound .dks services (dist/modules/<dev>/*.dks): the Transfer page binds them to the user's firmware
+  const services = {};
+  const servicesRoot = join(root, 'dist', 'modules');
+  if (existsSync(servicesRoot)) {
+    for (const dev of readdirSync(servicesRoot, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+      const names = readdirSync(join(servicesRoot, dev.name))
+        .filter((f) => f.endsWith('.dks'))
+        .sort();
+      for (const name of names) {
+        const bytes = readFileSync(join(servicesRoot, dev.name, name));
+        mkdirSync(join(out, dev.name), { recursive: true });
+        writeFileSync(join(out, dev.name, name), bytes);
+        (services[dev.name] ??= []).push({ file: `${dev.name}/${name}`, size: bytes.length, sha256: sha256(bytes) });
+      }
+    }
+  }
+  const index = { modules, services };
   writeFileSync(join(out, 'index.json'), JSON.stringify(index, null, 1));
   return index;
 }
@@ -295,6 +335,7 @@ if (
   const { bundle } = buildModuleData();
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'bundle.json'), JSON.stringify(bundle));
+  writeFileSync(join(out, 'bind.json'), JSON.stringify(buildBindBundle()));
   const index = shipModules(out);
   console.log(`shipped: ${index.modules.map((m) => `${m.id} (${Object.keys(m.devices).join(',')})`).join(', ')}`);
   console.log(

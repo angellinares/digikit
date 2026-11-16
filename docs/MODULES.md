@@ -313,6 +313,19 @@ Who owns what: the SDK has no device code. Adapters and device profiles carry th
 | Compact binary `.dkm` with sha256 | small, fast to check | JSON object files |
 | Services separate from the runtime (planned) | small runtime; a test depends only on the services it loads | one large runtime |
 
+## Install with services from the command line
+
+`wb transfer` runs the Transfer pane's install and delete through the same TypeScript (`packages/workbench-core/src/modules/dktransfer.ts`), over the NodeHost. It needs the `dkmidi` bridge (`mise run dkmidi:build`), `apps/web/public/patchkit.wasm` and `apps/web/public/modules/bind.json` (`mise run wasm:patchkit`, `node apps/web/scripts/gen-modules.mjs`), and the packed modules and services in `out/modules/<device>/` and `dist/modules/<device>/`.
+
+```text
+node tools/devtools/wb.mjs [--port SUB] transfer install ID... [--stock STOCK.syx] [--format text]
+node tools/devtools/wb.mjs [--port SUB] transfer delete PATH...
+```
+
+`install` resolves the services each module needs (transitively), binds each service that hooks the firmware to `--stock`, uploads the services in dependency order and then the modules, and skips files whose hash is on the card. A module whose service cannot be resolved or bound is named and skipped; the others install. `delete` takes the services that no remaining module needs along with the deleted modules, and keeps the others. Output: one JSON event per line, or the pane's text with `--format text`.
+
+Output of a run (filled in when run on a device): _to be added_.
+
 ## 11. Where to go next
 
 - Write a module: [MODULE-AUTHORING.md](MODULE-AUTHORING.md).

@@ -13,6 +13,8 @@ import {
   LocalPane,
   DevicePane,
   SelectAll,
+  ServiceSubRow,
+  WithLine,
   createConfirm,
   DeleteButton,
   writing,
@@ -34,7 +36,11 @@ import {
   deletePaths,
   deviceTags,
   eventText,
+  fitLine,
   installModules,
+  installServices,
+  installsWithLine,
+  serviceRefusalText,
   localTags,
   tickedFit,
   tickedLoad,
@@ -49,7 +55,8 @@ import './target-select.css';
 
 const BROWSE_NAMES: Record<string, string> = { dt2: 'Digitakt II', dn2: 'Digitone II' };
 
-export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
+/** `onFlash`: starts the one-click Flash flow (the host page gives it; without it the refusal box has no Flash button). */
+export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void }): JSX.Element {
   const { busy, run, setError } = props.ctx;
   const app = useTransferApp();
   const { env } = app;
@@ -99,11 +106,13 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
       const v = lastView();
       if (!v) return;
       const modules = installModules(v, ticks());
+      const services = installServices(v, ticks());
       setProgress(
         startProgress(
           modules,
           false,
           Object.fromEntries(v.modules.filter((r) => r.id).map((r) => [r.id as string, r.file_size])),
+          services,
         ),
       );
       await job(
@@ -205,6 +214,13 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
     return st?.kind === 'uploading' ? { kind: 'uploading', sent: st.sent, bytes: st.bytes } : st;
   };
 
+  /** `service` or `module` while an install with services runs (the column is empty otherwise). */
+  const phase = (r: TransferRow): string | undefined => {
+    const steps = progress()?.modules ?? [];
+    if (!steps.some((m) => m.kind === 'service')) return undefined;
+    return steps.find((m) => m.path === r.path)?.kind ?? (r.path.endsWith('.dks') ? 'service' : 'module');
+  };
+
   // The module whose row was clicked. The tick stays install/delete only: a row whose module has a [files] table is selected by a click
   // without being ticked; its files area shows under the lists. A card-only row has the module id when its header is known (the header name).
   const [selectedId, setSelectedId] = createSignal<string>();
@@ -302,6 +318,35 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
         <Show when={lastView()} fallback={<p class="empty">{busy() ? `${busy()}…` : 'No module list yet.'}</p>}>
           {(v) => (
             <>
+              <Show when={v().refusals?.length}>
+                <div class="err refusals" role="alert">
+                  <div class="msg">
+                    <For each={v().refusals}>{(r) => <div>{serviceRefusalText(r)}</div>}</For>
+                  </div>
+                  <Show
+                    when={
+                      props.onFlash &&
+                      v().refusals?.some(
+                        (r) =>
+                          r.kind === 'fingerprint' ||
+                          r.kind === 'no-stock' ||
+                          (r.kind === 'version' && r.service === 'runtime'),
+                      )
+                    }
+                  >
+                    <button
+                      type="button"
+                      class="act small"
+                      disabled={!!busy()}
+                      title="Flash a runtime that matches these services (Firmware page)"
+                      onClick={() => props.onFlash?.()}
+                    >
+                      Flash
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+              <Show when={fitLine(v(), ticks())}>{(text) => <p class="fitline withservices">{text()}</p>}</Show>
               <Show when={tickedFit(v(), ticks())}>
                 {(f) => (
                   <p
@@ -327,34 +372,42 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                       <ul class="rows">
                         <For each={g.rows}>
                           {(r) => (
-                            <ListRow
-                              rowKey={rowKey(r)}
-                              selected={ticks().has(rowKey(r)) || (!!filesId(r) && selectedId() === filesId(r))}
-                              onSelect={
-                                r.id
-                                  ? (e) => {
-                                      const f = filesId(r);
-                                      if (f) setSelectedId(f);
-                                      else {
-                                        setSelectedId(undefined);
-                                        lsel.click(rowKey(r), e);
+                            <>
+                              <ListRow
+                                rowKey={rowKey(r)}
+                                selected={ticks().has(rowKey(r)) || (!!filesId(r) && selectedId() === filesId(r))}
+                                onSelect={
+                                  r.id
+                                    ? (e) => {
+                                        const f = filesId(r);
+                                        if (f) setSelectedId(f);
+                                        else {
+                                          setSelectedId(undefined);
+                                          lsel.click(rowKey(r), e);
+                                        }
                                       }
-                                    }
-                                  : undefined
-                              }
-                              check={{
-                                label: `Install ${label(r)}`,
-                                checked: ticks().has(rowKey(r)),
-                                disabled: writing(busy()),
-                                onChange: () => lsel.tick(rowKey(r)),
-                              }}
-                              name={label(r)}
-                              title={r.id ?? r.path}
-                              tags={localTags(r)}
-                              version={r.version ?? ''}
-                              size={formatBytes(r.file_size)}
-                              action={sourceAction(r)}
-                            />
+                                    : undefined
+                                }
+                                check={{
+                                  label: `Install ${label(r)}`,
+                                  checked: ticks().has(rowKey(r)),
+                                  disabled: writing(busy()),
+                                  onChange: () => lsel.tick(rowKey(r)),
+                                }}
+                                name={label(r)}
+                                title={r.id ?? r.path}
+                                tags={localTags(r)}
+                                version={r.version ?? ''}
+                                size={formatBytes(r.file_size)}
+                                action={sourceAction(r)}
+                              />
+                              <For each={r.services ?? []}>
+                                {(s) => <ServiceSubRow service={s} selected={ticks().has(rowKey(r))} />}
+                              </For>
+                              <Show when={ticks().has(rowKey(r)) && installsWithLine(r)}>
+                                {(text) => <WithLine text={text()} />}
+                              </Show>
+                            </>
                           )}
                         </For>
                       </ul>
@@ -450,6 +503,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                       version={r.version ?? ''}
                       size={formatBytes(r.file_size)}
                       status={status(r)}
+                      phase={phase(r)}
                     />
                   )}
                 </For>

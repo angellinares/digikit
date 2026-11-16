@@ -28,7 +28,11 @@ export default function WebTransfer(): JSX.Element {
   return (
     <Show when={ready()}>
       <AppProvider app={web.app}>
-        <TransferPage />
+        <TransferPage
+          onFlash={() => {
+            location.href = `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}firmware/`;
+          }}
+        />
       </AppProvider>
     </Show>
   );

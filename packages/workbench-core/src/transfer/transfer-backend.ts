@@ -3,10 +3,18 @@
 // Nothing is built here and no process is started.
 import { DkNeeds, type NeedsLike } from '../modules/dkneeds';
 import { setFitReader } from '../modules/fit';
-import { fileHashHex, fmtVersion, storePath } from '@digi/dk-session';
+import { RUNTIME_SERVICE_NAMES, fileHashHex, fmtVersion, storePath } from '@digi/dk-session';
 import type { DkInfoFull, DkSession } from '@digi/dk-session';
 import { NoRuntimeError, isCancelled, isTimeout } from '../modules/backend';
 import {
+  nameHash,
+  serviceFileOf,
+  type RuntimeIdentity,
+  type ServiceBinder,
+  type ServiceFile,
+} from '../modules/services';
+import {
+  SERVICE_EXT,
   buildView,
   deleteFiles,
   install,
@@ -19,6 +27,8 @@ import {
   readStoreFile,
   removeModuleFile,
   restartDevice,
+  refreshServices,
+  type InstallDeps,
   type LibraryModule,
   type TransferEvent,
   type TransferView,
@@ -35,6 +45,19 @@ export interface BackendDeps {
   connection: Pick<ConnectionApp, 'asked' | 'noteConnection'>;
   /** Makes the needs reader from the app's wasm (default: patchkit.wasm in `DkNeeds`); a test gives a stub. */
   needs?: (wasm: WasmSource) => Promise<NeedsLike>;
+  /**
+   * Service seams (R12-7). The services come from the library: `env.library.scan` also lists `.dks` files (unbound), which the backend splits off by
+   * their extension. Install and the view are service-aware only when the library has `.dks` files and `binder` and `firmwareHash` are given;
+   * without them the backend behaves as before.
+   */
+  /** Binds an unbound `.dks` to the user's firmware (the wasm `pk_bind`, `createServiceBinder`); a test gives a fake. */
+  binder?: ServiceBinder;
+  /** The hash of the user's stock firmware for the device id (the key of a bound file); null when none is kept (a module that needs a service is then refused). */
+  firmwareHash?: (device: string) => Promise<string | null>;
+  /** The runtime of the device as the service check sees it (default: its version and the INFO `svc_abi`; a runtime that reports none is not checked). */
+  runtimeIdentity?: (info: DkInfoFull) => RuntimeIdentity;
+  /** The name hashes of the services the runtime provides itself (default: the generated `RUNTIME_SERVICE_NAMES`). */
+  runtimeServices?: Set<number>;
 }
 
 export function createTransferBackend({
@@ -42,6 +65,10 @@ export function createTransferBackend({
   target: targetApp,
   connection,
   needs: makeNeeds = async (wasm) => DkNeeds.create(await wasm.bytes('patchkit.wasm')),
+  binder,
+  firmwareHash,
+  runtimeIdentity = (info) => ({ version: info.runtime, fingerprint: info.svc_abi }),
+  runtimeServices = new Set(RUNTIME_SERVICE_NAMES.map(nameHash)),
 }: BackendDeps) {
   const { target, checkRuntime, session: running } = targetApp;
   const { asked, noteConnection } = connection;
@@ -66,10 +93,45 @@ export function createTransferBackend({
     const { library } = env;
     const out: LibraryModule[] = [];
     for (const f of await library.scan(device)) {
+      if (f.path.endsWith(SERVICE_EXT)) continue;
       const m = await libraryModule(await library.read(device, f.path), (b) => reader.of(b));
       if (m) out.push(m);
     }
     return out;
+  }
+
+  /** Bound `.dks` files by firmware hash and unbound hash, kept for the life of the backend. */
+  const bound = new Map<string, Uint8Array>();
+
+  /** The unbound `.dks` files of the library for the device (those that are not a service file are left out). */
+  async function loadServices(device: string): Promise<ServiceFile[]> {
+    const { library } = env;
+    const out: ServiceFile[] = [];
+    for (const f of await library.scan(device)) {
+      if (!f.path.endsWith(SERVICE_EXT)) continue;
+      const bytes = await library.read(device, f.path);
+      const stem = (f.path.split('/').pop() ?? f.path).slice(0, -SERVICE_EXT.length);
+      const file = serviceFileOf(stem, bytes, fileHashHex(bytes));
+      if (file) out.push(file);
+    }
+    return out;
+  }
+
+  /** The service-aware install and view inputs for the device, or none when the library has no service or no binder is given. */
+  async function installDeps(device: string): Promise<InstallDeps | undefined> {
+    if (!binder || !firmwareHash) return undefined;
+    const services = await loadServices(device);
+    if (services.length === 0) return undefined;
+    const reader = await needs();
+    return {
+      services,
+      binder,
+      firmwareHash: await firmwareHash(device),
+      runtimeIdentity,
+      runtimeServices,
+      cache: bound,
+      needsOf: (b) => reader.of(b),
+    };
   }
 
   /** The OS version per target, asked once per page (also when it fails: the stock firmware answers SoftwareVersion, a device that does not leaves it out). */
@@ -152,18 +214,41 @@ export function createTransferBackend({
       const { s, info } = remote.value;
       if (local.status === 'rejected' && info.port === device) throw local.reason;
       const library = local.status === 'fulfilled' && info.port === device ? local.value : await loadLibrary(info.port);
-      return asked(() => buildView(s, library));
+      const deps = await installDeps(info.port);
+      return asked(() => buildView(s, library, deps));
     },
     /** The library alone, for a device id: nothing is read from a device. */
     async listLibrary(device: string): Promise<TransferView> {
       const library = await loadLibrary(device);
       return libraryView(device, library);
     },
-    /** Upload and VERIFY the modules (the same file hash is not sent again). The device's selection is not touched. */
+    /** Upload and VERIFY the modules (the same file hash is not sent again), with the services they need when the library has them. The device's selection is not touched. */
     async install(modules: string[], onEvent: (e: TransferEvent) => void): Promise<void> {
       const { s, info } = await opened();
       const library = await loadLibrary(info.port);
-      await asked(() => install(s, modules, library, onEvent));
+      const deps = await installDeps(info.port);
+      await asked(() => install(s, modules, library, onEvent, deps));
+    },
+    /**
+     * The Flash job's share, once the flashed runtime answers (it may still be booting: asked again for about a minute): the services the modules on
+     * the card need are bound again and replaced, the unused ones deleted (`refreshServices`). Nothing happens without services in the library.
+     */
+    async refreshServices(device: string, onEvent: (e: TransferEvent) => void): Promise<string[]> {
+      const deps = await installDeps(device);
+      if (!deps) return [];
+      let last: unknown;
+      for (let i = 0; i < 30; i++) {
+        try {
+          const { s, info } = await opened();
+          const library = await loadLibrary(info.port);
+          return await asked(() => refreshServices(s, deps, library, onEvent));
+        } catch (e) {
+          if (isCancelled(e)) throw e;
+          last = e;
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      throw last;
     },
     /** DELETE the files from the card (one request each, confirmed with LIST). The device's selection is not touched. */
     async remove(paths: string[], onEvent: (e: TransferEvent) => void): Promise<void> {
@@ -224,6 +309,6 @@ export function createTransferBackend({
     },
   };
 
-  return { transferBackend, loadLibrary };
+  return { transferBackend, loadLibrary, installDeps };
 }
 export type TransferBackendApp = ReturnType<typeof createTransferBackend>;

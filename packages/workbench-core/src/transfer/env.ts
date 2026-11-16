@@ -19,7 +19,10 @@ export interface LibraryFile {
 
 /** The modules the app can offer for install, per device id (`dt2`, `dn2`). */
 export interface TransferLibrary {
-  /** The .dkm files of the device; read again at each call (a rebuild shows up at the next read). */
+  /**
+   * The .dkm files of the device, and its unbound .dks service files (the backend splits them by extension: no separate service source);
+   * read again at each call (a rebuild shows up at the next read).
+   */
   scan(device: string): Promise<LibraryFile[]>;
   /** The bytes of one file of `scan`. */
   read(device: string, path: string): Promise<Uint8Array>;
@@ -113,6 +116,11 @@ export interface TransferEnv {
   library: TransferLibrary;
   /** The wasm files of the app (`patchkit.wasm`: its `pk_needs` tells what a .dkm takes of the device). */
   wasm: WasmSource;
+  /**
+   * The bind bundle (`{ports, fw}` as JSON: `modules/bind.json`, no modules and no firmware): what `pk_bind` needs besides the stock image to bind a
+   * service file. Without it the app installs no services.
+   */
+  bindBundle?(): Promise<Uint8Array>;
   /** The name of the device with this id (`dt2`: "Digitakt II"). */
   deviceName(device: string): Promise<string>;
   targets: TransferTargets;

@@ -23,6 +23,8 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
       return (await bytes(`/__lib/read?device=${device}&path=${encodeURIComponent(String(args?.path))}`)) as T;
     case 'patchkit_wasm':
       return (await bytes('/__wasm/patchkit')) as T;
+    case 'bind_bundle':
+      return new TextEncoder().encode('{"ports":[],"fw":[]}').buffer as T;
     case 'midi_ports':
       return [] as T;
     case 'card_open_folder':

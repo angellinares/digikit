@@ -180,7 +180,7 @@ to. `displaced` is empty for mode `replace`.
 Bind refuses, with an error and no output file:
 
 - The input is not a service (role is not service).
-- The service declares no hooks, or more than 24.
+- The service declares more than 24 hooks. A service that declares none (lfo) is returned unchanged: its bound file is its built file.
 - The service is bound already (it has `BIND` items).
 - The firmware is not a stock image with a port, or a hook name is not declared on that firmware.
 - A hook handler offset is outside the image.

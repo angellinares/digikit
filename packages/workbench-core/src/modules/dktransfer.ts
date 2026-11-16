@@ -21,6 +21,19 @@ import {
   type ModuleStateName,
 } from '@digi/dk-session';
 import { fitsNow, type Caps, type Needs } from './fit.ts';
+import {
+  planDelete,
+  readNeeds,
+  readProvides,
+  resolveServices,
+  type Need,
+  type ResolvedServices,
+  type RuntimeIdentity,
+  type ServiceBinder,
+  type ServiceFile,
+  type ServiceRef,
+  type ServiceRefusal,
+} from './services.ts';
 import type { DkEntry, DkInfoFull } from '@digi/dk-session';
 
 export type Group = 'Machines' | 'Effects' | 'Tools' | 'Services';
@@ -48,6 +61,12 @@ export interface TransferRow {
   fits?: boolean | null;
   warnings?: string[];
   known?: boolean;
+  /** The services a library module needs (read-only sub rows), with their state on the card. Set only when the view was built with `InstallDeps`. */
+  services?: ServiceRef[];
+  /** For a `.dks` file on the card: the files on the card that hard-need it. */
+  needed_by?: string[];
+  /** Why the module cannot install with the services of this workbench and the runtime of the device. */
+  service_refusal?: ServiceRefusal;
 }
 
 export interface TransferView {
@@ -59,10 +78,37 @@ export interface TransferView {
   capacity?: Caps | null;
   modules: TransferRow[];
   card_only: TransferRow[];
+  /** The service refusals of the library modules (also on their rows); set only when the view was built with `InstallDeps`. */
+  refusals?: ServiceRefusal[];
 }
 
+/** What a service-aware install, view and delete need (`install(..., deps)`): the workbench's `.dks` files and the seams to bind them to the user's firmware. */
+export interface InstallDeps {
+  /** The unbound `.dks` files of the workbench. */
+  services: ServiceFile[];
+  binder: ServiceBinder;
+  /** The hash of the user's stock firmware: with the unbound file hash it keys a bound file. null: none is kept, so no file can be bound and a module that needs a service is refused (`no-stock`). */
+  firmwareHash: string | null;
+  runtimeIdentity: (info: DkInfoFull) => RuntimeIdentity;
+  /** The name hashes of the services the runtime itself provides (no `.dks` file). */
+  runtimeServices: Set<number>;
+  /** Bound files by firmware hash and unbound hash; the caller keeps it between calls (no cache: each call binds again). */
+  cache?: Map<string, Uint8Array>;
+  /** Infers the needs of a bound `.dks` (the same reader as `libraryModule`'s `needsOf`); without it a service row has no needs and adds nothing to the fit. */
+  needsOf?: (file: Uint8Array) => Needs | null;
+}
+
+/**
+ * The events of install and delete. `upload`, `skip`, `progress` and `verify` of a service carry `kind: 'service'` (absent: a module); a service-aware
+ * install also emits `{ event: 'refuse', refusal }` (a module that fails the service check), a delete emits `{ event: 'delete', path, why?: 'unused-service' }`
+ * and `{ event: 'keep', path, by }` (a `.dks` that a module on the card still needs).
+ */
 export interface TransferEvent {
   event: string;
+  /** Of a `refuse` event. */
+  refusal?: ServiceRefusal;
+  /** Of a `keep` event: the files on the card that need the service. */
+  by?: string[];
   [k: string]: unknown;
 }
 export type Emit = (e: TransferEvent) => void;
@@ -194,7 +240,57 @@ export function fitWarnings(row: { loaded: boolean; needs?: Needs }, cap: Caps |
   ];
 }
 
-/** The list from its parts: the library, the card's LIST, the names MODULES reports loaded, CAPACITY (or null), and the header bytes of the card files. */
+/** What the list shows of services: the workbench's `.dks` files bound for the user's firmware, and the facts read from the card files. */
+export interface ServiceView {
+  services: { file: ServiceFile; bound: { size: number; hash: string }; needs?: Needs | null }[];
+  /** The needs of each `.dkm` and `.dks` on the card, by path. */
+  card: { path: string; needs: Need[] }[];
+  /** The provided service name hash of each `.dks` on the card, by path. */
+  provides: Record<string, number>;
+}
+
+/** The other files on the card that hard-need the service in the `.dks` file at `path`. */
+function neededBy(sv: ServiceView, path: string): string[] {
+  const hash = sv.provides[path];
+  return sv.card.filter((c) => c.path !== path && c.needs.some((n) => n.hard && n.hash32 === hash)).map((c) => c.path);
+}
+
+/** The services a module needs (hard needs, and the hard needs of those services), dependencies first, among the workbench's files. */
+function serviceRefs(
+  m: LibraryModule,
+  sv: ServiceView,
+  card: Map<string, { size: number; hash: string }>,
+): ServiceRef[] {
+  const byHash = new Map(sv.services.map((x) => [x.file.hash32, x]));
+  const out: ServiceRef[] = [];
+  const seen = new Set<number>();
+  const visit = (needs: Need[]): void => {
+    for (const n of needs) {
+      const x = n.hard ? byHash.get(n.hash32) : undefined;
+      if (!x || seen.has(n.hash32)) continue;
+      seen.add(n.hash32);
+      visit(x.file.needs);
+      const there = card.get(servicePath(x.file.stem));
+      out.push({
+        stem: x.file.stem,
+        label: x.file.label,
+        version: x.file.version,
+        state: !there
+          ? 'not on device'
+          : there.size === x.bound.size && there.hash === x.bound.hash
+            ? 'on device'
+            : 'differs',
+        size: x.bound.size,
+        ...(x.needs ? { needs: x.needs } : {}),
+      });
+    }
+  };
+  visit(readNeeds(m.bytes));
+  return out;
+}
+
+/** The list from its parts: the library, the card's LIST, the names MODULES reports loaded, CAPACITY (or null), and the header bytes of the card files.
+ * With `sv` the library rows list their services and the card's `.dks` rows say which files need them. */
 export function mergeView(
   library: LibraryModule[],
   card: { path: string; size: number; hash: string }[],
@@ -202,6 +298,7 @@ export function mergeView(
   cap: Caps | null,
   headers: Record<string, Uint8Array | null>,
   states: ModuleState[] = [],
+  sv?: ServiceView,
 ): Pick<TransferView, 'modules' | 'card_only'> {
   /** The refusal or load failure of the file at `path` (the runtime keeps the file name, 27 characters at most). */
   const whyNot = (path: string, isLoaded: boolean): { not_loaded?: string; load_state?: ModuleStateName } => {
@@ -233,6 +330,10 @@ export function mergeView(
     };
     row.warnings = fitWarnings(row, cap);
     row.fits = cap === null ? null : row.warnings.length === 0;
+    if (sv) {
+      const refs = serviceRefs(m, sv, onCard);
+      if (refs.length) row.services = refs;
+    }
     return row;
   });
   modules.sort(
@@ -259,6 +360,9 @@ export function mergeView(
       ...whyNot(c.path, h ? loaded.includes(h.name) : false),
       // a file without the header table of this runtime was built for an older one
       ...(h && !hasHeaderTable(headers[c.path]!) ? { warnings: [OLDER_RUNTIME_TEXT] } : {}),
+      ...(sv && c.path.endsWith(SERVICE_EXT) && sv.provides[c.path] !== undefined
+        ? { needed_by: neededBy(sv, c.path) }
+        : {}),
     });
   }
   return { modules, card_only };
@@ -286,6 +390,19 @@ export const MODULES_FOLDER = 'modules/';
 export async function listModules(s: DkSession, info: DkInfoFull): Promise<DkEntry[]> {
   if (hasCap(info, 'FOLDERS')) return s.list(MODULES_FOLDER);
   return (await s.list()).filter((e) => e.path.startsWith(MODULES_FOLDER));
+}
+
+/** The store folder of the services and their file extension. */
+export const SERVICES_FOLDER = 'services/';
+export const SERVICE_EXT = '.dks';
+
+/** The store path of a service: `services/<stem>.dks`. */
+export const servicePath = (stem: string): string => `${SERVICES_FOLDER}${stem}${SERVICE_EXT}`;
+
+/** The service files of the store (the entries under `services/`): by prefix when the runtime has FOLDERS, else all entries, filtered here. */
+export async function listServices(s: DkSession, info: DkInfoFull): Promise<DkEntry[]> {
+  if (hasCap(info, 'FOLDERS')) return s.list(SERVICES_FOLDER);
+  return (await s.list()).filter((e) => e.path.startsWith(SERVICES_FOLDER));
 }
 
 /** The store folder of a module's own files (sdk/include/dk/platform/data.h): `data/<module id>/`. */
@@ -358,11 +475,84 @@ export async function readStoreFile(s: DkSession, path: string, piece = 768): Pr
   return out;
 }
 
-/** The merged view for the device behind `s`. */
-export async function buildView(s: DkSession, library: LibraryModule[]): Promise<TransferView> {
+/** One bound file of a service: bound once per firmware hash and unbound hash (`deps.cache`). Every service goes through the binder; the binder returns a
+ * service that hooks no firmware site (lfo) as built. Without a kept stock image (`firmwareHash` null) the binder gets an empty hash. */
+async function bindService(deps: InstallDeps, f: ServiceFile): Promise<Uint8Array> {
+  const fw = deps.firmwareHash ?? '';
+  const key = `${fw}:${f.hash}`;
+  const hit = deps.cache?.get(key);
+  if (hit) return hit;
+  const bound = await deps.binder.bind(f.bytes, fw);
+  deps.cache?.set(key, bound);
+  return bound;
+}
+
+/** The bound file, or null when the binder cannot make it (no kept stock image, or one patchkit cannot bind to). */
+async function tryBind(deps: InstallDeps, f: ServiceFile): Promise<Uint8Array | null> {
+  try {
+    return await bindService(deps, f);
+  } catch {
+    return null;
+  }
+}
+
+/** Each module whose services cannot all be bound is refused (`no-stock`) and adds no service; the other modules go on. */
+async function refuseUnbound(deps: InstallDeps, plan: ResolvedServices): Promise<ResolvedServices> {
+  const failed = new Set<ServiceFile>();
+  for (const f of plan.order) if ((await tryBind(deps, f)) === null) failed.add(f);
+  if (failed.size === 0) return plan;
+  const refused = [...plan.refused];
+  const byModule = new Map<string, ServiceFile[]>();
+  for (const [module, files] of plan.byModule) {
+    const bad = files.find((f) => failed.has(f));
+    if (bad) refused.push({ module, service: bad.stem, kind: 'no-stock' });
+    else byModule.set(module, files);
+  }
+  const kept = new Set([...byModule.values()].flat());
+  return { byModule, order: plan.order.filter((f) => kept.has(f)), refused };
+}
+
+/**
+ * The needs of each `.dkm` and `.dks` on the card and the service each `.dks` provides, read from the header and header table of the files (READ).
+ * A library module with the same size and hash is read from the library. `known` holds header buffers already read.
+ */
+async function cardFacts(
+  s: DkSession,
+  card: DkEntry[],
+  library: LibraryModule[],
+  known: Record<string, Uint8Array | null> = {},
+): Promise<{ needs: { path: string; needs: Need[] }[]; provides: Record<string, number>; unread: number }> {
+  const mine = new Map(library.map((m) => [m.path, m]));
+  const needs: { path: string; needs: Need[] }[] = [];
+  const provides: Record<string, number> = {};
+  let unread = 0;
+  for (const c of card) {
+    const isService = c.path.endsWith(SERVICE_EXT);
+    if (!isService && !c.path.endsWith('.dkm')) continue;
+    const m = mine.get(c.path);
+    let bytes: Uint8Array | null | undefined =
+      m && m.file_size === c.size && m.hash === c.hash ? m.bytes : known[c.path];
+    if (bytes === undefined)
+      bytes = await headerWithKeys(s, c.path).catch((e) => {
+        if (e instanceof DkError && e.kind === 'device') return null;
+        throw e;
+      });
+    if (!bytes) {
+      unread++;
+      continue;
+    }
+    needs.push({ path: c.path, needs: readNeeds(bytes) });
+    const p = isService ? readProvides(bytes) : null;
+    if (p) provides[c.path] = p.hash32;
+  }
+  return { needs, provides, unread };
+}
+
+/** The merged view for the device behind `s`. With `deps` the library rows list their services, the card's `.dks` rows say what needs them, and a module the services cannot serve carries its refusal. */
+export async function buildView(s: DkSession, library: LibraryModule[], deps?: InstallDeps): Promise<TransferView> {
   const info = await s.info();
   requireRuntime(info);
-  const card = await listModules(s, info);
+  const card = [...(await listModules(s, info)), ...(await listServices(s, info))];
   const loaded = hasCap(info, 'MODULES') ? (await s.modules()).map((m) => m.name) : [];
   const cap = hasCap(info, 'CAPACITY') ? await s.capacity() : null;
   const states = hasCap(info, 'LOADS') ? await s.loadStates() : [];
@@ -377,13 +567,42 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
       });
     }
   }
+  let sv: ServiceView | undefined;
+  let refused: ServiceRefusal[] = [];
+  if (deps) {
+    // a service the binder cannot make shows its unbound file (its modules are refused below)
+    const bound: ServiceView['services'] = [];
+    for (const file of deps.services) {
+      const b = (await tryBind(deps, file)) ?? file.bytes;
+      bound.push({ file, bound: { size: b.length, hash: fileHashHex(b) }, needs: deps.needsOf?.(b) });
+    }
+    const facts = hasCap(info, 'READ') ? await cardFacts(s, card, library, headers) : { needs: [], provides: {} };
+    sv = { services: bound, card: facts.needs, provides: facts.provides };
+    refused = (
+      await refuseUnbound(
+        deps,
+        resolveServices(
+          library.map((m) => ({ id: m.id, needs: readNeeds(m.bytes) })),
+          deps.services,
+          deps.runtimeIdentity(info),
+          deps.runtimeServices,
+        ),
+      )
+    ).refused;
+  }
+  const merged = mergeView(library, card, loaded, cap, headers, states, sv);
+  for (const r of refused) {
+    const row = merged.modules.find((m) => m.id === r.module);
+    if (row) row.service_refusal = r;
+  }
   return {
     device: info.port,
     runtime: fmtVersion(info.runtime),
     free_bytes: storeFree(info, cap).free,
     loaded,
     capacity: cap,
-    ...mergeView(library, card, loaded, cap, headers, states),
+    ...merged,
+    ...(deps ? { refusals: refused } : {}),
   };
 }
 
@@ -406,13 +625,18 @@ async function headerWithKeys(s: DkSession, path: string): Promise<Uint8Array> {
 export const PROGRESS_EVENTS = 10;
 
 /** The progress callback of one file's upload: emits `progress` when a tenth of the file went since the last event, and at 100 %. */
-export function uploadProgress(emit: Emit, id: string, total: number): (sent: number, size: number) => void {
+export function uploadProgress(
+  emit: Emit,
+  id: string,
+  total: number,
+  kind?: 'service',
+): (sent: number, size: number) => void {
   let last = 0;
   const step = Math.max(1, Math.floor(total / PROGRESS_EVENTS));
   return (sent, size) => {
     if (sent >= size || sent - last >= step) {
       last = sent;
-      emit({ event: 'progress', id, sent, bytes: size });
+      emit({ event: 'progress', id, sent, bytes: size, ...(kind ? { kind } : {}) });
     }
   };
 }
@@ -420,13 +644,19 @@ export function uploadProgress(emit: Emit, id: string, total: number): (sent: nu
 /**
  * For each of `ids`, in order: upload unless the card has the same file hash (a `skip` event), then VERIFY (the device hashes the file from a
  * fresh read of the card; a mismatch is an error). Nothing else: the device's selection is not touched.
+ *
+ * With `deps` the install is service-aware: (1) each module's NEEDS are checked against the workbench's services and the runtime; a module that
+ * fails is named in a `refuse` event and left out, the others go on (when none is left, only the refusals are emitted); (2) each needed service
+ * is bound to the user's firmware and uploaded to `services/<stem>.dks` (the same bound bytes on the card are skipped) and verified, before any
+ * module is uploaded; (3) the modules as without `deps`; (4) a `.dks` on the card that no `.dkm` on the card hard-needs any more is deleted.
  */
 export async function install(
   s: DkSession,
   ids: string[],
   library: LibraryModule[],
   emit: Emit = () => {},
-): Promise<{ uploaded: string[]; selected: string[]; restarted: false }> {
+  deps?: InstallDeps,
+): Promise<{ uploaded: string[]; selected: string[]; restarted: false; refused?: ServiceRefusal[] }> {
   const info = await s.info();
   requireRuntime(info);
   const by = new Map(library.map((m) => [m.id, m]));
@@ -436,9 +666,56 @@ export async function install(
       error: `not a run-time module that packs for this device: ${missing.join(', ')}`,
       kind: 'request',
     });
-  emit({ event: 'start', device: info.port, modules: ids });
-  const have = new Map((await listModules(s, info)).map((c) => [c.path, c]));
   const canVerify = hasCap(info, 'VERIFY');
+  let order: ServiceFile[] = [];
+  let refused: ServiceRefusal[] = [];
+  if (deps) {
+    const plan = await refuseUnbound(
+      deps,
+      resolveServices(
+        ids.map((id) => ({ id, needs: readNeeds(by.get(id)!.bytes) })),
+        deps.services,
+        deps.runtimeIdentity(info),
+        deps.runtimeServices,
+      ),
+    );
+    refused = plan.refused;
+    for (const refusal of refused) emit({ event: 'refuse', refusal });
+    const bad = new Set(refused.map((r) => r.module));
+    ids = ids.filter((id) => !bad.has(id));
+    if (ids.length === 0) return { uploaded: [], selected: [], restarted: false, refused };
+    order = plan.order;
+  }
+  emit({ event: 'start', device: info.port, modules: ids });
+  if (deps && order.length) {
+    // bind every service first: a failure here uploads nothing
+    const bound = new Map<string, Uint8Array>();
+    for (const f of order) bound.set(f.stem, await bindService(deps, f));
+    const onCard = new Map((await listServices(s, info)).map((c) => [c.path, c]));
+    for (const f of order) {
+      const path = servicePath(f.stem);
+      const bytes = bound.get(f.stem)!;
+      const hash = fileHashHex(bytes);
+      emit({ event: 'upload', id: f.stem, kind: 'service', path, bytes: bytes.length });
+      const there = onCard.get(path);
+      if (there && there.size === bytes.length && there.hash === hash) {
+        emit({ event: 'skip', id: f.stem, kind: 'service', reason: 'same hash on the card' });
+      } else {
+        await s.put(path, bytes, uploadProgress(emit, f.stem, bytes.length, 'service'));
+      }
+      if (canVerify) {
+        const got = await s.verify(path);
+        const ok = got === hash;
+        emit({ event: 'verify', id: f.stem, kind: 'service', path, ok });
+        if (!ok)
+          throw new DkError({
+            error: `${path}: the device reads back hash ${got.slice(0, 8)}, expected ${hash.slice(0, 8)}: the card did not keep the file`,
+            kind: 'verify',
+          });
+      }
+    }
+  }
+  const have = new Map((await listModules(s, info)).map((c) => [c.path, c]));
   const uploaded: string[] = [];
   for (const id of ids) {
     const m = by.get(id)!;
@@ -462,11 +739,95 @@ export async function install(
         });
     }
   }
+  if (deps && canReadHeaders(info)) await removeUnusedServices(s, info, library, emit);
   emit({ event: 'done', restarted: false, selected: [] });
-  return { uploaded, selected: [], restarted: false };
+  return deps ? { uploaded, selected: [], restarted: false, refused } : { uploaded, selected: [], restarted: false };
 }
 
-/** DELETE each path (one request each), then LIST to confirm each is gone. A path that is not on the card is an error before anything is sent. */
+/**
+ * The Flash job's share (`firmware-state.ts`, after the runtime answers): each `.dks` on the card that the workbench has a file for is bound again and replaced when the card holds other bytes
+ * (a flashed runtime can carry another service ABI). A file the workbench has no service for, or cannot bind, stays; a failed upload or verify stops the run.
+ * Then each `.dks` that no module on the card needs is deleted. Returns the paths replaced.
+ */
+export async function refreshServices(
+  s: DkSession,
+  deps: InstallDeps,
+  library: LibraryModule[],
+  emit: Emit = () => {},
+): Promise<string[]> {
+  const info = await s.info();
+  requireRuntime(info);
+  const mine = new Map(deps.services.map((f) => [servicePath(f.stem), f]));
+  const replaced: string[] = [];
+  for (const c of await listServices(s, info)) {
+    const f = mine.get(c.path);
+    const bytes = f && (await tryBind(deps, f));
+    if (!f || !bytes) continue;
+    const hash = fileHashHex(bytes);
+    if (c.size === bytes.length && c.hash === hash) continue;
+    emit({ event: 'upload', id: f.stem, kind: 'service', path: c.path, bytes: bytes.length });
+    await s.put(c.path, bytes, uploadProgress(emit, f.stem, bytes.length, 'service'));
+    if (hasCap(info, 'VERIFY')) {
+      const got = await s.verify(c.path);
+      emit({ event: 'verify', id: f.stem, kind: 'service', path: c.path, ok: got === hash });
+      if (got !== hash)
+        throw new DkError({
+          error: `${c.path}: the device reads back hash ${got.slice(0, 8)}, expected ${hash.slice(0, 8)}: the card did not keep the file`,
+          kind: 'verify',
+        });
+    }
+    replaced.push(c.path);
+  }
+  // and the stale ones go: no module on the card needs them
+  if (canReadHeaders(info)) await removeUnusedServices(s, info, library, emit);
+  return replaced;
+}
+
+/** A `.dks` that no `.dkm` on the card hard-needs (directly or through another service) is not wanted any more: delete it. Nothing is deleted when a header cannot be read. */
+async function removeUnusedServices(
+  s: DkSession,
+  info: DkInfoFull,
+  library: LibraryModule[],
+  emit: Emit,
+): Promise<void> {
+  const card = [...(await listModules(s, info)), ...(await listServices(s, info))];
+  const facts = await cardFacts(s, card, library);
+  const wanted = neededHashes(facts.needs, facts.provides);
+  for (const c of facts.unread ? [] : card) {
+    const hash = facts.provides[c.path];
+    if (hash === undefined || wanted.has(hash)) continue;
+    emit({ event: 'delete', path: c.path, why: 'unused-service' });
+    await s.delete(c.path);
+  }
+}
+
+/** Whether the device answers READ (the headers of its card files can be read). */
+const canReadHeaders = (info: DkInfoFull): boolean => hasCap(info, 'READ');
+
+/** The service name hashes the files on the card hard-need: those of the `.dkm` files, and of the `.dks` files they need, and so on. */
+function neededHashes(needs: { path: string; needs: Need[] }[], provides: Record<string, number>): Set<number> {
+  const wanted = new Set<number>();
+  const byHash = new Map(Object.entries(provides).map(([path, hash]) => [hash, path]));
+  const queue = needs.filter((n) => n.path.endsWith('.dkm')).flatMap((n) => n.needs);
+  while (queue.length) {
+    const n = queue.pop()!;
+    if (!n.hard || wanted.has(n.hash32)) continue;
+    wanted.add(n.hash32);
+    const path = byHash.get(n.hash32);
+    if (path) queue.push(...(needs.find((x) => x.path === path)?.needs ?? []));
+  }
+  return wanted;
+}
+
+/** The name of a file for a person: `modules/pluck.dkm` is `pluck`, `services/fx.dks` is `fx`. */
+const leafName = (path: string): string => (path.split('/').pop() ?? path).replace(/\.dk[ms]$/, '');
+
+/**
+ * DELETE each path (one request each), then LIST to confirm each is gone. A path that is not on the card is an error before anything is sent.
+ * When the card has `.dks` files (and READ works) the delete is planned first: deleting a module also deletes each `.dks` that no remaining module
+ * hard-needs (`delete` event with `why: 'unused-service'`), a `.dks` that a remaining module needs is kept (`keep` event), and a needed `.dks` named
+ * alone is refused before any DELETE. A failure half way names the files deleted and the files left.
+ */
 export async function deleteFiles(
   s: DkSession,
   paths: string[],
@@ -475,19 +836,53 @@ export async function deleteFiles(
   const info = await s.info();
   requireRuntime(info);
   const want = [...new Set(paths)];
-  const onCard = new Set((await s.list()).map((c) => c.path));
+  const entries = await s.list();
+  const onCard = new Set(entries.map((c) => c.path));
   const missing = want.filter((p) => !onCard.has(p));
   if (missing.length) throw new DkError({ error: `not on the card: ${missing.join(', ')}`, kind: 'request' });
-  emit({ event: 'start', device: info.port, paths: want });
-  for (const path of want) {
-    emit({ event: 'delete', path });
-    await s.delete(path);
+  let extra: string[] = [];
+  let kept: { path: string; by: string[] }[] = [];
+  const dkFiles = entries.filter((c) => c.path.endsWith(SERVICE_EXT) || c.path.endsWith('.dkm'));
+  if (hasCap(info, 'READ') && dkFiles.some((c) => c.path.endsWith(SERVICE_EXT))) {
+    const facts = await cardFacts(s, dkFiles, []);
+    if (!facts.unread) {
+      const plan = planDelete(facts.needs, want);
+      if (plan.refused.length)
+        throw new DkError({
+          error: plan.refused
+            .map(
+              (r) =>
+                `${leafName(r.path)} service is needed by ${r.by.map(leafName).join(', ')}. Delete that module first (its services go with it).`,
+            )
+            .join(' '),
+          kind: 'request',
+        });
+      extra = plan.delete.filter((p) => !want.includes(p));
+      kept = plan.kept;
+    }
   }
-  const left = new Set((await s.list()).map((c) => c.path));
-  const still = want.filter((p) => left.has(p));
+  emit({ event: 'start', device: info.port, paths: want });
+  for (const k of kept) emit({ event: 'keep', path: k.path, by: k.by });
+  const all = [...want, ...extra];
+  const done: string[] = [];
+  for (const path of all) {
+    emit({ event: 'delete', path, ...(extra.includes(path) ? { why: 'unused-service' } : {}) });
+    try {
+      await s.delete(path);
+    } catch (e) {
+      const left = all.filter((p) => !done.includes(p));
+      throw new DkError({
+        error: `${e instanceof Error ? e.message : String(e)}. Deleted: ${done.join(', ') || 'nothing'}. Not deleted: ${left.join(', ')}`,
+        kind: e instanceof DkError ? e.kind : 'device',
+      });
+    }
+    done.push(path);
+  }
+  const after = new Set((await s.list()).map((c) => c.path));
+  const still = all.filter((p) => after.has(p));
   if (still.length) throw new DkError({ error: `still on the card after DELETE: ${still.join(', ')}`, kind: 'device' });
-  emit({ event: 'done', deleted: want });
-  return { deleted: want };
+  emit({ event: 'done', deleted: all });
+  return { deleted: all };
 }
 
 /**

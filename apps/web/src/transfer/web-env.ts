@@ -5,6 +5,7 @@
 import { DkSession } from '@digi/dk-session';
 import type { DkTransport } from '@digi/dk-session';
 import type { KeyValue } from '@digi/workbench-core/storage.ts';
+import { indexedDbBlobStore, type BlobStore } from '@digi/workbench-core/blob-store.ts';
 import { localStorageKeyValue } from '@digi/workbench-core/storage.ts';
 import { createTransferApp, type TransferApp } from '@digi/workbench-core/transfer/app.ts';
 import type { TransferEnv } from '@digi/workbench-core/transfer/env.ts';
@@ -80,6 +81,8 @@ export function createWebEnv(app: () => TransferApp): { env: TransferEnv; usable
     source,
     moduleFiles: (id) => MODULE_FILES[id],
     wasm,
+    // the firmware-free bundle the binder reads beside patchkit.wasm: the ports and the firmware declarations (gen-modules.mjs)
+    bindBundle: async () => new Uint8Array(await (await fetchOk(`${BASE}modules/bind.json`)).arrayBuffer()),
     deviceName: async (device) => deviceNameOf(device),
     libraryDevices: ['dt2', 'dn2'],
     // only where the browser has WebUSB; devices the user already allowed are used, `requestAccess` (from a click) asks for another
@@ -147,11 +150,18 @@ export interface WebTransfer {
   start(): Promise<void>;
 }
 
-export function createWebTransferApp(storage: KeyValue = localStorageKeyValue()): WebTransfer {
+/** The browser's keep of the user's stock firmware (shared by the Firmware and Transfer pages of this browser; it never leaves it). */
+export const stockStore = (): BlobStore => indexedDbBlobStore('digikit-stock', 'firmware');
+
+export function createWebTransferApp(
+  storage: KeyValue = localStorageKeyValue(),
+  stockBlobs: BlobStore = stockStore(),
+): WebTransfer {
   let app!: TransferApp;
   const web = createWebEnv(() => app);
   app = createTransferApp(web.env, {
     storage,
+    stockBlobs,
     sessions: createSessionHub((transport) => new DkSession(transport, { timeoutMs: 6000 })),
   });
   return {

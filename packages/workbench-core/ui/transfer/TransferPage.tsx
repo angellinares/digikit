@@ -133,7 +133,8 @@ const cancelJob = (app: TransferApp): void => {
   app.target.cancelPending();
 };
 
-export default function TransferPage(): JSX.Element {
+/** `onFlash`: starts the one-click Flash flow from a service refusal (the host gives it: the desktop opens its Firmware page, the site links to its own). */
+export default function TransferPage(props: { onFlash?: () => void }): JSX.Element {
   const app = useTransferApp();
   const { env } = app;
   const { target, emulatorRuntime, rescanTargets } = app.target;
@@ -293,7 +294,7 @@ export default function TransferPage(): JSX.Element {
 
       <Switch>
         <Match when={activeMode() === 'modules'}>
-          <ModulesMode ctx={ctx} />
+          <ModulesMode ctx={ctx} onFlash={props.onFlash} />
         </Match>
         <Match when={activeMode() === 'samples' && samples()}>
           {(slot) => <Dynamic component={slot().Mode} ctx={ctx} />}

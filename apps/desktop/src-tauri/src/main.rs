@@ -686,6 +686,7 @@ fn main() {
             library::lib_maps,
             library::sample_wasm,
             library::patchkit_wasm,
+            library::bind_bundle,
             library::dkprof_wasm,
             library::device_storage,
             local::local_pick_folder,
