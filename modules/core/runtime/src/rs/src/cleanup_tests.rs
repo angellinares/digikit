@@ -624,8 +624,7 @@ fn a_failed_dsp_part_makes_its_module_failed_with_the_dsp_code() {
 
 #[test]
 fn a_loaded_dsp_part_makes_its_module_active() {
-    use crate::handlers::tests::{LOCK as FAKE_LOCK, TWO};
-    let _f = FAKE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    use crate::handlers::tests::TWO;
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, false);
