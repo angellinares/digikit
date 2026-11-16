@@ -75,16 +75,21 @@ export function createServiceBinder(make: () => Promise<DkBind>, stock: StockByt
   let binder: Promise<DkBind> | undefined;
   return {
     async bind(dks, firmwareHash) {
-      binder ??= make().catch((e) => {
+      const loading = (binder ??= make().catch((e) => {
         binder = undefined;
         throw e;
-      });
+      }));
+      // a service that hooks no firmware site binds without the image (patchkit returns it as built), so a missing image is only an error when the bind fails
       const fw = await stock.bytesOf(firmwareHash);
-      if (!fw)
+      const b = await loading;
+      try {
+        return b.bind(dks, fw ?? new Uint8Array()).file;
+      } catch (e) {
+        if (fw) throw e;
         throw new Error(
-          `the stock firmware ${firmwareHash.slice(0, 8)} is not kept here: choose it on the Firmware page`,
+          `the stock firmware is not kept here: choose it on the Firmware page (${e instanceof Error ? e.message : String(e)})`,
         );
-      return (await binder).bind(dks, fw).file;
+      }
     },
   };
 }

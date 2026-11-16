@@ -28,6 +28,7 @@ test('the service binder binds against the kept bytes of the hash, loads the was
   const seen: string[] = [];
   const fake = {
     bind: (dks: Uint8Array, fw: Uint8Array) => {
+      if (fw.length === 0) throw new Error('no image');
       seen.push(`${new TextDecoder().decode(dks)}+${new TextDecoder().decode(fw)}`);
       return { file: bytes('bound'), hooks: [] };
     },

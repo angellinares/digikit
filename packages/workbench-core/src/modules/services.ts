@@ -143,9 +143,9 @@ function fmt(v: number): string {
   return `${(v >>> 16) & 0xff}.${(v >>> 8) & 0xff}`;
 }
 
-/** Same major, minor not older. */
+/** Same major, minor not older; a need with no version (0) takes any. */
 function versionFits(have: number, min: number): boolean {
-  return have >>> 16 === min >>> 16 && have >>> 0 >= min >>> 0;
+  return min === 0 || have >>> 16 === min >>> 16 && have >>> 0 >= min >>> 0;
 }
 
 function hex(h: number): string {

@@ -613,6 +613,7 @@ test('refreshServices (Flash): a .dks on the card with other bytes is replaced, 
   const fx = service('fx');
   const lfo = service('lfo');
   const dev = new FakeDevice();
+  dev.files.set('modules/m.dkm', needing('x/m', ['fx', 'lfo']));
   dev.files.set('services/fx.dks', Buffer.from('old build'));
   dev.files.set('services/lfo.dks', lfo.bytes);
   dev.files.set('services/other.dks', Buffer.from('not ours'));
