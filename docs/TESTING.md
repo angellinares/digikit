@@ -326,6 +326,7 @@ snapshot key matches and a baseline reload restores the snapshot (0.2 to 1.5 s) 
 fresh dir and always boots cold. Eviction runs when a fixture claims its run dir: only the newest 32 card dirs
 stay (a load touches a dir; one used in the last 2 hours stays). Fx presets with a `seed-card` settings step are built in the run dir, not cached. Delete `dist/session-cache/cards` to rebuild.
 `liveOptions(..., { fresh: true })` and mirror sessions use a fresh temp dir.
+A file that uses `withReusablePatchedSession` shares one session between its tests. A failure stays local: the failed test closes the session (diagnostics kept), and the next test starts a fresh session (one extra boot, only after a failure).
 
 ## Module-owned tests
 

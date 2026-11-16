@@ -187,3 +187,17 @@ test('fixture temp dirs are kept when a test of the file failed', async () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a failed test is followed by a test on a fresh session', async () => {
+  const f = await fixture();
+  const beforeEach = fake.beforeEach.mock.calls[0]![0] as () => Promise<void>;
+  expect(fake.start).toHaveBeenCalledTimes(1);
+  await f.afterEach('fail');
+  expect(f.session.close).toHaveBeenCalledWith({ preserveDiagnostics: true });
+  await beforeEach();
+  expect(fake.start).toHaveBeenCalledTimes(2);
+  expect(f.session.reloadRuntimeBaseline).toHaveBeenCalledTimes(2);
+  expect(f.handle.runtime.session).toBe(f.session);
+  await f.afterEach();
+  await f.afterAll();
+});
