@@ -26,6 +26,27 @@ const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 mod image;
 use image::in_file;
 
+/// The boot's load loop: the selection in plan order. A module the plan refuses is not loaded; each result goes to `boot::report_module`.
+pub unsafe fn boot(r: &dkrt_sdk::sel::Record, planned: &crate::plan::Plan) {
+    let mut pos = 0;
+    while pos < r.count as usize {
+        let k = planned.order[pos] as usize;
+        crate::selection::BOOT_IDX = k as u32;
+        MISSING = [0; NEEDS_LEN];
+        let res = match planned.verdicts[k] {
+            dkrt_abi::plan::Verdict::Accepted => {
+                crate::boot::states().init(k);
+                let res = load(r.paths[k].as_ptr());
+                crate::boot::states().finished(k, res);
+                res
+            }
+            dkrt_abi::plan::Verdict::Refused(why) => why.code(),
+        };
+        crate::boot::report_module(k, r.paths[k].as_ptr(), res);
+        pos += 1;
+    }
+}
+
 /// Validate and load the `.dkm` at `path`. See `dkrt_load`. The tables are checked after every attempt, and none starts once a check has
 /// failed (`invariants::check`).
 pub unsafe fn load(path: *const u8) -> i32 {
@@ -408,7 +429,7 @@ pub(crate) unsafe fn dsp_step_with(l: ServiceTable) {
             };
             // Teardown invalidates once, after the tick is stopped, before any fini/free.
             let reclaimed = undo_early(rec) == OK;
-            crate::boot::note_result(idx, code);
+            crate::boot::report_dsp(idx, code);
             dsp::fail_done(reclaimed, code);
         }
         dsp::Advance::Loaded => {
@@ -417,7 +438,7 @@ pub(crate) unsafe fn dsp_step_with(l: ServiceTable) {
                 (p.rec as usize, p.boot_idx)
             };
             l.on_loaded(rec);
-            crate::boot::note_result(idx, OK);
+            crate::boot::report_dsp(idx, OK);
             dsp::loaded_done();
         }
     }

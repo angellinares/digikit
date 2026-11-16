@@ -188,56 +188,7 @@ pub unsafe extern "C" fn dkrt_boot() {
         states().planned(k, planned.verdicts[k]);
         k += 1;
     }
-    let mut pos = 0;
-    while pos < r.count as usize {
-        let k = planned.order[pos] as usize;
-        crate::selection::BOOT_IDX = k as u32;
-        loader::MISSING = [0; NEEDS_LEN];
-        let res = match planned.verdicts[k] {
-            dkrt_abi::plan::Verdict::Accepted => {
-                states().init(k);
-                let res = loader::load(r.paths[k].as_ptr());
-                states().finished(k, res);
-                res
-            }
-            dkrt_abi::plan::Verdict::Refused(why) => why.code(),
-        };
-        st().last_result = res;
-        b.results[k] = res;
-        if res == OK {
-            b.loaded += 1;
-        }
-        let p = r.paths[k].as_ptr();
-        let mut at = 0;
-        let mut i = 0;
-        while i < SEL_PATH && *p.add(i) != 0 {
-            if *p.add(i) == b'/' {
-                at = i + 1;
-            }
-            i += 1;
-        }
-        let bad = if res == OK || res == LOADING { dlog::INFO } else { logk::F_ERROR };
-        dlog::ev(
-            logk::MOD_LOAD,
-            bad,
-            [k as u32, res as u32, dlog::word_of(p, at, SEL_PATH), dlog::word_of(p, at + 4, SEL_PATH), dlog::word_of(p, at + 8, SEL_PATH)],
-        );
-        let mut j = 0;
-        while j < NAME_LEN - 1 && at + j < SEL_PATH && *p.add(at + j) != 0 {
-            BOOT_NAME[k][j] = *p.add(at + j);
-            j += 1;
-        }
-        if res == E_IMPORT && loader::MISSING[0] != 0 {
-            let m = loader::MISSING;
-            b.needs[k] = m;
-            dlog::ev(
-                logk::MOD_NEEDS,
-                logk::F_ERROR,
-                [k as u32, dlog::word_of(m.as_ptr(), 0, NEEDS_LEN), dlog::word_of(m.as_ptr(), 4, NEEDS_LEN), dlog::word_of(m.as_ptr(), 8, NEEDS_LEN), 0],
-            );
-        }
-        pos += 1;
-    }
+    loader::boot(&r, &planned);
     loader::EARLY = false;
     crate::selection::BOOT_IDX = u32::MAX;
     // core/introblank: no module took the intro, so the black intro has nothing to wait for
@@ -250,8 +201,47 @@ pub unsafe extern "C" fn dkrt_boot() {
     }
 }
 
+/// The result `res` of the load of selection entry `k` (the file at `path`): the boot record, the log events and the name the LOADS report shows.
+pub unsafe fn report_module(k: usize, path: *const u8, res: i32) {
+    let b = info();
+    st().last_result = res;
+    b.results[k] = res;
+    if res == OK {
+        b.loaded += 1;
+    }
+    let p = path;
+    let mut at = 0;
+    let mut i = 0;
+    while i < SEL_PATH && *p.add(i) != 0 {
+        if *p.add(i) == b'/' {
+            at = i + 1;
+        }
+        i += 1;
+    }
+    let bad = if res == OK || res == LOADING { dlog::INFO } else { logk::F_ERROR };
+    dlog::ev(
+        logk::MOD_LOAD,
+        bad,
+        [k as u32, res as u32, dlog::word_of(p, at, SEL_PATH), dlog::word_of(p, at + 4, SEL_PATH), dlog::word_of(p, at + 8, SEL_PATH)],
+    );
+    let mut j = 0;
+    while j < NAME_LEN - 1 && at + j < SEL_PATH && *p.add(at + j) != 0 {
+        BOOT_NAME[k][j] = *p.add(at + j);
+        j += 1;
+    }
+    if res == E_IMPORT && loader::MISSING[0] != 0 {
+        let m = loader::MISSING;
+        b.needs[k] = m;
+        dlog::ev(
+            logk::MOD_NEEDS,
+            logk::F_ERROR,
+            [k as u32, dlog::word_of(m.as_ptr(), 0, NEEDS_LEN), dlog::word_of(m.as_ptr(), 4, NEEDS_LEN), dlog::word_of(m.as_ptr(), 8, NEEDS_LEN), 0],
+        );
+    }
+}
+
 /// The DSP part of the module loaded for selection index `idx` is over with result `r` (called by the DSP loader).
-pub unsafe fn note_result(idx: u32, r: i32) {
+pub unsafe fn report_dsp(idx: u32, r: i32) {
     dlog::ev(logk::MOD_DSP, if r == OK { dlog::INFO } else { logk::F_ERROR }, [idx, r as u32, 0, 0, 0]);
     if (idx as usize) < SEL_MAX {
         let b = info();
