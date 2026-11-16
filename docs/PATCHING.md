@@ -421,12 +421,20 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
   operand) is refused with the site named; `tail = "<symbol>"` gives a hand-written stock path (`jmp.l` there) and the
   displaced instructions are dropped.
 - **The image's info table.** The image has one export table, `dkrt_info_table`: big endian `{magic 0x444b4954 "DKIT", count}`,
-  then per entry `{FNV-1a name hash, address}`. patchkit writes it from the `[[slot]]` entries (the address of the word) and the
+  then per entry `{FNV-1a name hash, address, kind}` (kind 1: a `[[slot]]` word, 0: an `[[info]]` data table; 12 bytes per entry). patchkit writes it from the `[[slot]]` entries (the address of the word) and the
   `[[info]]` entries (`name`, `symbol`: an expression that gives the address, by default the symbol `name`; `devices`) of every
   adapter of the image, and refuses two entries with one hash (`slots_max` and `info_max` in `sdk/sdk.toml` bound the counts).
   The runtime reads it through `Platform::info(name_hash)` (`CoreApi::info`, the core import `dkc_info`) and names no adapter
-  table: a service finds the data table of its adapter, or a slot word, by the hash of the name. An image without entries has no
+  table: a service finds the data table of its adapter, or a slot word, by the hash of the name. A service file's `SLOTS` item fills only an entry of kind slot
+  (`Platform::info_slot`); a fill that names a data entry refuses the file (`E_FORMAT`) before anything is installed. An image without entries has no
   table (the optional link of the runtime resolves to 0).
+- **Capacity limits in the info table.** An image adapter that reserves a capacity exports its limit as an `[[info]]` entry named
+  `cap_<kind>` (the kind name of `[capacity.kinds]` in `sdk/sdk.toml` in lower case, e.g. `cap_machine_rows`, `cap_param_rows`,
+  `cap_page_rows`, `cap_voice_rows`, `cap_fx_slots`, `cap_send_slots`). `symbol` is the address of a u32 word that holds the limit
+  (for example `dynreg_info + 32`, the word `M_DYN_N` of the table). `dkrt_capacity` reports per kind: the answer of a loaded service
+  (it wins and owns `used`), else the `cap_<kind>` entry as the limit with `used` 0, else zeros. The planner therefore knows the
+  limits before any service file is loaded. The runtime names no adapter or service: it builds the entry name from the generic
+  kind table (`CAP_INFO_HASHES`).
 - **Raw hooks and their tails.** A hook with no `handler` in `devices/fw/` is a raw hook: its entry takes the whole control
   flow of the site (mode `replace`), so `patchkit bind` makes the entry itself the `BIND` trampoline and the runtime writes
   `jmp entry` at the site. When the entry falls through to the displaced stock instructions, the hook declares the exit
@@ -438,8 +446,12 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
   unbound `.dks` has no firmware bytes.
 - **Hooks per device.** One `.dks` serves both devices. `[[hook]]` in the module's `module.toml` has `devices`; the `service!`
   call lists `(name, entry)` for every device, `(name, entry, dt2)` or `(name, entry, dn2)` for one, and declares at `init` those of
-  the running device. `bind` binds the hooks that the firmware's port declares and writes only those into `HOOKS` of the bound
-  file. `patchkit service-check` compares the manifest and the call per device.
+  the running device. The packer writes the device set of each hook into the unbound file: an item of `HOOKS` is `{name hash, word}`,
+  and the top byte of the word is a device mask (bit `i` is device `i` of the device files in file-name order; 0: every device), the low
+  24 bits the handler's image offset. `bind` reads the mask from the file: it skips a hook for another device, refuses a hook for the
+  firmware's device that the port does not declare (naming it), and writes the remaining hooks into `HOOKS` of the bound file with the
+  plain offset (no mask), which is what the runtime reads. The CLI, the Nx `bind` target and the page (`pk_bind`) share this rule.
+  A reader of an unbound file masks the word with `0x00ffffff`. `patchkit service-check` compares the manifest and the call per device.
 - **Sections copied from the image.** `[[section]]` copies bytes of the user's image at patch time (a stock table),
   may append one row per registry entry, and places the result. This is how a framework extends a firmware table
   without storing it.

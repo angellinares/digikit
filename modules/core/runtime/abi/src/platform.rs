@@ -136,6 +136,8 @@ pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storag
     /// of an adapter's data table or of a slot word; null when the image has no such entry. The one lookup behind `CoreApi::info`: the runtime names no service and
     /// no adapter table. A real platform searches the image's table with [`info_find`]; a fake gives its own.
     unsafe fn info(&self, name_hash: u32) -> *const u32;
+    /// Like [`Platform::info`], but null unless the entry is a `[[slot]]` word (not an `[[info]]` data table): the only entries a service file's `SLOTS` item may fill.
+    unsafe fn info_slot(&self, name_hash: u32) -> *const u32;
 
     // ---- code and slot words ---------------------------------------------------------------------------------------------
     /// Read `out.len()` bytes of code at the raw address `addr` (volatile byte copy).
@@ -193,13 +195,29 @@ pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storag
 /// "DKIT": the first word of the image's info table.
 pub const INFO_MAGIC: u32 = 0x444b_4954;
 
+/// The kind word of an info table entry that is a pointer slot word (`[[slot]]`); `0` is a data table (`[[info]]`).
+pub const INFO_KIND_SLOT: u32 = 1;
+
 /// The address that entry `hash` of the info table at `table` holds, or null: no table (null), another magic, a count over `dkneeds::INFO_MAX`, or no such entry.
-/// The table is big endian words (the image's data): `{magic "DKIT", count}`, then `{name hash, address}` per entry; `patchkit` writes it from the `[[info]]` and
-/// `[[slot]]` entries of the image adapters and refuses two entries with one hash.
+/// The table is big endian words (the image's data): `{magic "DKIT", count}`, then `{name hash, address, kind}` per entry (`kind` is [`INFO_KIND_SLOT`] for a
+/// `[[slot]]` word, 0 for an `[[info]]` data table); `patchkit` writes it from the `[[info]]` and `[[slot]]` entries of the image adapters and refuses two entries
+/// with one hash.
 ///
 /// # Safety
 /// `table` is null or the address of a readable table of its own count.
 pub unsafe fn info_find(table: *const u32, hash: u32) -> *const u32 {
+    info_find_kind(table, hash, false)
+}
+
+/// Like [`info_find`], but null unless the entry is a slot word: what a service file's `SLOTS` item may fill.
+///
+/// # Safety
+/// As [`info_find`].
+pub unsafe fn info_find_slot(table: *const u32, hash: u32) -> *const u32 {
+    info_find_kind(table, hash, true)
+}
+
+unsafe fn info_find_kind(table: *const u32, hash: u32, slot_only: bool) -> *const u32 {
     use core::ptr::read_volatile;
     if table.is_null() || read_volatile(table) != INFO_MAGIC {
         return core::ptr::null();
@@ -210,8 +228,11 @@ pub unsafe fn info_find(table: *const u32, hash: u32) -> *const u32 {
     }
     let mut i = 0;
     while i < n as usize {
-        if read_volatile(table.add(2 + 2 * i)) == hash {
-            return read_volatile(table.add(3 + 2 * i)) as usize as *const u32;
+        if read_volatile(table.add(2 + 3 * i)) == hash {
+            if slot_only && read_volatile(table.add(4 + 3 * i)) != INFO_KIND_SLOT {
+                return core::ptr::null();
+            }
+            return read_volatile(table.add(3 + 3 * i)) as usize as *const u32;
         }
         i += 1;
     }
@@ -245,12 +266,30 @@ mod tests {
         let b = [9u32; 2];
         // an address is 32 bits in the image; on the host compare the low word the table holds
         let low = |p: &[u32]| p.as_ptr() as usize as u32;
-        let table = [INFO_MAGIC, 2, 0x1111, low(&a), 0x2222, low(&b)];
+        let table = [
+            INFO_MAGIC,
+            2,
+            0x1111,
+            low(&a),
+            INFO_KIND_SLOT,
+            0x2222,
+            low(&b),
+            0,
+        ];
         unsafe {
             assert_eq!(info_find(table.as_ptr(), 0x1111) as usize as u32, low(&a));
             assert_eq!(info_find(table.as_ptr(), 0x2222) as usize as u32, low(&b));
             assert!(info_find(table.as_ptr(), 0x3333).is_null());
-            let other = [0x1234_5678u32, 1, 0x1111, 0];
+            // only a slot entry is a slot
+            assert_eq!(
+                info_find_slot(table.as_ptr(), 0x1111) as usize as u32,
+                low(&a)
+            );
+            assert!(
+                info_find_slot(table.as_ptr(), 0x2222).is_null(),
+                "a data entry is not a slot"
+            );
+            let other = [0x1234_5678u32, 1, 0x1111, 0, 1];
             assert!(info_find(other.as_ptr(), 0x1111).is_null());
             assert!(info_find(core::ptr::null(), 0x1111).is_null());
             let big = [INFO_MAGIC, dkneeds::INFO_MAX + 1];

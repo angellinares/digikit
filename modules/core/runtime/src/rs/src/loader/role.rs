@@ -176,14 +176,14 @@ unsafe fn service_activate<P: Platform, M: Images, R: Registry>(l: &mut Loader<P
     let mut binds = [NO_BIND; BIND_MAX];
     let nb = binds_of(&keys, &mut binds);
     // the pointer slots the file fills: a SLOTS item is the name hash of a `[[slot]]` of an image adapter (the image's info table gives the address of its word) and the entry
-    // of this file. A slot the image does not have refuses the file, before anything is installed.
+    // of this file. A slot the image does not have, or a name that is an `[[info]]` data table, refuses the file, before anything is installed.
     let mut slots = [(0u32, 0u32); dkneeds::SLOTS_MAX as usize];
     let mut ns = 0;
     for sl in keys.slots() {
         if ns == slots.len() || sl.entry >= pr.image_size {
             return E_FORMAT;
         }
-        let at = l.p.info(sl.id);
+        let at = l.p.info_slot(sl.id);
         if at.is_null() {
             return E_FORMAT;
         }

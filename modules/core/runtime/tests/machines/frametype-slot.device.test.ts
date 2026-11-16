@@ -10,7 +10,7 @@ import { nameHash } from '../refusal/dkm-patch.ts';
  * The first proof of a pointer slot on a device (docs/plans/runtime-and-services.md, R12-6): the interrupt site of the Digitone II's frame builder (`frametype`) jumps to an
  * image stub that loads the slot word `frametype`. The word is 0 after a boot without the machines service (the stub runs the stock instructions), and the loader fills it
  * with the address of the service file's routine when `services/machines.dks` loads. The slot is found as a service finds it: by the name hash in the image's one info table
- * `dkrt_info_table` (`{magic "DKIT", count}`, then `{hash, address}`). The machine fixture needs the service, so the harness puts the bound file on the card.
+ * `dkrt_info_table` (`{magic "DKIT", count}`, then `{hash, address, kind}`). The machine fixture needs the service, so the harness puts the bound file on the card.
  *
  * Two boots: the plain runtime, then one with the service file and `test/dyn-dn2`. No SHARC audio is judged here (the machine suites do that); the DSP is on because the
  * fixture has a DSP part.
@@ -22,7 +22,7 @@ async function slotWord(session: Parameters<typeof word>[0], table: number, hash
   expect(await word(session, table), 'the info table has its magic').toBe(INFO_MAGIC);
   const count = await word(session, table + 4);
   for (let i = 0; i < count; i++) {
-    if ((await word(session, table + 8 + 8 * i)) === hash) return word(session, await word(session, table + 12 + 8 * i));
+    if ((await word(session, table + 8 + 12 * i)) === hash) return word(session, await word(session, table + 12 + 12 * i));
   }
   throw new Error(`no entry ${hash.toString(16)} in the info table`);
 }

@@ -1087,6 +1087,18 @@ pub fn apply_with(
         })
         .filter(|(_, v)| !v.is_empty())
         .collect();
+    // the slot words of one module are one chunk in the region of its first slot: a slot with another `place` would be put in the wrong region
+    for (m, defs) in &slot_defs {
+        if let Some(d) = defs.iter().find(|d| slot_place(d) != slot_place(defs[0])) {
+            return Err(err!(
+                "{}: slot {} has place {} but the slots of one module share the place of the first ({})",
+                m.id(),
+                d.name,
+                slot_place(d),
+                slot_place(defs[0])
+            ));
+        }
+    }
     let mut slot_at: Vec<(u64, &'static str)> = vec![(0, CF); slot_defs.len()];
     // the image's one info table: every slot word and every `[[info]]` of the library on this device, with one hash each
     let info_defs: Vec<(&Module, &crate::module::InfoDef)> = order
@@ -1525,12 +1537,13 @@ pub fn apply_with(
             });
         }
         if let Some((addr, cpu)) = info_at {
-            let mut entries: Vec<(u32, u32)> = vec![];
+            let mut entries: Vec<(u32, u32, u32)> = vec![];
             for (si, (_, defs)) in slot_defs.iter().enumerate() {
                 for (i, d) in defs.iter().enumerate() {
                     entries.push((
                         dkneeds::keys::name_hash(&d.name),
                         (slot_at[si].0 + 4 * i as u64) as u32,
+                        prim::INFO_KIND_SLOT,
                     ));
                 }
             }
@@ -1545,7 +1558,7 @@ pub fn apply_with(
                         inf.name
                     )
                 })?;
-                entries.push((dkneeds::keys::name_hash(&inf.name), v));
+                entries.push((dkneeds::keys::name_hash(&inf.name), v, prim::INFO_KIND_DATA));
             }
             let owner = slot_defs
                 .first()

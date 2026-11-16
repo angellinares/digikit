@@ -970,7 +970,6 @@ impl ServiceTable {
             i += 1;
         }
     }
-    #[inline]
     /// The machine type numbers of the rows module `owner` filled, from the first service that has any (the machines service file); 0 when none is loaded.
     #[inline]
     pub unsafe fn machine_types_of(&self, owner: u8, out: &mut [u8; 8]) -> usize {
@@ -984,6 +983,7 @@ impl ServiceTable {
         }
         0
     }
+    #[inline]
     pub unsafe fn tick(&self, phase: u32) {
         let mut i = 0;
         while i < self.rows.len() {

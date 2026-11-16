@@ -1183,22 +1183,28 @@ pub fn stub_prefix(scratch: u8, slot_addr: u32) -> Vec<u8> {
     out
 }
 
-/// The image's one info table, `dkrt_info_table`: big endian `{magic "DKIT", count}`, then one `{name hash, address}` per entry (`entries` in order: the
-/// `[[slot]]` and `[[info]]` entries of all image adapters). `dkrt_abi::platform::info_find` searches it.
-pub fn build_info_table(entries: &[(u32, u32)]) -> Vec<u8> {
+/// The kind of an info table entry: a data table (`[[info]]`).
+pub const INFO_KIND_DATA: u32 = 0;
+/// The kind of an info table entry: a pointer slot word (`[[slot]]`), the only kind a service file's `SLOTS` item may fill.
+pub const INFO_KIND_SLOT: u32 = 1;
+
+/// The image's one info table, `dkrt_info_table`: big endian `{magic "DKIT", count}`, then one `{name hash, address, kind}` per entry (`entries` in order: the
+/// `[[slot]]` and `[[info]]` entries of all image adapters; kind is [`INFO_KIND_SLOT`] or [`INFO_KIND_DATA`]). `dkrt_abi::platform::info_find` searches it.
+pub fn build_info_table(entries: &[(u32, u32, u32)]) -> Vec<u8> {
     let mut out: Vec<u8> = vec![];
     out.extend_from_slice(&INFO_TABLE_MAGIC.to_be_bytes());
     out.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-    for (hash, addr) in entries {
+    for (hash, addr, kind) in entries {
         out.extend_from_slice(&hash.to_be_bytes());
         out.extend_from_slice(&addr.to_be_bytes());
+        out.extend_from_slice(&kind.to_be_bytes());
     }
     out
 }
 
 /// Size of the info table with `n` entries.
 pub fn info_table_len(n: usize) -> usize {
-    8 + 8 * n
+    8 + 12 * n
 }
 
 /// The displaced instructions of a site as plan lines: address, bytes, instruction.

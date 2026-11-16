@@ -78,3 +78,10 @@ id = "df2"
 pc = 0xffffffff
 desc = 0
 state = 0
+
+# The capacity limits this adapter reserves, as `cap_<kind>` entries of the image's info table (docs/PATCHING.md): each points at the u32 word of the table that holds the limit, so the planner knows the limit before any service file is loaded.
+[[info]]
+name = "cap_fx_slots"
+symbol = "dynfx_info + 20"
+devices = ["dt2", "dn2"]
+

@@ -309,6 +309,51 @@ pub mod proto {
         CAPK_DSP_COST,
         CAPK_DSP_VOICES,
     ];
+    /// The `name_hash` of `cap_<kind>` (the kind name in lower case) for each kind of `CAP_KINDS`: the name of the `[[info]]` entry of the image's info table that gives the kind's limit when no service answers (docs/PATCHING.md).
+    pub const CAP_INFO_HASHES: [u32; 16] = [
+        0x88b64095,
+        0x4905a3e2,
+        0x60285193,
+        0x5627108a,
+        0x981eb135,
+        0x0a60b4af,
+        0x240dcf06,
+        0x643dd0fb,
+        0x3a439d6d,
+        0x54f81d48,
+        0x8788708d,
+        0xc8a8f6fd,
+        0x549f20b1,
+        0x8a4e9248,
+        0x4ebaf5d9,
+        0xcb8f5ab7,
+    ];
+    /// The most a kind's limit may report (`ceiling` of the kind, a key of `[limits.max]`): the size of the arrays that hold its rows. `u32::MAX`: none.
+    pub const CAPMAX_MACHINE_ROWS: u32 = 8;
+    pub const CAPMAX_VOICE_ROWS: u32 = 8;
+    pub const CAPMAX_PARAM_ROWS: u32 = 16;
+    pub const CAPMAX_PAGE_ROWS: u32 = 8;
+    pub const CAPMAX_FX_SLOTS: u32 = 4;
+    pub const CAPMAX_MAP_ENTRIES: u32 = 8;
+    pub const CAPMAX_SEND_SLOTS: u32 = 2;
+    pub const CAP_CEILING: [u32; 16] = [
+        4294967295,
+        4294967295,
+        4294967295,
+        4294967295,
+        4294967295,
+        8,
+        8,
+        16,
+        8,
+        4,
+        8,
+        4294967295,
+        4294967295,
+        2,
+        4294967295,
+        4294967295,
+    ];
     /// The resources a fit looks at: name, kind and what a person calls it.
     pub const CAP_FIT: [(&str, u8, &str); 12] = [
         ("MODULES", CAPK_MODULES, "module records"),

@@ -282,6 +282,8 @@ struct CapKind {
     #[serde(default)]
     fit: bool,
     label: Option<String>,
+    /// The key of `[limits.max]` that is the most the consumers of this kind can hold (their array sizes): the reported limit never exceeds it.
+    ceiling: Option<String>,
 }
 /// `[records]`: the record kinds of the `register` section and the resources of a module's `uses` (R7).
 #[derive(Deserialize)]
@@ -476,16 +478,7 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
         let _ = writeln!(s, "{indent}];");
     }
     // a service of `[handle] services` that a `.dks` provides (no `rust` row) is not the runtime's: the planner must load its provider, so it is not in this list
-    let runtime_services: Vec<&String> = sdk
-        .handle
-        .services
-        .iter()
-        .filter(|n| {
-            !sdk.service
-                .iter()
-                .any(|d| d.rust.is_none() && d.name == **n)
-        })
-        .collect();
+    let runtime_services = runtime_service_names(sdk);
     let _ = writeln!(
         s,
         "{indent}/// The services of `[handle] services` that are in the runtime image (not the ones a `.dks` provides): the names a module's `NEEDS` meets without a provider (hashed by `dkneeds::keys::name_hash`)."
@@ -691,6 +684,22 @@ pub struct LimitsMax {
     pub page_rows: u64,
     pub machine_rows: u64,
     pub stage_bytes: u64,
+}
+
+/// The value of the `[limits.max]` key `key`.
+fn limits_max_value(m: &LimitsMax, key: &str) -> Option<u64> {
+    Some(match key {
+        "modules" => m.modules,
+        "map_entries" => m.map_entries,
+        "fx_slots" => m.fx_slots,
+        "send_slots" => m.send_slots,
+        "dsp_area_bytes" => m.dsp_area_bytes,
+        "param_rows" => m.param_rows,
+        "page_rows" => m.page_rows,
+        "machine_rows" => m.machine_rows,
+        "stage_bytes" => m.stage_bytes,
+        _ => return None,
+    })
 }
 
 /// `DK_PAGE_KNOBS` (`[page] knobs` in `sdk/sdk.toml`): the encoders on a page.
@@ -1125,6 +1134,48 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     let _ = writeln!(s, "{indent}pub const CAP_KINDS: [u8; {}] = [", kinds.len());
     for (n, _) in &kinds {
         let _ = writeln!(s, "{indent}    CAPK_{n},");
+    }
+    let _ = writeln!(s, "{indent}];");
+    let _ = writeln!(
+        s,
+        "{indent}/// The `name_hash` of `cap_<kind>` (the kind name in lower case) for each kind of `CAP_KINDS`: the name of the `[[info]]` entry of the image's info table that gives the kind's limit when no service answers (docs/PATCHING.md)."
+    );
+    let _ = writeln!(
+        s,
+        "{indent}pub const CAP_INFO_HASHES: [u32; {}] = [",
+        kinds.len()
+    );
+    for (n, _) in &kinds {
+        let _ = writeln!(
+            s,
+            "{indent}    {:#010x},",
+            dkneeds::keys::name_hash(&format!("cap_{}", n.to_lowercase()))
+        );
+    }
+    let _ = writeln!(s, "{indent}];");
+    let _ = writeln!(
+        s,
+        "{indent}/// The most a kind's limit may report (`ceiling` of the kind, a key of `[limits.max]`): the size of the arrays that hold its rows. `u32::MAX`: none."
+    );
+    for (n, _) in &kinds {
+        if let Some(key) = &sdk.capacity.kinds[*n].ceiling {
+            let c = limits_max_value(&sdk.limits.max, key).unwrap_or(0);
+            let _ = writeln!(s, "{indent}pub const CAPMAX_{n}: u32 = {c};");
+        }
+    }
+    let _ = writeln!(
+        s,
+        "{indent}pub const CAP_CEILING: [u32; {}] = [",
+        kinds.len()
+    );
+    for (n, _) in &kinds {
+        let c = match &sdk.capacity.kinds[*n].ceiling {
+            None => u32::MAX as u64,
+            Some(key) => limits_max_value(&sdk.limits.max, key).unwrap_or_else(|| {
+                panic!("capacity kind {n}: ceiling {key:?} is no key of [limits.max]")
+            }),
+        };
+        let _ = writeln!(s, "{indent}    {c},");
     }
     let _ = writeln!(s, "{indent}];");
     let mut fit: Vec<_> = sdk.capacity.kinds.iter().filter(|(_, k)| k.fit).collect();
@@ -2970,13 +3021,14 @@ pub(crate) fn abi_inputs(text: &str) -> Result<AbiInputs> {
 
 /// The files of `dkrt-abi` that a service file and the runtime share across the boundary (interfaces B and C), relative to the repository root. `gen_svc_abi.rs`
 /// itself and the other files of the crate are not in the list.
-pub const SVC_ABI_FILES: [&str; 6] = [
+pub const SVC_ABI_FILES: [&str; 7] = [
     "modules/core/runtime/abi/src/service.rs",
     "modules/core/runtime/abi/src/core_api.rs",
     "modules/core/runtime/abi/src/link.rs",
     "modules/core/runtime/abi/src/dsp.rs",
     "modules/core/runtime/abi/src/registry.rs",
     "modules/core/runtime/abi/src/core_imports.rs",
+    "modules/core/runtime/abi/src/platform.rs",
 ];
 
 /// FNV-1a (32 bits) over each file as its name, a zero byte, its bytes and a zero byte, in the given order. Never 0 (0 means "no interface B or C" in the

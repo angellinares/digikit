@@ -557,7 +557,7 @@ pub(crate) fn lenient_tick_drop() {
 }
 
 /// The other firmware anchors that the platform tests keep reachable: nothing in the host tests may write the card or send MIDI through them
-/// (the tests of platform behaviour use `FakePlatform`), and the effect pages' table is not in the image.
+/// (the tests of platform behaviour use `FakePlatform`).
 #[export_name = "cf.storage.fn.block.write"]
 pub extern "C" fn block_write(_: u32, _: u32, _: *const u8) -> i32 {
     panic!("host tests must not write firmware storage")
@@ -566,8 +566,6 @@ pub extern "C" fn block_write(_: u32, _: u32, _: *const u8) -> i32 {
 pub extern "C" fn midi_send(_: u32, _: *const u8, _: u32) {
     panic!("host tests must not send MIDI through the firmware")
 }
-#[no_mangle]
-pub extern "C" fn fxpages_info() {}
 /// The image's info table: a function here, not a table with the magic, so every lookup through the real platform is null.
 #[no_mangle]
 pub extern "C" fn dkrt_info_table() {}

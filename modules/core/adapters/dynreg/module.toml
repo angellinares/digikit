@@ -629,3 +629,20 @@ name = ""
 title = ""
 machine = 0x7fffffff
 devices = ["dn2"]
+
+# The capacity limits this adapter reserves, as `cap_<kind>` entries of the image's info table (docs/PATCHING.md): each points at the u32 word of the table that holds the limit, so the planner knows the limit before any service file is loaded.
+[[info]]
+name = "cap_machine_rows"
+symbol = "dynreg_info + 32"
+devices = ["dt2", "dn2"]
+
+[[info]]
+name = "cap_param_rows"
+symbol = "dynreg_info + 104"
+devices = ["dt2", "dn2"]
+
+[[info]]
+name = "cap_page_rows"
+symbol = "dynreg_info + 216"
+devices = ["dt2", "dn2"]
+

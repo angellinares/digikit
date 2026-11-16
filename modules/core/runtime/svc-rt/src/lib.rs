@@ -44,6 +44,7 @@ extern "C" {
     fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32;
 }
 const _: dkrt_sdk::api::DkServiceDeclareHookFn = dk_service_declare_hook;
+const _: dkrt_sdk::api::DkServiceDeclareSlotFn = dk_service_declare_slot;
 
 /// `name_hash` of a name (FNV-1a 32, as `dkneeds::keys::name_hash`): the identity of a hook site in `HOOKS`.
 pub const fn name_hash(s: &str) -> u32 {

@@ -32,7 +32,7 @@ const ROUTE_SEND: u8 = dkneeds::page::DK_ROUTE_SEND as u8;
 use dkneeds::{FXF_DEFAULT_SEND, FXF_NOMASTER, FXF_SEND};
 
 /// Cells of the send page the image can have at most (`[limits.max] send_slots`).
-pub const SEND_MAX: usize = 2;
+pub const SEND_MAX: usize = dkrt_sdk::proto::CAPMAX_SEND_SLOTS as usize;
 const TRACKS: usize = 16;
 /// UI-loop passes the loader counter must be still before the amounts are written back.
 const SETTLE: u32 = 4;

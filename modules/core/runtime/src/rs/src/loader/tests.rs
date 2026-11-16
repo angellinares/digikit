@@ -151,6 +151,8 @@ impl Images for FakeImages {
                     let at = (init + entry) as usize as *const u8;
                     let r = if tag == dkrt_abi::service::Declare::HOOK {
                         crate::collect::dk_service_declare_hook(ctx, word, at)
+                    } else if tag == dkrt_abi::service::Declare::SLOT {
+                        crate::collect::dk_service_declare_slot(ctx, word, 0, at)
                     } else {
                         crate::collect::dk_service_declare_export(ctx, word, at)
                     };
@@ -511,6 +513,37 @@ fn a_provider_loads_into_its_own_record_publishes_its_exports_and_installs_its_h
         assert!(l.p.calls.borrow().contains(&crate::fake_platform::Call::Mask), "the install runs under the mask");
         // the table copy stays for the record
         assert!(l.provs[1].block.is_some());
+    }
+}
+
+/// A `SLOTS` item may fill a `[[slot]]` word only: the same item naming an `[[info]]` data table refuses the file (`E_FORMAT`) and writes nothing.
+#[test]
+fn a_slot_fill_of_an_info_data_entry_is_refused_and_writes_nothing() {
+    use dkneeds::keys::{name_hash, Slot, Table};
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    static SLOTS: std::sync::OnceLock<[Slot; 1]> = std::sync::OnceLock::new();
+    unsafe {
+        let slots = SLOTS.get_or_init(|| [Slot { id: name_hash("the.entry"), flags: 0, entry: 4 }]);
+        for (data, want) in [(false, OK), (true, E_FORMAT)] {
+            let bind = svc_bind(&STOCK);
+            let table = Table { slots, ..svc_table(&bind) };
+            let mut items = vec![(dkrt_abi::service::Declare::SLOT, name_hash("the.entry"), 4)];
+            items.extend_from_slice(match svc_init() {
+                Init::Declare(i) => i,
+                _ => unreachable!(),
+            });
+            let mut l = provider_loader(service_file(&table, 0), Init::Declare(Box::leak(items.into_boxed_slice())));
+            l.p.info_entries.borrow_mut().push((name_hash("the.entry"), vec![0]));
+            if data {
+                l.p.info_data.borrow_mut().push(name_hash("the.entry"));
+            }
+            assert_eq!(l.load_provider(PATH.as_ptr(), 1), want, "data entry: {data}");
+            if data {
+                assert_eq!(site_bytes(&l, 6), STOCK, "the site is stock");
+                assert_eq!(l.installer.count(), 0, "nothing is installed");
+                assert!(!l.p.calls.borrow().iter().any(|c| matches!(c, crate::fake_platform::Call::Word { .. })), "no slot word is written");
+            }
+        }
     }
 }
 
