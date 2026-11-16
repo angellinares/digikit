@@ -4,7 +4,13 @@ import { globSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { mergeTests, manifestClosure, read, records } from './module-manifests.mjs';
-import { DEVICE_INPUTS, VITEST_SETUP, builtSourceExclusions, deviceInputs } from './device-test-keys.mjs';
+import {
+  DEVICE_INPUTS,
+  VITEST_SETUP,
+  builtSourceExclusions,
+  deviceInputs,
+  serviceLeaves,
+} from './device-test-keys.mjs';
 
 export const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
 // Writes the hash of every committed core object without its source hash (tools/nx/device-bytes.mjs).
@@ -70,8 +76,9 @@ export const deviceTarget = (
 // `name` stays the target everything selects: a no-op parent of the per-file targets.
 // With `opts.twin`, `name` is the merge target (narrow keys for files outside `opts.mergeTests`) and `${name}-all`
 // runs every file with full inputs and DIGIKIT_TIER=full (the gate's full tier).
-// Each run target is split in two halves, `<name>--dt2` and `<name>--dn2` (env DIGI_DEVICE), so they run in
-// parallel. `<name>` stays as a no-op parent with the inputs of the run target.
+// Each run target is split in halves, `<name>--dt2` and `<name>--dn2` (env DIGI_DEVICE), so they run in
+// parallel. A file gets only the halves of the devices it runs on (`fileDevices`): a half of another device would queue for
+// an emulator slot and run nothing. `<name>` stays as a no-op parent with the inputs of the run target.
 export const deviceTargets = (
   name,
   root,
@@ -84,23 +91,48 @@ export const deviceTargets = (
   opts = {},
 ) => {
   const targets = fileTargets(name, root, tests, recs, imageInput, importInputs, pythonInputs, uploadable, opts);
+  const devicesOf = (key) => {
+    // a run target of one file: the file is the last path in its command
+    const files = [...(targets[key].options.command.match(/\S+\.device\.test\.ts/g) ?? [])].map((f) =>
+      f.slice(`../../${root}/`.length),
+    );
+    return unionDevices(files.map((file) => fileDevices(file, recs, opts.projectDevices)));
+  };
   const split = {};
   for (const [key, target] of Object.entries(targets)) {
     if (!target.options?.command) {
       split[key] = target;
       continue;
     }
-    const halves = ['dt2', 'dn2'].map((device) => `${key}--${device}`);
+    const devices = devicesOf(key);
+    const halves = devices.map((device) => `${key}--${device}`);
     split[key] = { executor: 'nx:noop', inputs: target.inputs, dependsOn: halves };
-    halves.forEach((half, i) => {
-      split[half] = {
+    devices.forEach((device, i) => {
+      split[halves[i]] = {
         ...target,
         inputs: [...target.inputs, { env: 'DIGI_DEVICE' }],
-        options: { ...target.options, env: { ...target.options.env, DIGI_DEVICE: ['dt2', 'dn2'][i] } },
+        options: { ...target.options, env: { ...target.options.env, DIGI_DEVICE: device } },
       };
     });
   }
   return split;
+};
+
+const ALL_DEVICES = ['dt2', 'dn2'];
+const unionDevices = (lists) => ALL_DEVICES.filter((d) => lists.some((list) => list.includes(d)));
+
+// The devices a device test file runs on (docs/TESTING.md "Nx gate"): the `devices` of the runtimeAcceptance records that
+// list the file, else `projectDevices` (the pack devices of a module project), else both. A file that the records do not list
+// runs on `projectDevices` or both. tools/nx/tests/device-pins.test.ts checks the declarations against the test sources.
+export const fileDevices = (file, recs, projectDevices) => {
+  const own = recs.filter((rec) => rec.files?.includes(file));
+  const declared = own.filter((rec) => rec.devices !== undefined);
+  for (const rec of declared)
+    if (!Array.isArray(rec.devices) || !rec.devices.length || rec.devices.some((d) => !ALL_DEVICES.includes(d)))
+      throw new Error(`metadata.runtimeAcceptance devices of ${file} must be a list of dt2 and dn2`);
+  const list = declared.length ? unionDevices(declared.map((rec) => rec.devices)) : (projectDevices ?? ALL_DEVICES);
+  if (!list.length) throw new Error(`${file} has no device to run on`);
+  return list;
 };
 
 const fileTargets = (
@@ -238,6 +270,7 @@ export const testOnlyNodes = (
       {
         twin: targetName === 'test-device',
         subjects: config.implicitDependencies,
+        services: serviceLeaves(byId),
         base: workspaceRoot,
         mergeTests: mergeTests(join(workspaceRoot, root)),
       },

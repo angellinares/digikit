@@ -14,7 +14,7 @@ export interface ModuleState {
   state: ModuleStateName;
   /** OK (0), LOADING (1) or the negative load code that says why. */
   result: number;
-  /** What the boot plan refused on (version 2; zeros for a version 1 reply): by code, E_PLAN_KIND the kind, E_PLAN_OWNER the kind, slot or hook site,
+  /** What the boot plan refused on (version 2; zeros for a version 1 reply): by code, E_PLAN_KIND the kind, E_MISSING the name hash of the service, E_PLAN_OWNER the kind, slot or hook site,
    * E_PLAN_KEY the kind and the key, E_PLAN_FIT the capacity kind. */
   detail: [number, number];
   /** E_IMPORT only: the module its imports need that is not in the image, without the `core/` prefix (usb-bulk). */
@@ -103,7 +103,9 @@ export function moduleReason(m: ModuleState): string | undefined {
     if (m.result === E_PLAN_KEY)
       return `another selected module has the same key ${hex(m.detail[1])} for record kind ${m.detail[0]}`;
     if (m.result === E_MISSING)
-      return 'a service it needs is not provided by the runtime or by an earlier selected module';
+      return m.detail[0]
+        ? `the service ${hex(m.detail[0])} that it needs is not provided by the runtime, and no provider file for it loaded`
+        : 'a service it needs is not provided by the runtime or by an earlier selected module';
     if (m.result === E_CONTRACT) return 'it needs a newer runtime than this one';
   }
   if (m.result === E_IMPORT && m.needs)

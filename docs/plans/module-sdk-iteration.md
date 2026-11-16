@@ -56,7 +56,7 @@ The affected-plan matrix below records requested targets selected out of a chose
 
 ## Decision: runtime loader and public SDK coverage
 
-Keep normal Nx affected selection for runtime loader and public SDK changes: no new automatic fixture-first exception. The loader controls relocation and BSS, menu and function addresses, registry initialization, and callback publication ([loader.rs](../../modules/core/runtime/src/rs/src/loader.rs)). A representative machine/FX load cannot establish compatibility for every shipped artifact or exercise all later behavior through those addresses.
+Keep normal Nx affected selection for runtime loader and public SDK changes: no new automatic fixture-first exception. The loader controls relocation and BSS, menu and function addresses, registry initialization, and callback publication ([loader.rs](../../modules/core/runtime/src/rs/src/loader/mod.rs)). A representative machine/FX load cannot establish compatibility for every shipped artifact or exercise all later behavior through those addresses.
 
 The runtime machine/FX fixture uses the same [`expectModuleLoad`](../../tests/conformance/assert-load.ts) assertions as shipped conformance: upload, stored bytes and reboot persistence, registration, version/contracts, DSP status, and fault containment. The separate zero-DSP service fixture covers service behavior. These are useful common boundary checks, but neither they nor shipped load conformance prove rendered audio correctness or all later module behavior. Retain shipped conformance and every native-selected consumer device behavior check in the merge gate. The loader's 32 / 100 and public header's 65 / 100 selection above remain accepted coverage, not demonstrated redundant work.
 

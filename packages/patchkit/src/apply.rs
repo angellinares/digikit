@@ -786,6 +786,91 @@ fn stage<'a>(
     Ok(st)
 }
 
+/// A declared ColdFire hook resolved on a stock image.
+#[derive(Clone, Debug)]
+pub struct HookSite {
+    pub port_id: String,
+    pub anchor: String,
+    /// The hook mode of the port: `before`, `replace` or `retarget`.
+    pub mode: String,
+    pub site: u64,
+    pub site_len: usize,
+    /// The stock bytes at the site.
+    pub old: Vec<u8>,
+    pub cf: prim::CfSite,
+    /// Where the code continues after the displaced instructions: `site + site_len`.
+    pub ret: u64,
+}
+
+/// The site of the declared hook `hook` on the stock image `fw`: the anchor address plus the hook offset, the whole instructions the
+/// 6-byte jump covers and their stock bytes. The image must be a stock one the registry has a port for.
+pub fn resolve_hook_site(fw: &[u8], reg: &Registry, hook: &str) -> Result<HookSite> {
+    let fw = Firmware::parse(fw)?;
+    let port = reg.find(&fw.syx_sha256).ok_or_else(|| {
+        err!("no port for firmware {}: it is not a stock image patchkit knows (a patched image is refused too)", fw.syx_sha256)
+    })?;
+    let main_sec = fw
+        .section(3)
+        .ok_or_else(|| err!("image has no MAIN OS section"))?;
+    if sha256_hex(&main_sec.data) != port.port.main_sha256 {
+        return Err(err!(
+            "port {} does not match the MAIN OS section of this image",
+            port.id()
+        ));
+    }
+    let (main, base) = (&main_sec.data, main_sec.dest as u64);
+    let read = |addr: u64, len: u64| -> Result<Vec<u8>> {
+        addr.checked_sub(base)
+            .map(|o| o as usize)
+            .filter(|o| o + len as usize <= main.len())
+            .map(|o| main[o..o + len as usize].to_vec())
+            .ok_or_else(|| err!("MAIN {addr:#x}+{len}: outside the MAIN OS image"))
+    };
+    let who = format!("hook {hook}");
+    let h = port
+        .hook(hook)
+        .ok_or_else(|| err!("{who}: no such hook on {}", port.port.device))?;
+    let a = port
+        .anchor(&h.site)
+        .ok_or_else(|| err!("{who}: no anchor {}", h.site))?;
+    if a.cpu == SHARC || a.kind != "code" {
+        return Err(err!(
+            "{who}: needs a ColdFire code anchor, {} is not",
+            a.name
+        ));
+    }
+    if h.offset < 0 {
+        return Err(err!("{who}: negative offset"));
+    }
+    if sha256_hex(&read(a.addr, a.len)?) != a.sha256 {
+        return Err(err!(
+            "{who}: anchor {} at {:#x}: the bytes do not hash to what the port expects",
+            a.name,
+            a.addr
+        ));
+    }
+    let site = a.addr + h.offset as u64;
+    let cf = prim::cf_site(main, base, a.addr, site).map_err(|e| err!("{who}: {e}"))?;
+    if h.offset as u64 + cf.len as u64 > a.len {
+        return Err(err!(
+            "{who}: the {}-byte site reaches past the anchor's {} bytes",
+            cf.len,
+            a.len
+        ));
+    }
+    let old = read(site, cf.len as u64)?;
+    Ok(HookSite {
+        port_id: port.id(),
+        anchor: a.name.clone(),
+        mode: h.mode.clone(),
+        site,
+        site_len: cf.len,
+        old,
+        ret: site + cf.len as u64,
+        cf,
+    })
+}
+
 pub fn apply_with(
     fw_bytes: &[u8],
     reg: &Registry,
@@ -1497,12 +1582,7 @@ pub fn apply_with(
                         to,
                         tail: prim_syms.get(&format!("{}.tail", h.base_name)).copied(),
                         ret: prim_syms[&format!("{}.return", h.base_name)],
-                        displaced_insns: h
-                            .cf
-                            .iter()
-                            .flat_map(|s| s.insns.iter())
-                            .map(|d| format!("{:#010x}  {}  {}", d.addr, hex(&d.raw), d.insn))
-                            .collect(),
+                        displaced_insns: h.cf.iter().flat_map(prim::fmt_displaced).collect(),
                         slot: h.stub.as_ref().map(|st| st.slot.clone()),
                     });
                     continue;

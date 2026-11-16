@@ -10,6 +10,8 @@
         "{workspaceRoot}/modules/**/module.toml",
         "{workspaceRoot}/modules/**/build/**/*",
         "{workspaceRoot}/modules/**/src/**/*",
+        "!{workspaceRoot}/{packages,modules}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}",
+        "!{workspaceRoot}/{packages,modules}/**/tests/**/*.rs",
         "{workspaceRoot}/modules/**/include/**/*",
         "{workspaceRoot}/tests/fixtures/modules/**/*",
         "{workspaceRoot}/devices/**/*",

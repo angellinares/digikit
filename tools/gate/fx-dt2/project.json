@@ -43,6 +43,8 @@
       "{workspaceRoot}/tests/regression/package.json",
       "{workspaceRoot}/packages/test-support/**/*",
       "{workspaceRoot}/packages/control-client/**/*",
+      "!{workspaceRoot}/{packages,modules}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}",
+      "!{workspaceRoot}/{packages,modules}/**/tests/**/*.rs",
       "{workspaceRoot}/tools/emulator/fxcheck.py",
       "{workspaceRoot}/tools/emulator/audiocheck.py",
       "{workspaceRoot}/tools/coldfire/paramtable.py",

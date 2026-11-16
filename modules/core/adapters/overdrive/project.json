@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/overdrive-type.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["A:core/overdrive", "S:fx"],
         "modules": ["test/dyn-fx-gain", "test/sine"],
         "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],

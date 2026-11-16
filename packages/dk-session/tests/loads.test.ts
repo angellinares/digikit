@@ -79,6 +79,7 @@ test('each refusal of the boot plan says what to change, in words about the modu
     'another selected module has the same key 0x1f for record kind 90',
   );
   expect(moduleReason(mod({ result: code('E_MISSING') }))).toContain('a service it needs');
+  expect(moduleReason(mod({ result: code('E_MISSING'), detail: [0xabcd, 0] }))).toContain('0xabcd');
   expect(moduleReason(mod({ result: code('E_CONTRACT') }))).toBe('it needs a newer runtime than this one');
 });
 

@@ -25,6 +25,8 @@ shared = [
   "dkrt::handlers",
   "dkrt::gen_services",
   "dkrt::imports",
+  "dkrt::svc_imports", # the `dkc_*` shims of a service file: one function per CoreApi method
+  "dkrt::native",
   "dkrt::arena",
   "dkrt::hash32",
   "dkrt::sha256",
@@ -44,6 +46,7 @@ shared = [
 "C:boot" = ["dkrt::boot", "dkrt::intro", "dkrt::safe_mode", "dkrt::safe_screen"]
 "C:loading" = [
   "dkrt::loader",
+  "dkrt::svc_rows",
   "dkrt::plan",
   "dkrt::scan",
   "dkrt::collect",

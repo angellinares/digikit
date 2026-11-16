@@ -14,7 +14,7 @@
 use crate::{cstr_len, MAX_MODULES};
 use dkrt_sdk::records::{KIND_ACTION, KIND_EFFECT, KIND_MACHINE, KIND_NATIVE_PAGE, KIND_NATIVE_PAGE_V2, KIND_PAGE, KIND_PARAM};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
-use dkrt_abi::service::Declare;
+use dkrt_abi::service::{DeclItem, Declare};
 use dkrt_sdk::*;
 
 /// The length of a record of `kind`, as the service that owns the kind declares it.
@@ -599,12 +599,34 @@ unsafe fn declare(ctx: *mut u8, tag: u16, a: u32, b: u32, c: u32) -> i32 {
         _ => E_CONTEXT,
     }
 }
+/// `dk_service_declare_row` (a service file's `init`, `SVC_IMPORTS` only): the `ServiceRow` the file provides. One row per file; the commit hands it to the
+/// registry (`Registry::add`).
+#[cfg_attr(test, no_mangle)]
+pub unsafe extern "C" fn dk_service_declare_row(ctx: *mut u8, row: *const dkrt_abi::service::ServiceRow) -> i32 {
+    match active() {
+        Some(col) if crate::entry::is_ctx(ctx) => {
+            if row.is_null() || col.decl.row_ptr().is_some() {
+                col.fail(E_DECL_KIND);
+                return E_DECL_KIND;
+            }
+            if col.decl.n >= Declare::MAX || !col.room() {
+                col.fail(E_DECL_FULL);
+                return E_DECL_FULL;
+            }
+            col.decl.row(row);
+            OK
+        }
+        _ => E_CONTEXT,
+    }
+}
+#[cfg_attr(test, no_mangle)]
 pub unsafe extern "C" fn dk_service_declare_kind(ctx: *mut u8, kind: u32, len: u32, handler: *const u8) -> i32 {
     // a handler is an image address: the header table carries its offset in the image
     declare(ctx, Declare::KIND, kind, len, handler as usize as u32)
 }
-pub unsafe extern "C" fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32) -> i32 {
-    declare(ctx, Declare::SLOT, slot, flags, 0)
+pub unsafe extern "C" fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32 {
+    // the entry is an image address: the header table carries its offset in the image
+    declare(ctx, Declare::SLOT, slot, flags, entry as usize as u32)
 }
 pub unsafe extern "C" fn dk_service_declare_hook(ctx: *mut u8, site: u32, entry: *const u8) -> i32 {
     declare(ctx, Declare::HOOK, site, entry as usize as u32, 0)
@@ -1279,14 +1301,16 @@ pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
     let mut d = c.decl;
     let mut i = 0;
     while i < d.n {
-        let (tag, a, b, e) = d.items[i];
+        let DeclItem { tag, a, b, c: e } = d.items[i];
         // the entries that are addresses become image offsets, as the table has them
         d.items[i] = if tag == Declare::KIND {
-            (tag, a, b, e.wrapping_sub(base))
+            DeclItem { tag, a, b, c: e.wrapping_sub(base) }
+        } else if tag == Declare::SLOT {
+            DeclItem { tag, a, b, c: e.wrapping_sub(base) }
         } else if tag == Declare::HOOK || tag == Declare::EXPORT {
-            (tag, a, b.wrapping_sub(base), e)
+            DeclItem { tag, a, b: b.wrapping_sub(base), c: e }
         } else {
-            (tag, a, b, e)
+            DeclItem { tag, a, b, c: e }
         };
         i += 1;
     }

@@ -276,7 +276,8 @@ pub(crate) unsafe fn row_step<C: CoreApi>(
             value: 0,
             published: None,
             last: false,
-            undo: None,
+            has_undo: false,
+            undo: 0,
         });
     }
     let first = iw(core.dsp_info(), I_VFIRST);
@@ -317,6 +318,7 @@ pub(crate) unsafe fn row_step<C: CoreApi>(
         value,
         published,
         last,
-        undo: if last { Some(FREE_TYPE) } else { None },
+        has_undo: last,
+        undo: if last { FREE_TYPE } else { 0 },
     })
 }

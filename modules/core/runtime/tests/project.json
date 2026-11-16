@@ -7,11 +7,13 @@
     "runtimeAcceptance": [
       {
         "files": ["modules-capacity.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:loading"],
         "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
       },
       {
         "files": ["fault-trace.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:diagnostics", "C:dsp", "C:layout"],
         "modules": [
           "digikit/debug",
@@ -30,6 +32,7 @@
       },
       {
         "files": ["samples-live.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:storage", "S:samples"],
         "modules": [],
         "sources": [
@@ -50,6 +53,7 @@
       },
       {
         "files": ["samples-store-live.device.test.ts"],
+        "devices": ["dn2"],
         "tags": ["C:storage", "S:samples"],
         "modules": [],
         "sources": [
@@ -62,6 +66,7 @@
       },
       {
         "files": ["upload.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:storage", "C:transport"],
         "modules": [],
         "plusdrive": true
@@ -74,6 +79,7 @@
       },
       {
         "files": ["upload-faults.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:layout", "C:storage", "C:transport"],
         "modules": ["test/sine"],
         "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
@@ -81,6 +87,7 @@
       },
       {
         "files": ["card-safety.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:storage"],
         "modules": ["test/c-demo"],
         "plusdrive": true
@@ -99,6 +106,7 @@
       },
       {
         "files": ["crash-capture.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["C:diagnostics", "C:layout"],
         "modules": ["digikit/debug", "test/dyn-crash"],
         "plusdrive": true
@@ -132,6 +140,11 @@
         "plusdrive": true
       }
     ],
-    "mergeTests": ["upload-depth.device.test.ts", "safe-mode.device.test.ts"]
+    "mergeTests": [
+      "upload-depth.device.test.ts",
+      "safe-mode.device.test.ts",
+      "samples-live.device.test.ts",
+      "samples-store-live.device.test.ts"
+    ]
   }
 }

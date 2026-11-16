@@ -215,10 +215,11 @@ fn keys_table<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Resu
         return Err(Error::Register);
     }
     if u32::from_be_bytes([head[0], head[1], head[2], head[3]]) != keys::MAGIC
-        || u16::from_be_bytes([head[4], head[5]]) != keys::VERSION
+        || !(1..=keys::VERSION).contains(&u16::from_be_bytes([head[4], head[5]]))
     {
         return Err(Error::Register);
     }
+    let version = u16::from_be_bytes([head[4], head[5]]);
     let entries = u16::from_be_bytes([head[6], head[7]]) as usize;
     let mut at = keys::HEAD as u32;
     let mut last = 0u16;
@@ -231,7 +232,12 @@ fn keys_table<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Resu
         let tg = u16::from_be_bytes([e[0], e[1]]);
         let count = u16::from_be_bytes([e[2], e[3]]) as u32;
         let len = u32::from_be_bytes([e[4], e[5], e[6], e[7]]);
-        if !(keys::tag::NEEDS..=keys::tag::RESOURCES).contains(&tg)
+        let top = if version >= 2 {
+            keys::tag::BIND
+        } else {
+            keys::tag::RESOURCES
+        };
+        if !(keys::tag::NEEDS..=top).contains(&tg)
             || tg <= last
             || len % 4 != 0
             || len > size - at - e.len() as u32

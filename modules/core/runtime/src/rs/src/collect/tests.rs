@@ -491,12 +491,14 @@ fn a_header_table_of_runtime_0_7_or_none_is_a_contract_error_and_a_damaged_one_a
 
 #[test]
 fn what_init_declared_must_be_what_the_header_table_carries() {
-    use dkneeds::keys::{write_table, KindDecl, Pair, Table};
-    // a header table with one kind (kind 90, 24 bytes, handler at image offset 0x40), one slot and one export
+    use dkneeds::keys::{write_table, KindDecl, Pair, Slot, Table};
+    // a header table with one kind (kind 90, 24 bytes, handler at image offset 0x40), one slot (entry 0x60) and one export
     let t = Table {
         kinds: &[KindDecl { kind: 90, len: 24, entry: 0x40 }],
-        slots: &[Pair { a: 3, b: 1 }],
+        slots: &[Slot { id: 3, flags: 1, entry: 0x60 }],
         exports: &[Pair { a: 0xaabb, b: 0x50 }],
+        // a slot with an entry needs a version 2 table, which PROVIDES makes
+        provides: &[Pair { a: 0x5e, b: 0 }],
         ..Table::default()
     };
     let mut b = [0u8; 128];
@@ -510,17 +512,21 @@ fn what_init_declared_must_be_what_the_header_table_carries() {
     let declared = || {
         let mut c = Collect::new();
         c.decl.add(Declare::KIND, 90, 24, base + 0x40);
-        c.decl.add(Declare::SLOT, 3, 1, 0);
+        c.decl.add(Declare::SLOT, 3, 1, base + 0x60);
         c.decl.add(Declare::EXPORT, 0xaabb, base + 0x50, 0);
         c
     };
     assert!(decl_matches(&declared(), &keys, base));
     // another handler, another length, an item more
     let mut d = declared();
-    d.decl.items[0].3 = base + 0x44;
+    d.decl.items[0].c = base + 0x44;
     assert!(!decl_matches(&d, &keys, base));
     let mut d = declared();
-    d.decl.items[0].2 = 28;
+    d.decl.items[0].b = 28;
+    assert!(!decl_matches(&d, &keys, base));
+    // the slot's entry is compared too
+    let mut d = declared();
+    d.decl.items[1].c = base + 0x64;
     assert!(!decl_matches(&d, &keys, base));
     let mut d = declared();
     d.decl.add(Declare::HOOK, 1, base, 0);
@@ -528,9 +534,41 @@ fn what_init_declared_must_be_what_the_header_table_carries() {
     // a module with no table entries and no declarations passes
     let none = KeysCopy::empty();
     assert!(decl_matches(&Collect::new(), &none, base));
+    // the row of a service file is no entry of the table: it does not count against it
+    let mut d = declared();
+    d.decl.row(&ROW);
+    assert!(decl_matches(&d, &keys, base));
     // outside init the imports refuse
     unsafe {
         end();
-        assert_eq!(dk_service_declare_slot(core::ptr::null_mut(), 1, 0), E_CONTEXT);
+        assert_eq!(dk_service_declare_slot(core::ptr::null_mut(), 1, 0, core::ptr::null()), E_CONTEXT);
+    }
+}
+
+static ROW: dkrt_abi::service::ServiceRow = dkrt_abi::service::ServiceRow::of::<Nothing, crate::core_api::RealCore>("nothing", &[]);
+struct Nothing;
+impl<C: dkrt_abi::core_api::CoreApi> dkrt_abi::service::Service<C> for Nothing {}
+
+#[test]
+fn a_service_file_declares_one_row_in_init_and_only_there() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        // outside init
+        end();
+        assert_eq!(dk_service_declare_row(core::ptr::null_mut(), &ROW), E_CONTEXT);
+        // inside init the context must be live; a null row and a second row are refused and kept as the load's error
+        let mut b = Box::new(Collect::new());
+        begin(&mut *b);
+        let ctx = crate::entry::bind(0) as *mut u8;
+        assert_eq!(dk_service_declare_row(ctx, core::ptr::null()), E_DECL_KIND);
+        assert_eq!(b.err, E_DECL_KIND);
+        b.err = 0;
+        assert_eq!(dk_service_declare_row(core::ptr::null_mut(), &ROW), E_CONTEXT);
+        assert_eq!(dk_service_declare_row(ctx, &ROW), OK);
+        assert!(core::ptr::eq(b.decl.row_ptr().unwrap(), &ROW));
+        assert_eq!(dk_service_declare_row(ctx, &ROW), E_DECL_KIND);
+        end();
+        crate::entry::unbind(0);
+        assert_eq!(b.decl.n, 1);
     }
 }

@@ -190,6 +190,7 @@ pub struct DspState {
 }
 
 /// What `check` found in a DSP section; pointers are into the staged file.
+#[repr(C)]
 pub struct Job {
     pub image: *const u8,
     pub image_size: u32,
@@ -234,6 +235,7 @@ impl Job {
 
 /// The tables of a DSP section after the header checks (offsets are into the section `s`), for the services' checks of their entries.
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct DspSec {
     pub s: *const u8,
     pub version: u32,

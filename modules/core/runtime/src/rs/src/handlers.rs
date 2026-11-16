@@ -13,15 +13,15 @@
 pub use dkrt_abi::service::*;
 
 /// The table over the runtime's own core.
-pub type ServiceTable = dkrt_abi::service::ServiceTable<crate::core_api::RealCore>;
+pub type ServiceTable = dkrt_abi::service::ServiceTable;
 
 /// The rows whose declare check failed (`check_declarations`): bit `i` for row `i`.
 static mut FAILED: u32 = 0;
 
-/// The in-crate services, in the order the core calls them (`[[service]]` of sdk/sdk.toml: samples, machines, fx), with the mask of the ones that failed
-/// their declare check.
+/// The services in the order the core calls them: the in-crate ones (`[[service]]` of sdk/sdk.toml with `rust =`: samples, machines, fx, lfo), then the rows of
+/// loaded service files (`svc_rows.rs`), with the mask of the in-crate ones that failed their declare check.
 pub fn services() -> ServiceTable {
-    ServiceTable { failed: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(FAILED)) }, ..crate::gen_services::TABLE }
+    crate::svc_rows::table(ServiceTable { failed: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(FAILED)) }, ..crate::gen_services::TABLE })
 }
 
 /// Declare-check-commit of the in-crate services (the runtime's init): each service declares its kinds, the runtime compares them with the generated
@@ -70,7 +70,7 @@ pub mod exports {
     pub(crate) use dkrt_svc_machines::nativepage::PageSet;
     /// The shapes of the lfo service, for the runtime's own tests of the record path.
     #[cfg(test)]
-    pub(crate) use dkrt_svc_lfo::records::{owner_of, shape, used, MAX_SHAPES, SAMPLES};
+    pub(crate) use dkrt_svc_lfo::records::{owner_of, shape, used, Lfo, MAX_SHAPES, SAMPLES};
 
     // ---- the sample pool (interface A: the imports of sdk.toml over the samples service) ----------------------------------------
     // The handle a module holds is its client number (`entry`); each call resolves it inside the service. The service is generic over the core: these wrappers

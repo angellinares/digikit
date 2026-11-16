@@ -173,6 +173,10 @@ const GATE = {
         '{workspaceRoot}/packages/patchkit/**/*',
         '{workspaceRoot}/modules/core/runtime/fit/{Cargo.toml,build.rs,src/**/*}',
         '{workspaceRoot}/modules/core/runtime/sdk/{Cargo.toml,build.rs,src/**/*}',
+        // Test-only Rust files: `#[cfg(test)]` modules that the release build does not compile (an edit cannot change the binary).
+        // tools/devtools/emud_key.py checks that each of them is declared behind cfg(test) when it leaves the daemon test key.
+        '!{workspaceRoot}/{packages,modules}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}',
+        '!{workspaceRoot}/{packages,modules}/**/tests/**/*.rs',
         '{workspaceRoot}/devices/**/*',
         '{workspaceRoot}/tests/scenarios/dn2.json',
         '{workspaceRoot}/sdk/sdk.toml',

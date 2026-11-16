@@ -47,6 +47,8 @@
         "{workspaceRoot}/modules/core/runtime/fit/src/**/*",
         "{workspaceRoot}/modules/core/runtime/sdk/Cargo.toml",
         "{workspaceRoot}/modules/core/runtime/sdk/src/**/*",
+        "!{workspaceRoot}/{packages,modules}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}",
+        "!{workspaceRoot}/{packages,modules}/**/tests/**/*.rs",
         "{workspaceRoot}/devices/**/*",
         "{workspaceRoot}/tests/scenarios/dn2.json",
         "{workspaceRoot}/sdk/sdk.toml",

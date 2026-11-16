@@ -68,7 +68,7 @@ unsafe fn keys_of(k: usize, path: *const u8, out: &mut [u32; 8]) -> usize {
     }
     let file = core::slice::from_raw_parts(store::stage() as *const u8, found.size as usize);
     // the boot planner keeps the header table of the file it has just read (one read of each file serves both)
-    crate::plan::capture(k, file);
+    crate::loader::capture(k, file);
     collect::machine_keys(file, out)
 }
 
@@ -79,7 +79,7 @@ pub unsafe fn plan(rec: &Record) {
     a.n = 0;
     a.map = clean(&rec.map);
     // the machines of the selection, in load order
-    crate::plan::reset();
+    crate::loader::reset_plan();
     let mut k = 0;
     while k < rec.count as usize {
         let mut keys = [0u32; 8];
