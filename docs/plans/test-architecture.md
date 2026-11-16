@@ -143,6 +143,47 @@ Reading the table:
 - [x] Step 5, the `node --test` files ported to Vitest: one runner in `apps/web`. The fake devices (`FakeDevice`, `FakeDrive`, `FakeUpgrade`) and the shared helpers are TypeScript in `apps/web/tests/support/`; tests that need no wasm and no command line run in `test-host` (`audio-health`, `icons`, `ready-cache`, `gallery`, `rpcfiles`, `samples`, `dktransfer` with a fit stand-in); the others are `*.wasm.test.ts` in `test-wasm` (`dkneeds`, `fit`, `firmware-kit`, `dksample`, `dkupload`, `patchkit`, `gallery`, `dktransfer`, 120 s per test); the Samples-mode logic test moved to `apps/desktop/ui/tests/samples-core.test.ts`. `node --test` is gone from the `test-wasm` script.
 - [x] Step 6, `packages/workbench-core` and the NodeHost: the code that the site and the desktop app share (`transfer/`, `firmware/`, `jobs/`, `modules/`, `patch/`, `runtime/`, `host/`, `storage`, `blob-store`, `workers`, `wasm-source`; Solid pages and styles in `ui/`) moved out of `apps/web/src`; both apps import `@digi/workbench-core`, the `@web` alias is gone, and oxlint fails an import between the apps (or from workbench-core into an app). `createNodeHost` (`src/node/node-host.ts`) is the `Host` for command lines; `wb ports` and the samples backend choice in `wb` run through it, with the same output. An edit in workbench-core selects 11 tasks: its own `test-host` and `typecheck`, the web `check`, `test-host`, `test-wasm` and `build`, the desktop `test-host`, `typecheck`, `check:ui` and `build:ui`, lint and format; no cargo, wasm build or device target. [DEVELOPMENT.md](../DEVELOPMENT.md) "workbench-core, the two apps and the command line".
 
+### T2 Test pyramid by layer
+
+Runs alongside R12.
+
+**Rule: real modules model the fixtures.** A real module needs no device test of its own when all of these hold: its imports and descriptor features are covered by the fixture contract suite (patchkit coverage plus descriptor coverage, to add); it passes `test-conformance-rig`; its `tests/rig` sound checks pass; the device conformance load passes. A missing feature goes into a fixture, not into a device test.
+
+**Target layout per layer.**
+
+| Layer | Fixtures | Suite |
+| --- | --- | --- |
+| fx | `test/dyn-fx-gain` | one contract suite per adapter per device |
+| machines | `test/sine`, `test/dyn-dn2`, with dynreg and equiv | machine fixture suite per device |
+| services | `svc-echo`, `svc-test`, `lfo-shape` | one suite per service per device, keyed on the `.dks` bytes and the ABI fingerprint after R12-4 |
+| tools | demo fixtures | one load suite per device |
+| L1 adapters | fixtures | one suite per device |
+| transport and storage | fakes | host tests; few device tests at the real boundary |
+
+**Step 1, selection (done, PR 550).** Test-only Rust files are out of the gate and daemon inputs, so host-test-only PRs pay no device gate. `mergeTests` is cut from 14 to a smoke set of 8 files. `mise run test:subset -- <tags>` runs chosen tags. Phantom device halves are gone. Emulator-slot admit expiry is added.
+
+**Step 2, four test-only lanes.**
+
+1. FX contract suite; freqshift drops its adapter legs (about 40 min per full tier).
+2. Machine equiv moves to rig sound checks (about 7 min). The rig references are new pins, reviewed once. Then the analog, bd, pd and pluck PCM pins go. The dynreg DN2 pin stays.
+3. usb-fast mode matrix cut (about 5 min). The upload case stays on DN2 only.
+4. Card-safety, settings and safe-mode duplicates move to host tests (about 2 min).
+
+**Decisions.** freqshift drops its adapter legs now. The file is deleted after descriptor coverage and R12-5. The R12-5 and R12-6 device proofs are fixture suites. `mergeTests` is the smoke set now. Service tests key on `.dks` bytes plus the ABI fingerprint. One bounded zero-DSP FX load run is made when the machine is free.
+
+**Guard rails.**
+
+- A test is deleted only when its replacement is green.
+- An assertion ledger maps each old assertion to its new one.
+- An independent review signs off each deletion.
+- PCM pins change only with Em's approval.
+
+**Measured note.** Owner keys for the single runtime object gave 38 to 34 files only. Re-measure after R12-6.
+
+**Payoff.** Full tier about 2.4 h to about 1.5 h. R12 PR gate about 60 to about 25 min. Host-test-only PRs: 0 device tasks.
+
+**Step 3, harness events.** Tests wait on standard runtime events instead of polling status or returning early. First event: firmware ready. The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `waitForBoot` and the install helpers wait for it with `events.until(..., { emulatedMs })`; the dk-session probe after `restart()` (PR for the storage DT2 race) stays as the fallback for a device without the runtime. Further events, each with a typed helper in `tests/regression/runtime/events.ts`: restart complete, card or store ready, safe mode entered, a module's DSP part loaded, provider installed (the MOD_LOAD provider marker), settings flushed. Proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro.
+
 ## Order
 
 - T1a after R2c merges.
