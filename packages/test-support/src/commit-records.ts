@@ -4,7 +4,10 @@
 //
 // `module:check` takes `[uses]` and the gallery param names from the output, and conformance its cases (slot, min, max, default).
 // The CLI that boots a device and calls this is tools/devtools/commit_records.ts.
-import type { LogEvent } from './events.ts';
+/** The part of a log event the decoder reads (`DkLogEvent` and `RuntimeEvent` of @digi/dk-session have it). */
+export interface LogEvent {
+  args: number[];
+}
 
 /** What the `MODULE_COMMIT` event says of one committed module. */
 export interface CommitEvent {

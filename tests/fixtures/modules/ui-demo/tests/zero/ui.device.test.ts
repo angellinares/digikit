@@ -6,10 +6,10 @@ import { describe, expect, test } from 'vitest';
 import { withReusablePatchedSession, expectRuntimeBoot } from '@digi/regression/support.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, liveOptions } from '@digi/regression/runtime/devices.ts';
-import { advance, word } from '@digi/regression/runtime/fx-live.ts';
-import { shot, tap } from '@digi/regression/runtime/fx-session.ts';
+import { word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
+import { shot } from '@digi/regression/runtime/fx-session.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { openDigikitMenu } from '@digi/regression/runtime/runtime-menu.ts';
+import { openDigikitMenu } from '@digi/regression/runtime/flows/menu.ts';
 import {
   planSymbol,
   validateRuntimePlan,
@@ -63,7 +63,8 @@ for (const device of DEVICES) {
       expect((await session.status()).dsp).toBe('zero');
       expect((await session.status()).audio).toBeNull();
       const read = (name: string, offset = 0) => word(session, planSymbol(plan, name) + offset);
-      const press = (key: string, settle?: number) => tap(session, key, settle);
+      const press = (key: string, settle = 300) =>
+        fixture.runtime.ui.tap(key, { until: settle ? { ms: settle, why: REDRAW } : { drained: true } });
       const frame = (tag: string) => shot(session, artifacts, tag);
       let row = 0;
       const go = async (target: number) => {
@@ -72,7 +73,7 @@ for (const device of DEVICES) {
           row += row < target ? 1 : -1;
         }
       };
-      await openDigikitMenu(press);
+      await openDigikitMenu(fixture.runtime);
       const initial = await frame('menu');
       const events = await read('dk_demo_events_n');
       await press('YES');
@@ -86,9 +87,9 @@ for (const device of DEVICES) {
       // The firmware accelerates encoder events; an isolated event can round to zero.
       for (let i = 0; i < 30; i++) {
         await session.client.inputTurn(encoder('ENC A'), 1);
-        await advance(session, 2);
+        await fixture.runtime.ui.wait({ ms: 2, why: SETTLE });
       }
-      await advance(session, 300);
+      await fixture.runtime.ui.wait({ ms: 300, why: SETTLE });
       expect(await read('dk_demo_value')).toBeGreaterThan(value);
       expect(await frame('value-after')).not.toBe(valueFrame);
 
@@ -113,7 +114,7 @@ for (const device of DEVICES) {
       const beforePanel = await read('dk_demo_events_n');
       await press('YES');
       expect(await read('dk_demo_events_n')).toBe(beforePanel + 1);
-      await advance(session, 2500);
+      await fixture.runtime.ui.wait({ ms: 2500, why: SETTLE });
       await press('DOWN');
       await press('YES');
       expect(await read('dk_demo_checks', 8)).toBe(1);
@@ -165,7 +166,7 @@ for (const device of DEVICES) {
       await press('NO', 50);
       await press('NO', 50);
       const toast = await frame('toast');
-      await advance(session, 2500);
+      await fixture.runtime.ui.wait({ ms: 2500, why: SETTLE });
       expect(await frame('toast-expired')).not.toBe(toast);
       await session.expectNoFault('SDK row/list/dialog/toast interactions without DSP');
       expect((await session.status()).audio).toBeNull();

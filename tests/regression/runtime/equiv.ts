@@ -16,6 +16,7 @@ import {
   readFloatWav,
   rpc,
   runToFrame,
+  type Rt,
 } from '@digi/regression/runtime/fx-live.ts';
 import { FIRMWARE, FULL_TIER, describeOn } from '@digi/regression/runtime/devices.ts';
 import { decodeTables, diffTables, dynType, selectType, voiceRows } from '@digi/regression/runtime/project-kit.ts';
@@ -107,10 +108,10 @@ export function defineEquiv(scenarios: Equiv[]): void {
           }),
         });
         /** Machine 1 of the track: DT2 reads the type; DN2 uses the list position (finding 33), the sound proves the type. */
-        const pickRun = async (session: Session) => {
-          if (!sc.play || device === 'dn2') return pickSine(session, sc.hint);
-          const type = await dynType(session, run.plan, sc.play.module, sc.play.machine);
-          await selectType(session, 1, type, sc.hint ?? 7);
+        const pickRun = async (rt: Rt) => {
+          if (!sc.play || device === 'dn2') return pickSine(rt, sc.hint);
+          const type = await dynType(rt.session, run.plan, sc.play.module, sc.play.machine);
+          await selectType(rt, 1, type, sc.hint ?? 7);
         };
 
         test('the rows equal the reference; the note matches', async () => {
@@ -152,7 +153,7 @@ export function defineEquiv(scenarios: Equiv[]): void {
           }
 
           // the note starts the same instruction after the block boundary of `trigFrame` in every run
-          await pickRun(session);
+          await pickRun(rt);
           const runPcm = await playNote(session, path.join(run.artifacts, 'run.wav'), sc.trigFrame);
 
           if (sc.pcmSha256) {

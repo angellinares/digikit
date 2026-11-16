@@ -5,8 +5,7 @@ import { CMD, READ_MAX } from '@digi/dk-session/gen_proto';
 import { button, encoder, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { postRaw, readSectors } from './card-kit.ts';
-import { advance, bounded, dspBytes, pickSine, word } from './fx-live.ts';
-import { tap } from './fx-session.ts';
+import { REDRAW, SETTLE, bounded, dspBytes, pickSine, word, type Rt } from './fx-live.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 import { overlayRecords } from './write-safety.ts';
 
@@ -150,9 +149,9 @@ export const sectorOf = (card: string, sector: number) => readSectors(card, sect
 // ---- the panel ---------------------------------------------------------------------------------------------------------------------
 
 /** Turn an encoder (Python `do_turn` + `run_ms`). */
-export async function panelTurn(session: Session, enc: string, by: number, ms: number) {
-  await bounded(() => session.client.inputTurn(encoder(enc), by));
-  await advance(session, 10 + ms);
+export async function panelTurn(rt: Rt, enc: string, by: number, ms: number) {
+  await bounded(() => rt.session.client.inputTurn(encoder(enc), by));
+  await rt.ui.wait({ ms: 10 + ms, why: SETTLE });
 }
 
 /** Hold or release a key (Python `emu.button`). */
@@ -191,12 +190,13 @@ export interface PanelMachine {
 }
 
 /** Choose the machine of list position `hint` on the selected track until the track holds `type` (the DT2 list position shifts by one with the stock machines). */
-export async function selectDt2(session: Session, track: number, type: number, hint: number): Promise<void> {
+export async function selectDt2(rt: Rt, track: number, type: number, hint: number): Promise<void> {
+  const { session } = rt;
   const seen: [number, number][] = [];
   // The first SRC list after a project save may not take (the keys go to the save's leftovers), so the hint is tried up to four times;
   // every try starts from the top of the list (12 UP presses), so it does not depend on the machine the track holds.
   for (const downs of [hint, hint, hint, hint, hint + 1, hint - 1]) {
-    await pickSine(session, downs, 12);
+    await pickSine(rt, downs, 12);
     seen.push([downs, await trackType(session, track)]);
     if (seen.at(-1)![1] === type) return;
   }
@@ -204,10 +204,11 @@ export async function selectDt2(session: Session, track: number, type: number, h
 }
 
 /** Put the machine of type `type` on `track` from the list cursor where it stands (no UP presses, so the setup stays short): the position `hint` and its neighbours are tried until the track holds `type` (Python `select_type`). */
-export async function selectType(session: Session, track: number, type: number, hint: number): Promise<number> {
+export async function selectType(rt: Rt, track: number, type: number, hint: number): Promise<number> {
+  const { session } = rt;
   const seen: [number, number][] = [];
   for (const downs of [hint, hint + 1, hint - 1, hint + 2, hint + 3]) {
-    await pickSine(session, downs);
+    await pickSine(rt, downs);
     seen.push([downs, await trackType(session, track)]);
     if (seen.at(-1)![1] === type) return downs;
   }
@@ -216,64 +217,68 @@ export async function selectType(session: Session, track: number, type: number, 
 
 /** The panel script that makes a project: the machines on their tracks with two parameter values, then on track 1 a note trig with a p-lock and a sound lock. */
 export async function buildPanelProject(
-  session: Session,
+  rt: Rt,
   machines: PanelMachine[],
   { lockTurn = 11, soundLockTurn = 2 } = {},
 ): Promise<void> {
+  const { session } = rt;
   const dt2 = session.options.device === 'dt2';
   for (const m of machines) {
-    if (m.track !== 1) await tap(session, `TRIG ${m.track}`, 300, 'TRK');
-    if (dt2) await selectDt2(session, m.track, m.type, m.hint);
-    else await pickSine(session, m.hint);
-    await tap(session, dt2 ? 'SRC' : 'SYN', 300);
+    if (m.track !== 1) await rt.ui.tap(`TRIG ${m.track}`, { until: { ms: 300, why: REDRAW }, held: 'TRK' });
+    if (dt2) await selectDt2(rt, m.track, m.type, m.hint);
+    else await pickSine(rt, m.hint);
+    await rt.ui.tap(dt2 ? 'SRC' : 'SYN', { until: { ms: 300, why: REDRAW } });
     for (const [enc, by] of [
       ['ENC A', 9],
       ['ENC B', -7],
     ] as const)
-      await panelTurn(session, enc, by, 100);
+      await panelTurn(rt, enc, by, 100);
   }
-  if (machines.some((m) => m.track !== 1)) await tap(session, 'TRIG 1', 300, 'TRK');
+  if (machines.some((m) => m.track !== 1)) await rt.ui.tap('TRIG 1', { until: { ms: 300, why: REDRAW }, held: 'TRK' });
   // a trig, a p-lock and a sound lock on it: GRID RECORDING, tap the trig, hold it and turn knobs
-  await tap(session, 'RECORD', 200);
-  await tap(session, 'TRIG 1', 200);
+  await rt.ui.tap('RECORD', { until: { ms: 200, why: REDRAW } });
+  await rt.ui.tap('TRIG 1', { until: { ms: 200, why: REDRAW } });
   await panelKey(session, 'TRIG 1', true);
-  await advance(session, 100);
-  await panelTurn(session, 'ENC C', lockTurn, 100);
-  await panelTurn(session, 'LEVEL', soundLockTurn, 300);
+  await rt.ui.wait({ ms: 100, why: SETTLE });
+  await panelTurn(rt, 'ENC C', lockTurn, 100);
+  await panelTurn(rt, 'LEVEL', soundLockTurn, 300);
   await panelKey(session, 'TRIG 1', false);
-  await advance(session, 300);
-  await tap(session, 'RECORD', 200);
+  await rt.ui.wait({ ms: 300, why: SETTLE });
+  await rt.ui.tap('RECORD', { until: { ms: 200, why: REDRAW } });
 }
 
 /** Save the project to slot 001 through FUNC+SETTINGS. */
-export async function savePanelProject(session: Session): Promise<void> {
-  await tap(session, 'SETTINGS', 300, 'FUNC');
-  await tap(session, 'YES', 500); // slot 001
-  if (session.options.device === 'dn2') await tap(session, 'YES', 0); // the name: save
-  await advance(session, 3500);
+export async function savePanelProject(rt: Rt): Promise<void> {
+  const { session } = rt;
+  await rt.ui.tap('SETTINGS', { until: { ms: 300, why: REDRAW }, held: 'FUNC' });
+  await rt.ui.tap('YES', { until: { ms: 500, why: REDRAW } }); // slot 001
+  if (session.options.device === 'dn2') await rt.ui.tap('YES', { until: { drained: true } }); // the name: save
+  await rt.ui.wait({ ms: 3500, why: SETTLE });
 }
 
 /** Load slot 001 through SETTINGS; with `health` (default) check the session has no fault afterwards. */
-export async function loadPanelProject(session: Session, { health = true } = {}): Promise<void> {
-  await tap(session, 'SETTINGS', 300);
-  for (let i = 0; i < 3; i++) await tap(session, 'YES', 500);
-  await tap(session, 'YES', 0);
-  await advance(session, 6000);
+export async function loadPanelProject(rt: Rt, { health = true } = {}): Promise<void> {
+  const { session } = rt;
+  await rt.ui.tap('SETTINGS', { until: { ms: 300, why: REDRAW } });
+  for (let i = 0; i < 3; i++) await rt.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
+  await rt.ui.tap('YES', { until: { drained: true } });
+  await rt.ui.wait({ ms: 6000, why: SETTLE });
   if (health) await bounded(() => session.expectNoFault('project loaded'));
 }
 
 /** Choose each of the first `positions` entries of the machine list on the selected track and turn the encoders of its page. */
-export async function sweepMachineList(session: Session, positions: number): Promise<void> {
+export async function sweepMachineList(rt: Rt, positions: number): Promise<void> {
+  const { session } = rt;
   const key = session.options.device === 'dt2' ? 'SRC' : 'SYN';
   for (let k = 0; k < positions; k++) {
-    await pickSine(session, k, positions + 2);
-    await tap(session, key, 200);
+    await pickSine(rt, k, positions + 2);
+    await rt.ui.tap(key, { until: { ms: 200, why: REDRAW } });
     for (const [enc, by] of [
       ['ENC A', 5],
       ['ENC B', -3],
       ['ENC C', 4],
     ] as const)
-      await panelTurn(session, enc, by, 80);
+      await panelTurn(rt, enc, by, 80);
   }
 }
 

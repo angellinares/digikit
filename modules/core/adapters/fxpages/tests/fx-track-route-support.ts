@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
-import { rpc, rows } from '@digi/regression/runtime/fx-live.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
+import { rpc, rows, REDRAW } from '@digi/regression/runtime/fx-live.ts';
 import { FX, SINE, triggerFrame as triggerFor } from '@digi/regression/runtime/fixtures.ts';
 import { withRouteFxSession } from '@digi/regression/runtime/fx-route-live.ts';
-import { inspectFxBoot, withPausedFxProtocol, selectSine, shot, tap } from '@digi/regression/runtime/fx-session.ts';
+import { inspectFxBoot, withPausedFxProtocol, selectSine, shot } from '@digi/regression/runtime/fx-session.ts';
 import { trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
@@ -47,19 +47,19 @@ function makeTrackRoute(
       const pcm = new Map<string, string>();
       const locks = new Map<string, { overlay: string; cc: string; shown: number }>();
       const sym = (name: string) => planSymbol(context.plan, name);
-      const chain = (runtime: PatchedSession) => rows(runtime.session, context.plan, context.slots);
-      const amounts = async (runtime: PatchedSession, row = 0) => {
+      const chain = (runtime: TestRuntime) => rows(runtime.session, context.plan, context.slots);
+      const amounts = async (runtime: TestRuntime, row = 0) => {
         const words = (await chain(runtime))[row]!.slice(19, 23);
         return Array.from({ length: 16 }, (_, track) => (words[track >> 2]! >>> (8 * (track % 4))) & 0xff);
       };
-      const capacity = async (runtime: PatchedSession, used: number) => {
+      const capacity = async (runtime: TestRuntime, used: number) => {
         expect((await withPausedFxProtocol(runtime, (dk) => dk.capacity())).SEND_SLOTS).toEqual({
           limit: context.sendSlots,
           used,
           largest: 0,
         });
       };
-      const settings = async (runtime: PatchedSession, tag: string) => {
+      const settings = async (runtime: TestRuntime, tag: string) => {
         const overlay = path.join(context.artifacts, `${tag}.overlay.bin`);
         await rpc(runtime.session, 'card.overlay', { path: overlay });
         const result = await patchkit(
@@ -76,9 +76,9 @@ function makeTrackRoute(
           entries: new Map(active!.entries.map((entry) => [entry.key, entry.value_hex])),
         };
       };
-      const pageTwo = async (runtime: PatchedSession) => {
-        await tap(runtime.session, 'FX', 400);
-        await tap(runtime.session, 'FX', 400);
+      const pageTwo = async (runtime: TestRuntime) => {
+        await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
+        await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
       };
 
   // One `boot` per test: the first leg uses the fixture's own boot when it starts from the file's initial preset, later legs reload a clean baseline.
@@ -119,9 +119,9 @@ export function trackRouteSuite(
             const state = await inspectFxBoot(runtime, plan, [SINE], artifacts, 'base-boot');
             context.rememberEpoch(state.epoch);
             await selectSine(runtime, profile);
-            await tap(runtime.session, 'FX', 400);
+            await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
             base.hash = await shot(runtime.session, artifacts, 'base-fx1');
-            await tap(runtime.session, 'NO', 300);
+            await runtime.ui.tap('NO', { until: { ms: 300, why: REDRAW } });
             base.pcm = path.join(artifacts, 'base.wav');
             await trackNote(runtime, base.pcm, triggerFrame);
           });

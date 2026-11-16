@@ -20,6 +20,7 @@ import {
 } from './gen_proto.ts';
 import { parseLoads, type ModuleState } from './loads.ts';
 import type { LoadFailure } from './runtime-log.ts';
+import { LogCursor } from './runtime-events.ts';
 
 export interface DkInfo {
   protocol: number;
@@ -1653,13 +1654,36 @@ export class DkSession {
     let silent = false;
     const quick: Quick = opts.probeTimeoutMs ?? true;
     const probe = opts.probe ?? (<T>(run: (q: Quick) => Promise<T>) => run(quick));
+    // The log is read once from the start of the boot, then from the cursor; `asked` and `started` describe the current boot's events read so far.
+    let cursor: LogCursor | null = null;
+    let asked = false;
+    let started = false;
     while (Date.now() < end) {
       if (opts.signal?.aborted) throw cancelledError();
       if (opts.stillBooting?.()) end = Math.max(end, Date.now() + timeoutMs);
       try {
         const info = await probe((q) => this.info(q));
         if (info.caps !== null && ((info.caps >>> GCAP.LOG) & 1) === 1) {
-          if (restarted(await probe((q) => this.readLog(q)))) return;
+          if (cursor === null) {
+            cursor = new LogCursor({ logPage: (from, q) => this.logPage(from, q) }, { probe });
+            cursor.fromBoot();
+          }
+          const read = await cursor.read();
+          if (read.newBoot) {
+            asked = false;
+            started = false;
+          }
+          for (const e of read.events) {
+            if (e.kind === LOG_KIND.UPLOAD && e.args[0] === GCMD.RESTART) {
+              if ((e.flags & 1) !== 0 && e.args[1] !== 0)
+                throw new DkError({
+                  error: `the runtime refused the restart (status ${e.args[1]! | 0}; a card transfer is in flight, try again)`,
+                  kind: 'refused',
+                });
+              asked = true;
+            } else if (e.kind === LOG_KIND.BOOT_START) started = true;
+          }
+          if (started && !asked) return;
         } else if (silent) return;
         last = 'the old boot still runs';
       } catch (e) {

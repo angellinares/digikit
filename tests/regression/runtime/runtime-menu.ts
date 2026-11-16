@@ -1,61 +1,17 @@
 import { fmtVersion, hasCap, type DkLogEvent, type DkSession } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
-import type { Session } from '@digi/test-support';
-import { expect } from 'vitest';
+import { emulatorClock, pollUntil, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
-import { beforeReadinessDeadline, deadlineExpired } from './waits.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
-type Tap = (name: string, settleMs?: number) => Promise<void>;
+/** fill_about publishes incrementally: the runtime row alone precedes BOOT and the final RAM row. */
+export const aboutIsComplete = (rows: string[]): boolean =>
+  rows.some((row) => /^BOOT: \d+ OF \d+ OK$/.test(row)) && /^RAM KEPT: (YES|NO)$/.test(rows.at(-1) ?? '');
 
-/** Known menu states, independent of the currently displayed parameter or encoder target. */
-export async function openDigikitMenu(tap: Tap, checkpoint?: (name: string) => Promise<void>): Promise<void> {
-  await tap('NO', 2000);
-  await tap('SETTINGS', 3000);
-  for (let i = 0; i < 8; i++) await tap('DOWN');
-  await checkpoint?.('settings-ninth-row');
-  await tap('YES', 3000);
-  await checkpoint?.('digikit-main');
-}
-
-/** Budget readiness observations; input taps retain their own hold and release behavior. */
-export async function openRuntimeAbout(
-  tap: Tap,
-  session: Session,
-  dk: DkSession,
-  plan: RuntimePlan,
-  artifacts: string,
-  timeout = 10_000,
-): Promise<string[]> {
-  const deadline = Date.now() + timeout;
-  let initialCount: number | null | undefined;
-  let failure: unknown;
-  try {
-    initialCount = await beforeReadinessDeadline(deadline, () =>
-      session.client.memPeek(planSymbol(plan, 'DK_ABOUT_N')),
-    );
-    expect(initialCount, 'ABOUT buffer is empty before its first open').toBe(0);
-    // ABOUT is the first row of the DIGIKIT menu; content completion replaces the final settle only.
-    await tap('YES', 0);
-    return await expectRuntimeAbout(session, dk, plan, artifacts, { deadline });
-  } catch (error) {
-    failure = error;
-    throw error;
-  } finally {
-    record(artifacts, 'about-before-open', {
-      initialCount: initialCount ?? null,
-      expired: deadlineExpired(deadline, failure),
-    });
-  }
-}
-
-export async function readAboutRows(session: Session, plan: RuntimePlan, deadline?: number): Promise<string[]> {
+export async function readAboutRows(session: Session, plan: RuntimePlan): Promise<string[]> {
   const base = planSymbol(plan, 'DK_ABOUT');
-  const peek = (address: number) =>
-    deadline === undefined
-      ? session.client.memPeek(address)
-      : beforeReadinessDeadline(deadline, () => session.client.memPeek(address));
+  const peek = (address: number) => session.client.memPeek(address);
   const count = await peek(planSymbol(plan, 'DK_ABOUT_N'));
   if (count === null || !Number.isInteger(count) || count < 1 || count > 24)
     throw new Error(`invalid ABOUT row count: ${count}`);
@@ -72,48 +28,34 @@ export async function readAboutRows(session: Session, plan: RuntimePlan, deadlin
   return rows;
 }
 
-/** Poll semantic menu content, bounded both in time and in the number of memory reads per poll. */
+/** Poll semantic menu content, bounded in emulated time. */
 export async function expectRuntimeAbout(
   session: Session,
   dk: DkSession,
   plan: RuntimePlan,
   artifacts: string,
-  options: { timeout?: number; deadline?: number } = {},
+  options: { timeout?: number } = {},
 ): Promise<string[]> {
-  const deadline = options.deadline ?? Date.now() + (options.timeout ?? 10_000);
   let runtimeRow: string | undefined;
   let rows: string[] = [];
-  let failure: unknown;
+  let failed = true;
   try {
-    runtimeRow = `RUNTIME ${fmtVersion((await beforeReadinessDeadline(deadline, () => dk.info())).runtime)}`;
-    await expect
-      .poll(
-        async () => {
-          rows = await readAboutRows(session, plan, deadline);
-          // fill_about publishes incrementally: the runtime row alone precedes BOOT and the final RAM row.
-          return (
-            rows.includes(runtimeRow!) &&
-            rows.some((row) => /^BOOT: \d+ OF \d+ OK$/.test(row)) &&
-            /^RAM KEPT: (YES|NO)$/.test(rows.at(-1) ?? '')
-          );
-        },
-        {
-          timeout: Math.max(1, deadline - Date.now()),
-          interval: 500,
-          message: 'ABOUT completely describes the live runtime',
-        },
-      )
-      .toBe(true);
+    runtimeRow = `RUNTIME ${fmtVersion((await dk.info()).runtime)}`;
+    rows = await pollUntil(
+      emulatorClock(session),
+      async () => (rows = await readAboutRows(session, plan)),
+      (r) => r.includes(runtimeRow!) && aboutIsComplete(r),
+      {
+        withinMs: options.timeout ?? 10_000,
+        message: 'ABOUT completely describes the live runtime',
+        intervalMs: 500,
+        retry: true,
+      },
+    );
+    failed = false;
     return rows;
-  } catch (error) {
-    failure = error;
-    throw error;
   } finally {
-    record(artifacts, 'about-readiness', {
-      runtimeRow: runtimeRow ?? null,
-      rows,
-      expired: deadlineExpired(deadline, failure),
-    });
+    record(artifacts, 'about-readiness', { runtimeRow: runtimeRow ?? null, rows, expired: failed });
   }
 }
 

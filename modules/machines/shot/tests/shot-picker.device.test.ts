@@ -6,7 +6,8 @@ import { button, encoder, repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
-import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { memory } from '@digi/regression/runtime/memory.ts';
+import { panelKeys } from '@digi/regression/runtime/flows/panel-keys.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { RATE, selectDynamicMachine, trackApi, wav } from './shot-support.ts';
@@ -25,7 +26,7 @@ runtimeTests(
     const { session, dk } = runtime;
     const artifacts = liveArtifacts(session, 'shot-picker');
     const api = trackApi(runtime);
-    const ui = panel(session);
+    const ui = panelKeys(runtime);
     try {
       await installWithDebug(runtime, 'digikit/shot', 'test/track-select', 'test/stock-pool');
       const plan = await prepareRuntimePlan(session, artifacts, ['_dv_params']);

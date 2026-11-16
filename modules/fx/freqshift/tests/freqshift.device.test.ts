@@ -3,10 +3,10 @@ import path from 'node:path';
 import { encoder } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { createFxKitUi } from '@digi/regression/runtime/fx-kit-ui.ts';
-import { advance, analysisJson, bounded, captureNote, frames, rows, word } from '@digi/regression/runtime/fx-live.ts';
+import { analysisJson, bounded, captureNote, frames, rows, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { bits, cstring, mainPage, openPages, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
-import { inspectFxBoot, selectSine, shot, tap, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
+import { inspectFxBoot, selectSine, shot, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
 import { selectTrack, setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
@@ -98,14 +98,14 @@ for (const device of DEVICES) {
 
       await boot('dry', [SINE], false);
       await selectSine(runtime, profile);
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('dry', true);
 
       const master = await boot('master', [SINE, FX]);
       await selectSine(runtime, profile);
-      await openPages(runtime.session);
-      for (let i = 0; i < 3; i++) await tap(runtime.session, 'DOWN', 300);
-      await advance(runtime.session, 600);
+      await openPages(runtime);
+      for (let i = 0; i < 3; i++) await runtime.ui.tap('DOWN', { until: { ms: 300, why: REDRAW } });
+      await runtime.ui.wait({ ms: 600, why: SETTLE });
       await shot(runtime.session, artifacts, 'fsh-page-default');
       expect(await word(runtime.session, sym('fxp_count'))).toBe(4);
       expect(
@@ -138,13 +138,13 @@ for (const device of DEVICES) {
         'Mix',
         'MIX',
       ]);
-      let kit = pageKit(runtime.session, profile);
+      let kit = pageKit(runtime, profile);
       let ui = createFxKitUi(runtime, plan, profile, artifacts);
       expect([await kit.raw(0), await kit.raw(7)]).toEqual([0x4000, 0x7f00]);
       expect(await words()).toEqual([0, bits(1)]);
       expect((await row()).slice(18, 23)).toEqual([0, 0, 0, 0, 0]);
       expect(master.capacity.SEND_SLOTS).toEqual({ limit: sendSlots, used: 0, largest: 0 });
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('a');
 
       // Preserve the shifter's endpoint timings: approach, sixty fast events, settle.
@@ -153,40 +153,40 @@ for (const device of DEVICES) {
         await kit.setRaw('LEVEL', 7, near);
         for (let i = 0; i < 60; i++) {
           await bounded(() => runtime.session.client.inputTurn(encoder('LEVEL'), direction * 8));
-          await advance(runtime.session, 2);
+          await runtime.ui.wait({ ms: 2, why: SETTLE });
         }
-        await advance(runtime.session, 100);
-        await advance(runtime.session, 60);
+        await runtime.ui.wait({ ms: 100, why: SETTLE });
+        await runtime.ui.wait({ ms: 60, why: SETTLE });
         expect(await kit.raw(7)).toBe(target);
         expect((await words())[1]).toBe(target ? bits(1) : 0);
         await shot(runtime.session, artifacts, tag);
       };
       await endpoint(0x1000, -1, 0, 'fsh-page-mix-zero');
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('b');
       await endpoint(0x7000, 1, 0x7f00, 'fsh-page-mix-top');
       const turn = async (raw: number, tag: string) => {
         await ui.fxPage(3);
         const got = await kit.setRaw('ENC A', 0, raw);
-        await advance(runtime.session, 100);
+        await runtime.ui.wait({ ms: 100, why: SETTLE });
         await shot(runtime.session, artifacts, `fsh-page-shift-${tag}`);
         const value = shiftFloat(got);
         expect(await words()).toEqual([bits(value), bits(1)]);
         shift[tag] = value;
       };
       await turn(0x6800, 'up');
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('c');
       await turn(0x1800, 'down');
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('d');
       await noFault();
       const saved = [await kit.raw(0), await kit.raw(7)];
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await ui.saveKit(2, 'fsh');
       await ui.fxPage(3);
       await kit.setRaw('ENC A', 0, 0x6800);
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       const upRaw = await kit.raw(0);
       const loaded = await ui.loadKit(2, 'fsh');
       record(artifacts, 'fsh-load-observations', loaded);
@@ -195,9 +195,9 @@ for (const device of DEVICES) {
       expect(await words()).toEqual([bits(shift.down!), bits(1)]);
       shift.e = shift.down!;
       await ui.fxPage(3);
-      await advance(runtime.session, 300);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       await shot(runtime.session, artifacts, 'fsh-page-loaded');
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('e');
       await noFault();
 
@@ -207,54 +207,54 @@ for (const device of DEVICES) {
       expect(send.capacity.SEND_SLOTS).toEqual({ limit: sendSlots, used: 1, largest: 0 });
       expect(await word(runtime.session, sym('fxp_send_count'))).toBe(2);
       await selectSine(runtime, profile);
-      kit = pageKit(runtime.session, profile);
+      kit = pageKit(runtime, profile);
       ui = createFxKitUi(runtime, plan, profile, artifacts);
-      await mainPage(runtime.session);
-      await tap(runtime.session, 'FX', 400);
-      await tap(runtime.session, 'FX', 400);
+      await mainPage(runtime);
+      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
+      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
       await shot(runtime.session, artifacts, 'send-page2');
-      await setAmount(runtime.session, profile, 'ENC A', 0, 40);
+      await setAmount(runtime, profile, 'ENC A', 0, 40);
       await shot(runtime.session, artifacts, 'send-turning');
-      await advance(runtime.session, 300);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       expect(await amounts()).toEqual([40, ...Array(15).fill(0)]);
       await ui.fxPage(3);
-      await advance(runtime.session, 300);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       await shot(runtime.session, artifacts, 'send-fsh-page');
       const sendRaw = await kit.setRaw('ENC A', 0, 0x6800);
       shift.send = shiftFloat(sendRaw);
-      await advance(runtime.session, 100);
+      await runtime.ui.wait({ ms: 100, why: SETTLE });
       expect(await words()).toEqual([bits(shift.send), bits(1)]);
       expect((await row())[18]).toBe(1);
       expect((await amounts())[0]).toBe(40);
       mix.send = floatWord((await row())[13]!);
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('send');
       await ui.fxPage(3);
       const half = await kit.setRaw('LEVEL', 7, 0x4000);
-      await advance(runtime.session, 100);
+      await runtime.ui.wait({ ms: 100, why: SETTLE });
       mix.half = floatWord((await row())[13]!);
       expect(Math.abs(mix.half - half / 0x7f00)).toBeLessThan(1e-4);
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('half');
       await noFault();
 
       await boot('other', [SINE, FX]);
       await selectSine(runtime, profile);
       ui = createFxKitUi(runtime, plan, profile, artifacts);
-      kit = pageKit(runtime.session, profile);
-      await mainPage(runtime.session);
-      await selectTrack(runtime.session, 2);
-      await tap(runtime.session, 'FX', 400);
-      await tap(runtime.session, 'FX', 400);
-      await setAmount(runtime.session, profile, 'ENC A', 1, 100);
-      await advance(runtime.session, 300);
+      kit = pageKit(runtime, profile);
+      await mainPage(runtime);
+      await selectTrack(runtime, 2);
+      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
+      await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
+      await setAmount(runtime, profile, 'ENC A', 1, 100);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
       expect(await amounts()).toEqual([0, 100, ...Array(14).fill(0)]);
-      await selectTrack(runtime.session, 1);
+      await selectTrack(runtime, 1);
       await ui.fxPage(3);
       const otherRaw = await kit.setRaw('ENC A', 0, 0x6800);
-      await advance(runtime.session, 100);
+      await runtime.ui.wait({ ms: 100, why: SETTLE });
       expect((await row())[4]).toBe(bits(shiftFloat(otherRaw)));
-      await mainPage(runtime.session);
+      await mainPage(runtime);
       await sound('other');
 
       const request = path.join(artifacts, 'freqshift-analysis-request.json');

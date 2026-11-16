@@ -2,9 +2,9 @@ import { be32, fileHash, type DkSession } from '@digi/dk-session';
 import { beginBody, dataBody, GCMD } from '@digi/regression/runtime/upload-kit.ts';
 import { describe, expect, test } from 'vitest';
 import { bootInfo, pokeKnob, sha, statusOf } from '@digi/regression/runtime/card-kit.ts';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { RING_SYMBOLS } from '@digi/regression/runtime/runtime-menu.ts';
 
@@ -48,11 +48,11 @@ for (const device of DEVICES) {
       relaxFs: true,
     });
     const spec = { modules: ['test/file-write', 'test/file-write-b'], selection: SELECTION };
-    const usb = <T>(rt: PatchedSession, run: (dk: DkSession) => Promise<T>) => kit.usb(rt, run);
+    const usb = <T>(rt: TestRuntime, run: (dk: DkSession) => Promise<T>) => kit.usb(rt, run);
 
-    const start = async (rt: PatchedSession, kind: number, size: number, path: string, base = CMD) =>
+    const start = async (rt: TestRuntime, kind: number, size: number, path: string, base = CMD) =>
       (await usb(rt, (dk) => dk.request(base, Buffer.concat([Buffer.from([kind]), be32(size), cstr(path)])))).status;
-    const status = async (rt: PatchedSession, base = CMD) => {
+    const status = async (rt: TestRuntime, base = CMD) => {
       const r = await usb(rt, (dk) => dk.request(base + 1));
       const b = Buffer.from(r.body);
       return {
@@ -70,20 +70,20 @@ for (const device of DEVICES) {
       };
     };
     /** Run the emulator until the job reaches `state` (1 running, 2 finished) and, when given, has written `written` bytes. */
-    const until = async (rt: PatchedSession, state: number, written?: number, base = CMD) => {
+    const until = async (rt: TestRuntime, state: number, written?: number, base = CMD) => {
       for (let i = 0; i < 100; i++) {
-        await advance(rt.session, 100);
+        await rt.ui.wait({ ms: 100, why: SETTLE });
         const s = await status(rt, base);
         if (s.state === state && (written === undefined || s.written === written)) return s;
       }
       throw new Error(`the job did not reach state ${state}`);
     };
     /** Emulated time in slices that each stay inside the step deadline of the harness. */
-    const advanceLong = async (rt: PatchedSession, ms: number) => {
-      for (let left = ms; left > 0; left -= 1000) await advance(rt.session, Math.min(1000, left));
+    const advanceLong = async (rt: TestRuntime, ms: number) => {
+      for (let left = ms; left > 0; left -= 1000) await rt.ui.wait({ ms: Math.min(1000, left), why: SETTLE });
     };
     /** The store's files besides the module itself. */
-    const files = async (rt: PatchedSession) =>
+    const files = async (rt: TestRuntime) =>
       new Map((await usb(rt, (dk) => dk.list())).filter((e) => !SELECTION.includes(e.path)).map((e) => [e.path, e]));
     const boot = async (tag: string) => {
       const rt = await kit.load(tag, spec);
@@ -224,7 +224,7 @@ for (const device of DEVICES) {
       expect(await start(rt, SPIN, 4096, 'data/spin.bin')).toBe(0);
       let s = await status(rt);
       for (let i = 0; i < 50 && s.create <= 0; i++) {
-        await advance(rt.session, 100);
+        await rt.ui.wait({ ms: 100, why: SETTLE });
         s = await status(rt);
       }
       expect(s.create, 'the step made its file and spins with the session open').toBeGreaterThan(0);

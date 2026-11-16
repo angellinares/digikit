@@ -23,7 +23,7 @@ import { cardRig, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts'
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { advance, rpc, word } from '@digi/regression/runtime/fx-live.ts';
+import { rpc, word, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 
 /**
  * digikit/usb-fast (docs/plans/usb-fast-hardware.md, step 4), through the TypeScript BulkSession over the emulator link (`EmuBulkLink`: the daemon's
@@ -159,9 +159,9 @@ for (const device of DEVICES) {
       const mode = options.mode ?? PAIR;
       if (dt2 && !recovered.has(dk)) {
         recovered.add(dk);
-        await advance(rig.session, 2000); // the boot recovery of the staging folder
+        await rig.runtime.ui.wait({ ms: 2000, why: SETTLE }); // the boot recovery of the staging folder
       }
-      for (let i = 0; i < 100 && (await mode.callback(call)) === undefined; i++) await advance(rig.session, 100);
+      for (let i = 0; i < 100 && (await mode.callback(call)) === undefined; i++) await rig.runtime.ui.wait({ ms: 100, why: SETTLE });
       const notes: string[] = [];
       const opener = mode.opener(call, { stepInstructions: options.stepInstructions ?? STEP, zlp: options.zlp });
       const choice = await chooseBulk(dk, opener, (l) => notes.push(l), { timeoutMs: options.timeoutMs ?? 20_000, resyncMs: 200, chunk: options.chunk, log: (l) => notes.push(l) });
@@ -193,7 +193,7 @@ for (const device of DEVICES) {
       const dk = await rig.pausedBoot(await baseCard(name));
       let restarts = 0;
       if (mode.port !== 2) {
-        await advance(rig.session, 2500); // the boot's enable first
+        await rig.runtime.ui.wait({ ms: 2500, why: SETTLE }); // the boot's enable first
         restarts = await word(rig.session, planSymbol(rig.plan, 'usb_bulk_restarts'));
         await setPort(mode.port);
       }
@@ -392,7 +392,7 @@ for (const device of DEVICES) {
       await rq(BULK_CMD.BEGIN, 1, Buffer.concat([be32(SAMPLES), Buffer.from(`${rp('nozlp.bin')}\0`), be32(data.length), Buffer.alloc(4)]));
       expect(parseBulkReply((await raw.recv(20_000))!).status, 'BEGIN').toBe(0);
       await rq(BULK_CMD.DATA, 2, Buffer.concat([be32(0), data])); // the frame is 512 bytes: no packet follows
-      for (let i = 0; i < 40; i++) await advance(rig.session, 50);
+      for (let i = 0; i < 40; i++) await rig.runtime.ui.wait({ ms: 50, why: SETTLE });
       expect(await raw.recv(300), 'no reply while the transfer is open').toBeNull();
       await rpc(rig.session, 'usb.bulk.in', { zlp: true });
       const r = parseBulkReply((await raw.recv(20_000))!);
@@ -435,7 +435,7 @@ for (const device of DEVICES) {
       return out;
     };
     const quiet = async (link: BulkChoice['link'], what: string) => {
-      for (let i = 0; i < 20; i++) await advance(rig.session, 50);
+      for (let i = 0; i < 20; i++) await rig.runtime.ui.wait({ ms: 50, why: SETTLE });
       expect(await link.recv(300), what).toBeNull();
     };
     const moduleStatus = async (dk: DkSession) => {
@@ -547,7 +547,7 @@ for (const device of DEVICES) {
       for (let i = 0; i < 100 && over.status === BULK_STATUS.L_E_BUSY; i++) {
         await link.send(req(BULK_CMD.BEGIN, 72, beginBody('p-new.bin', b.length, stable(b))));
         over = (await replies(link, 1))[0]!;
-        if (over.status === BULK_STATUS.L_E_BUSY) await advance(rig.session, 20);
+        if (over.status === BULK_STATUS.L_E_BUSY) await rig.runtime.ui.wait({ ms: 20, why: SETTLE });
       }
       expect(over, 'BEGIN over an open file').toMatchObject({ seq: 72, status: 0 });
       await link.send(dataFrame(73, 0, b));
@@ -586,9 +586,9 @@ for (const device of DEVICES) {
       // a bus reset while replies are owed and a buffer is held: 40 requests in one transfer, no reply read, the reset before the module is through
       const resets = (await moduleStatus(dk)).resets;
       await link.send(Buffer.concat(Array.from({ length: 40 }, (_, i) => req(BULK_CMD.INFO, i))));
-      await advance(rig.session, 1);
+      await rig.runtime.ui.wait({ ms: 1, why: SETTLE });
       await rpc(rig.session, 'usb.bulk.in', { connect: (await EmuBulkLink.connectCallback(call))! });
-      await advance(rig.session, 200);
+      await rig.runtime.ui.wait({ ms: 200, why: SETTLE });
       while (await link.recv(300)) {
         /* drain what was answered before the reset */
       }
@@ -751,7 +751,7 @@ for (const device of DEVICES) {
       expect(Buffer.from(b.body).readUInt32BE(0), 'started').toBe(1);
       let r = Buffer.alloc(0);
       for (let i = 0; i < 400; i++) {
-        await advance(rig.session, 500);
+        await rig.runtime.ui.wait({ ms: 500, why: SETTLE });
         r = Buffer.from((await dk.request(0x37, Uint8Array.from([0x52]))).body); // 'R'
         if (r.readUInt32BE(4) === 10 && r.readUInt32BE(0) === 0) break;
       }
@@ -779,7 +779,7 @@ for (const device of DEVICES) {
       await link.send(dataFrame(2, 0, f.subarray(0, 65_536)));
       expect((await replies(link, 1))[0]!.status).toBe(0);
       expect((await status()).cap, 'a staging buffer is held').toBeGreaterThan(0);
-      for (let t = 0; t < 23_000; t += 1000) await advance(rig.session, 1000);
+      for (let t = 0; t < 23_000; t += 1000) await rig.runtime.ui.wait({ ms: 1000, why: SETTLE });
       if (mode.outOnly) expect(await status(), 'freed, one session dropped').toEqual({ cap: 0, expired: 1 });
       if (mode.outOnly) {
         // OUT-only: the module also frees the receive ring at expiry, so a DATA frame is NAKed and nothing is queued for the 'R' poll; the next nonce starts a session again
@@ -885,16 +885,16 @@ for (const device of DEVICES) {
     test('a device in USB AUDIO/MIDI holds no bulk session until a nonce; the switch to USB MIDI brings the bulk pair up on a timer of the module', async () => {
       // The harness boots in USB MIDI, so the boot's enable happens first (the job's first step runs at init); the switch to port 5 then ends that session.
       const dk = await rig.pausedBoot(await baseCard());
-      await advance(rig.session, 2500);
+      await rig.runtime.ui.wait({ ms: 2500, why: SETTLE });
       await setPort(5);
-      await advance(rig.session, 3000);
+      await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
       const status = async () => {
         const b = Buffer.from((await dk.request(0x37)).body);
         return { enabled: (b.readUInt32BE(28) & 4) !== 0, ring: b.readUInt32BE(76) };
       };
       expect(await status(), 'USB AUDIO/MIDI without a nonce: no session, no ring').toEqual({ enabled: false, ring: 0 });
       await setPort(2);
-      await advance(rig.session, 1500);
+      await rig.runtime.ui.wait({ ms: 1500, why: SETTLE });
       expect((await status()).enabled, 'USB MIDI again: the job enabled the bulk session').toBe(true);
       const bulk = await connect(dk, { mode: PAIR });
       expect((await bulk.session.info()).flags & 1, 'the pair answers INFO on its own endpoint').toBe(0);

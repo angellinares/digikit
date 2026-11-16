@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { advance, analysisJson, frames, word } from '@digi/regression/runtime/fx-live.ts';
+import { analysisJson, frames, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { FX, SINE } from '@digi/regression/runtime/fixtures.ts';
-import { shot, tap, selectSine } from '@digi/regression/runtime/fx-session.ts';
+import { shot, selectSine } from '@digi/regression/runtime/fx-session.ts';
 import { amountShown, selectTrack, setAmount, soundImage, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { overlayWrites } from '@digi/regression/runtime/write-safety.ts';
@@ -56,42 +56,42 @@ trackRouteSuite('send', { initial: 'sine', presets: ['sine', 'send'], base: true
           expect(await word(session, sym('fxp_send_count'))).toBe(2);
           await capacity(runtime, 1);
           await selectSine(runtime, profile);
-          await tap(session, 'FX', 400);
+          await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
           const page1 = await shot(session, artifacts, 'send-page1');
-          await tap(session, 'FX', 400);
+          await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
           const page2 = await shot(session, artifacts, 'send-page2-track1');
           expect(page1).not.toBe(base.hash);
           expect(page2).not.toBe(page1);
-          await tap(session, 'FX', 400);
+          await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
           expect(await shot(session, artifacts, 'send-page1-again')).toBe(page1);
-          await tap(session, 'FX', 400);
+          await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
           const before = await soundImage(session, profile, 0);
           for (const index of profile.fx.send_indices) expect(before[0x14 / 2 + index]).toBe(0);
-          await setAmount(session, profile, 'ENC A', 0, 40);
+          await setAmount(runtime, profile, 'ENC A', 0, 40);
           await shot(session, artifacts, 'send-turning');
           const after = await soundImage(session, profile, 0);
           expect(
             after.flatMap((value, index) => (value === before[index] ? [] : [index])),
             'no other Sound word changes, record slot included',
           ).toEqual([0x14 / 2 + profile.fx.send_indices[0]!]);
-          await advance(session, 300);
+          await runtime.ui.wait({ ms: 300, why: SETTLE });
           expect(await amounts(runtime)).toEqual([40, ...Array(15).fill(0)]);
           await pageTwo(runtime);
           const at40 = await shot(session, artifacts, 'send-page2-track1-40');
-          await selectTrack(session, 2);
+          await selectTrack(runtime, 2);
           await shot(session, artifacts, 'send-page2-track2-after-select');
           expect(await amountShown(session, profile, 1)).toBe(0);
           await pageTwo(runtime);
           await shot(session, artifacts, 'send-page2-track2-0');
-          await setAmount(session, profile, 'ENC A', 1, 100);
+          await setAmount(runtime, profile, 'ENC A', 1, 100);
           await shot(session, artifacts, 'send-turning-track2');
-          await advance(session, 300);
+          await runtime.ui.wait({ ms: 300, why: SETTLE });
           expect((await amounts(runtime)).slice(0, 2)).toEqual([40, 100]);
-          await selectTrack(session, 1);
+          await selectTrack(runtime, 1);
           await pageTwo(runtime);
           const back = await shot(session, artifacts, 'send-page2-track1-back');
           expect(back === at40 || (await amountShown(session, profile, 0)) === 40).toBe(true);
-          await advance(session, 2600);
+          await runtime.ui.wait({ ms: 2600, why: SETTLE });
           const stored = await settings(runtime, 'send-after');
           expect(stored.seq).toBeGreaterThan(1);
           expect(stored.entries.get(sendKey)).toBe('2864' + '00'.repeat(14));
@@ -110,7 +110,7 @@ trackRouteSuite('send', { initial: 'sine', presets: ['sine', 'send'], base: true
               (sector) => sector === profile.settings.copy_a || sector === profile.settings.copy_b,
             ),
           ).toBe(true);
-          await tap(session, 'NO', 300);
+          await runtime.ui.tap('NO', { until: { ms: 300, why: REDRAW } });
           const file = path.join(artifacts, 'send.wav');
           await trackNote(runtime, file, (await frames(session)) + 300);
           pcm.set('send', file);

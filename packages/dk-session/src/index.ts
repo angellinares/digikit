@@ -5,6 +5,7 @@ export { ProcessTransport } from './process-transport.ts';
 export * from './fault.ts';
 export * from './loads.ts';
 export * from './runtime-log.ts';
+export * from './runtime-events.ts';
 export * from './bulk.ts';
 export { EmuBulkLink, EmuOutOnlyLink, type EmuBulkOptions } from './emu-bulk-link.ts';
 export { ProcessBulkLink } from './process-bulk.ts';
