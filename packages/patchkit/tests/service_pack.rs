@@ -223,7 +223,7 @@ fn lfo_packs_to_a_dks_that_owns_lfo_shape_and_its_users_need_it() {
     }
     let here = root();
     let d = scratch("lfo");
-    let svc = packed(&here, "core/lfo", &d.join("lfo.dks"));
+    let svc = packed(&here, "core/services/lfo", &d.join("lfo.dks"));
     let dkm = Dkm::parse(&svc).unwrap();
     assert_eq!(dkm.role, 1);
     assert_eq!(&dkm.register[4..6], &2u16.to_be_bytes(), "table version 2");
