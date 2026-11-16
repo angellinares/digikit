@@ -21,6 +21,7 @@ import {
   readStoreFile,
   removeModuleFile,
   restartDevice,
+  refreshServices,
   type InstallDeps,
   type LibraryModule,
   type TransferEvent,
@@ -221,6 +222,27 @@ export function createTransferBackend({
       const library = await loadLibrary(info.port);
       const deps = await installDeps(info.port);
       await asked(() => install(s, modules, library, onEvent, deps));
+    },
+    /**
+     * The Flash job's share, once the flashed runtime answers (it may still be booting: asked again for about a minute): the services the modules on
+     * the card need are bound again and replaced, the unused ones deleted (`refreshServices`). Nothing happens without services in the library.
+     */
+    async refreshServices(device: string, onEvent: (e: TransferEvent) => void): Promise<string[]> {
+      const deps = await installDeps(device);
+      if (!deps) return [];
+      let last: unknown;
+      for (let i = 0; i < 30; i++) {
+        try {
+          const { s, info } = await opened();
+          const library = await loadLibrary(info.port);
+          return await asked(() => refreshServices(s, deps, library, onEvent));
+        } catch (e) {
+          if (isCancelled(e)) throw e;
+          last = e;
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      throw last;
     },
     /** DELETE the files from the card (one request each, confirmed with LIST). The device's selection is not touched. */
     async remove(paths: string[], onEvent: (e: TransferEvent) => void): Promise<void> {

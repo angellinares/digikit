@@ -214,6 +214,18 @@ export function createFirmwareState({
         detail: final.message,
       });
     else if (final.phase === 'failed') log({ level: 'error', text: `${what} failed: ${final.message}` });
+    // the flash is done: the services on the card are bound again for the new runtime and the unused ones go (the same code on the desktop and the site)
+    if (final.phase === 'done' && !p.restore) {
+      try {
+        const replaced = await transfer.backend.refreshServices(p.device, () => {});
+        if (replaced.length) log({ level: 'info', text: `services replaced: ${replaced.join(', ')}` });
+      } catch (e) {
+        log({
+          level: 'error',
+          text: `Services: ${e instanceof Error ? e.message : String(e)}. The firmware flash is done; Install on the Transfer page replaces them.`,
+        });
+      }
+    }
     // the flash is done and the runtime answered: the default modules follow in the same run (the flash stays done when one fails)
     if (final.phase === 'done' && !p.restore) await defaults.installAfterFlash(p.device);
   }

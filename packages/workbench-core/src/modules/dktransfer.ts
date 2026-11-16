@@ -467,26 +467,37 @@ export async function readStoreFile(s: DkSession, path: string, piece = 768): Pr
   return out;
 }
 
-/** One bound file of a service: bound once per firmware hash and unbound hash (`deps.cache`). */
+/** One bound file of a service: bound once per firmware hash and unbound hash (`deps.cache`). Every service goes through the binder; the binder returns a
+ * service that hooks no firmware site (lfo) as built. Without a kept stock image (`firmwareHash` null) the binder gets an empty hash. */
 async function bindService(deps: InstallDeps, f: ServiceFile): Promise<Uint8Array> {
-  if (f.hooks === 0) return f.bytes; // no firmware site to copy: the file is finished as built
-  if (deps.firmwareHash === null) throw new Error(`${f.stem}: no stock firmware is kept to bind it to`);
-  const key = `${deps.firmwareHash}:${f.hash}`;
+  const fw = deps.firmwareHash ?? '';
+  const key = `${fw}:${f.hash}`;
   const hit = deps.cache?.get(key);
   if (hit) return hit;
-  const bound = await deps.binder.bind(f.bytes, deps.firmwareHash);
+  const bound = await deps.binder.bind(f.bytes, fw);
   deps.cache?.set(key, bound);
   return bound;
 }
 
-/** Without a kept stock image a service that hooks the firmware cannot be bound: each module that needs one is refused (`no-stock`); a service with no hook installs as built. */
-function withoutStock(deps: InstallDeps, plan: ResolvedServices): ResolvedServices {
-  if (deps.firmwareHash !== null) return plan;
+/** The bound file, or null when the binder cannot make it (no kept stock image, or one patchkit cannot bind to). */
+async function tryBind(deps: InstallDeps, f: ServiceFile): Promise<Uint8Array | null> {
+  try {
+    return await bindService(deps, f);
+  } catch {
+    return null;
+  }
+}
+
+/** Each module whose services cannot all be bound is refused (`no-stock`) and adds no service; the other modules go on. */
+async function refuseUnbound(deps: InstallDeps, plan: ResolvedServices): Promise<ResolvedServices> {
+  const failed = new Set<ServiceFile>();
+  for (const f of plan.order) if ((await tryBind(deps, f)) === null) failed.add(f);
+  if (failed.size === 0) return plan;
   const refused = [...plan.refused];
   const byModule = new Map<string, ServiceFile[]>();
   for (const [module, files] of plan.byModule) {
-    const unbound = files.find((f) => f.hooks > 0);
-    if (unbound) refused.push({ module, service: unbound.stem, kind: 'no-stock' });
+    const bad = files.find((f) => failed.has(f));
+    if (bad) refused.push({ module, service: bad.stem, kind: 'no-stock' });
     else byModule.set(module, files);
   }
   const kept = new Set([...byModule.values()].flat());
@@ -550,30 +561,24 @@ export async function buildView(s: DkSession, library: LibraryModule[], deps?: I
   let sv: ServiceView | undefined;
   let refused: ServiceRefusal[] = [];
   if (deps) {
-    // a stock image that cannot bind a service (not one patchkit knows) is the same as none kept: the rows show the unbound files
-    let d = deps;
+    // a service the binder cannot make shows its unbound file (its modules are refused below)
     const bound: ServiceView['services'] = [];
-    try {
-      for (const file of d.services) {
-        const b = await bindService(d, file);
-        bound.push({ file, bound: { size: b.length, hash: fileHashHex(b) }, needs: d.needsOf?.(b) });
-      }
-    } catch {
-      d = { ...d, firmwareHash: null };
-      bound.length = 0;
-      for (const file of d.services)
-        bound.push({ file, bound: { size: file.bytes.length, hash: file.hash }, needs: d.needsOf?.(file.bytes) });
+    for (const file of deps.services) {
+      const b = (await tryBind(deps, file)) ?? file.bytes;
+      bound.push({ file, bound: { size: b.length, hash: fileHashHex(b) }, needs: deps.needsOf?.(b) });
     }
     const facts = hasCap(info, 'READ') ? await cardFacts(s, card, library, headers) : { needs: [], provides: {} };
     sv = { services: bound, card: facts.needs, provides: facts.provides };
-    refused = withoutStock(
-      d,
-      resolveServices(
-        library.map((m) => ({ id: m.id, needs: readNeeds(m.bytes) })),
-        d.services,
-        d.runtimeIdentity(info),
-        d.runtimeServices,
-      ),
+    refused = (
+      await refuseUnbound(
+        deps,
+        resolveServices(
+          library.map((m) => ({ id: m.id, needs: readNeeds(m.bytes) })),
+          deps.services,
+          deps.runtimeIdentity(info),
+          deps.runtimeServices,
+        ),
+      )
     ).refused;
   }
   const merged = mergeView(library, card, loaded, cap, headers, states, sv);
@@ -656,7 +661,7 @@ export async function install(
   let order: ServiceFile[] = [];
   let refused: ServiceRefusal[] = [];
   if (deps) {
-    const plan = withoutStock(
+    const plan = await refuseUnbound(
       deps,
       resolveServices(
         ids.map((id) => ({ id, needs: readNeeds(by.get(id)!.bytes) })),
@@ -725,19 +730,7 @@ export async function install(
         });
     }
   }
-  if (deps && canReadHeaders(info)) {
-    // a `.dks` that no `.dkm` on the card hard-needs (directly or through another service) is not wanted any more
-    const card = [...(await listModules(s, info)), ...(await listServices(s, info))];
-    const facts = await cardFacts(s, card, library);
-    const wanted = neededHashes(facts.needs, facts.provides);
-    // a file whose header cannot be read may need a service: delete nothing then
-    for (const c of facts.unread ? [] : card) {
-      const hash = facts.provides[c.path];
-      if (hash === undefined || wanted.has(hash)) continue;
-      emit({ event: 'delete', path: c.path, why: 'unused-service' });
-      await s.delete(c.path);
-    }
-  }
+  if (deps && canReadHeaders(info)) await removeUnusedServices(s, info, library, emit);
   emit({ event: 'done', restarted: false, selected: [] });
   return deps
     ? { uploaded, selected: [], restarted: false, refused }
@@ -745,19 +738,24 @@ export async function install(
 }
 
 /**
- * The Flash job's share: each `.dks` on the card that the workbench has a file for is bound again and replaced when the card holds other bytes
- * (a flashed runtime can carry another service ABI). A file the workbench has no service for stays, a failed upload or verify stops the run.
- * Returns the paths replaced. A service that hooks the firmware is left alone without a kept stock image (`deps.firmwareHash` null).
+ * The Flash job's share (`firmware-state.ts`, after the runtime answers): each `.dks` on the card that the workbench has a file for is bound again and replaced when the card holds other bytes
+ * (a flashed runtime can carry another service ABI). A file the workbench has no service for, or cannot bind, stays; a failed upload or verify stops the run.
+ * Then each `.dks` that no module on the card needs is deleted. Returns the paths replaced.
  */
-export async function refreshServices(s: DkSession, deps: InstallDeps, emit: Emit = () => {}): Promise<string[]> {
+export async function refreshServices(
+  s: DkSession,
+  deps: InstallDeps,
+  library: LibraryModule[],
+  emit: Emit = () => {},
+): Promise<string[]> {
   const info = await s.info();
   requireRuntime(info);
   const mine = new Map(deps.services.map((f) => [servicePath(f.stem), f]));
   const replaced: string[] = [];
   for (const c of await listServices(s, info)) {
     const f = mine.get(c.path);
-    if (!f || (f.hooks > 0 && deps.firmwareHash === null)) continue;
-    const bytes = await bindService(deps, f);
+    const bytes = f && (await tryBind(deps, f));
+    if (!f || !bytes) continue;
     const hash = fileHashHex(bytes);
     if (c.size === bytes.length && c.hash === hash) continue;
     emit({ event: 'upload', id: f.stem, kind: 'service', path: c.path, bytes: bytes.length });
@@ -773,7 +771,22 @@ export async function refreshServices(s: DkSession, deps: InstallDeps, emit: Emi
     }
     replaced.push(c.path);
   }
+  // and the stale ones go: no module on the card needs them
+  if (canReadHeaders(info)) await removeUnusedServices(s, info, library, emit);
   return replaced;
+}
+
+/** A `.dks` that no `.dkm` on the card hard-needs (directly or through another service) is not wanted any more: delete it. Nothing is deleted when a header cannot be read. */
+async function removeUnusedServices(s: DkSession, info: DkInfoFull, library: LibraryModule[], emit: Emit): Promise<void> {
+  const card = [...(await listModules(s, info)), ...(await listServices(s, info))];
+  const facts = await cardFacts(s, card, library);
+  const wanted = neededHashes(facts.needs, facts.provides);
+  for (const c of facts.unread ? [] : card) {
+    const hash = facts.provides[c.path];
+    if (hash === undefined || wanted.has(hash)) continue;
+    emit({ event: 'delete', path: c.path, why: 'unused-service' });
+    await s.delete(c.path);
+  }
 }
 
 /** Whether the device answers READ (the headers of its card files can be read). */

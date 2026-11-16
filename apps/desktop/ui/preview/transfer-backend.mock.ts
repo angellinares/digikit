@@ -115,6 +115,9 @@ export const transferBackend = {
     await delay(1200);
     onEvent({ event: 'done', loaded: [...deviceFiles.values()].filter((f) => f.loaded).map((f) => f.path) });
   },
+  async refreshServices(): Promise<string[]> {
+    return [];
+  },
   async add(files: { name: string; data: Uint8Array }[]): Promise<string[]> {
     await delay(300);
     return files.map((f) => `Added modules/${f.name}`);

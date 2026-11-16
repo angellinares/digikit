@@ -8,7 +8,6 @@ import type { Needs } from './fit.ts';
 export const PROVIDER_MAX = 6;
 
 const NEEDS_TAG = 1;
-const HOOKS_TAG = 6;
 const PROVIDES_TAG = 9;
 const ROLE_SERVICE = 1;
 
@@ -33,8 +32,6 @@ export interface ServiceFile {
   file_size: number;
   hash: string;
   needs: Need[];
-  /** The firmware sites the service hooks (HOOKS items). A file with none (lfo) is finished as built: it needs no binding and no stock image. */
-  hooks: number;
 }
 
 export interface RuntimeIdentity {
@@ -139,7 +136,6 @@ export function serviceFileOf(stem: string, bytes: Uint8Array, hash: string): Se
     file_size: bytes.length,
     hash,
     needs: readNeeds(bytes),
-    hooks: tableItems(bytes, HOOKS_TAG, 8).length,
   };
 }
 

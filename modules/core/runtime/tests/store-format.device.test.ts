@@ -197,7 +197,6 @@ cardRigs(
         const stock = resolveInputs(h.device, FIRMWARE[h.device]).syx;
         const unbound = fs.readFileSync(moduleArtifact(h.device, 'test/svc-test'));
         const service = serviceFileOf('svc-test', new Uint8Array(unbound), fileHashHex(unbound))!;
-        expect(service.hooks, 'the fixture service hooks the firmware').toBe(1);
         const out = `${h.artifacts}/transfer-services-${h.device}.dks`;
         const binder: ServiceBinder = {
           bind: async (dks) => {

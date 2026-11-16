@@ -33,7 +33,7 @@ import {
   type InstallDeps,
 } from '@digi/workbench-core/modules/dktransfer.ts';
 import { setFitReader } from '@digi/workbench-core/modules/fit.ts';
-import { nameHash, serviceFileOf, type ServiceFile } from '@digi/workbench-core/modules/services.ts';
+import { nameHash, readProvides, serviceFileOf, type ServiceFile } from '@digi/workbench-core/modules/services.ts';
 import { fileHashHex } from '@digi/dk-session';
 import { parseSoftwareVersion } from '@digi/workbench-core/transfer/connection-core.ts';
 import { dkm, everythingFits, needsOf } from './support/dkm.ts';
@@ -397,7 +397,6 @@ function withTable(
   role: number,
   needs: [number, number, boolean][],
   provides?: [number, number],
-  hooks: [number, number][] = [],
 ): Uint8Array {
   const b = base.slice();
   const v = new DataView(b.buffer);
@@ -412,7 +411,6 @@ function withTable(
     return e;
   };
   if (needs.length) entries.push(entry(1, needs.length, needs.flatMap(([h, min, hard]) => [h, min, hard ? 1 : 0])));
-  if (hooks.length) entries.push(entry(6, hooks.length, hooks.flat()));
   if (provides) entries.push(entry(9, 1, provides));
   let at = 0xa0;
   v.setUint32(at, 0x444b5442);
@@ -430,9 +428,8 @@ function withTable(
 }
 
 /** An unbound service file of the workbench: `stem` provides the service of that name. */
-function service(stem: string, needs: [number, number, boolean][] = [], hooked = true): ServiceFile {
-  // a service that hooks the firmware has a HOOKS item (the binder adds its trampoline); lfo has none
-  const bytes = withTable(dkm(`svc/${stem}`, { size: 800 }), 1, needs, [nameHash(stem), V1_2], hooked ? [[nameHash('site'), 0]] : []);
+function service(stem: string, needs: [number, number, boolean][] = []): ServiceFile {
+  const bytes = withTable(dkm(`svc/${stem}`, { size: 800 }), 1, needs, [nameHash(stem), V1_2]);
   return serviceFileOf(stem, bytes, fileHashHex(bytes))!;
 }
 
@@ -445,7 +442,14 @@ const needing = (name: string, stems: string[]): Uint8Array =>
   );
 
 /** The fake binder: the user's firmware hash is appended, so the bound file differs from the unbound one. */
-const binder = { bind: async (b: Uint8Array, fw: string) => concat(b, Buffer.from(fw)) };
+const binder = {
+  bind: async (b: Uint8Array, fw: string) => {
+    // like patchkit bind: lfo hooks no firmware site and comes back as built; the others need the stock image (an empty hash: none is kept)
+    if (readProvides(b)?.hash32 === nameHash('lfo')) return b;
+    if (!fw) throw new Error('no stock firmware');
+    return concat(b, Buffer.from(fw));
+  },
+};
 const bound = (f: ServiceFile): Uint8Array => concat(f.bytes, Buffer.from('fw1'));
 
 const depsOf = (services: ServiceFile[], over: Partial<InstallDeps> = {}): InstallDeps => ({
@@ -556,13 +560,11 @@ test('install with services: without a kept stock image a module that needs a se
   assert.deepEqual([...dev.files.keys()], ['modules/plain.dkm']);
 });
 
-test('install with services: a service with no hook (lfo) installs as built, with no binder call and no stock image', async () => {
-  const lfo = service('lfo', [], false);
-  assert.equal(lfo.hooks, 0);
+test('install with services: a service with no hook (lfo) comes back from the binder as built and needs no stock image', async () => {
+  const lfo = service('lfo');
   const dev = new FakeDevice();
   const user = (await libraryModule(needing('someone/mod', ['lfo']), needsOf))!;
-  const never = { bind: async () => Promise.reject(new Error('must not bind')) };
-  const out = await install(session(dev), ['someone/mod'], [user], () => {}, depsOf([lfo], { binder: never, firmwareHash: null }));
+  const out = await install(session(dev), ['someone/mod'], [user], () => {}, depsOf([lfo], { firmwareHash: null }));
   assert.deepEqual(out.uploaded, ['someone/mod']);
   assert.deepEqual(dev.files.get('services/lfo.dks'), lfo.bytes);
 });
@@ -605,16 +607,16 @@ test('refreshServices (Flash): a .dks on the card with other bytes is replaced, 
   const lfo = service('lfo');
   const dev = new FakeDevice();
   dev.files.set('services/fx.dks', Buffer.from('old build'));
-  dev.files.set('services/lfo.dks', bound(lfo));
+  dev.files.set('services/lfo.dks', lfo.bytes);
   dev.files.set('services/other.dks', Buffer.from('not ours'));
   const events: any[] = [];
-  const replaced = await refreshServices(session(dev), depsOf([fx, lfo]), (e) => events.push(e));
+  const replaced = await refreshServices(session(dev), depsOf([fx, lfo]), [], (e) => events.push(e));
   assert.deepEqual(replaced, ['services/fx.dks']);
   assert.deepEqual(dev.files.get('services/fx.dks'), bound(fx));
   assert.deepEqual(dev.files.get('services/other.dks'), Buffer.from('not ours'));
   assert.ok(events.some((e) => e.event === 'verify' && e.kind === 'service' && e.ok));
-  // no stock image: nothing is touched
-  assert.deepEqual(await refreshServices(session(dev), depsOf([fx], { firmwareHash: null })), []);
+  // no stock image: the binder cannot bind, nothing is touched
+  assert.deepEqual(await refreshServices(session(dev), depsOf([fx], { firmwareHash: null }), []), []);
 });
 
 test('install with services: a .dks that no module on the card needs any more is deleted', async () => {

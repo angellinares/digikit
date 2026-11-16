@@ -124,11 +124,11 @@ function nodeLibrary(root: string): LibraryHost {
     if (!/^[a-z0-9]+$/.test(device)) throw new Error(`not a device id: ${JSON.stringify(device)}`);
     return path.join(root, 'out/modules', device);
   };
-  const walk = (dir: string, base: string, out: { path: string; size: number }[]) => {
+  const walk = (dir: string, base: string, out: { path: string; size: number }[], ext = '.dkm') => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full, base, out);
-      else if (e.name.endsWith('.dkm'))
+      if (e.isDirectory()) walk(full, base, out, ext);
+      else if (e.name.endsWith(ext))
         out.push({ path: path.relative(base, full).split(path.sep).join('/'), size: statSync(full).size });
     }
   };
@@ -139,13 +139,17 @@ function nodeLibrary(root: string): LibraryHost {
       const dir = deviceDir(device);
       const out: { path: string; size: number }[] = [];
       if (existsSync(dir)) walk(dir, dir, out);
+      // the unbound services are packed into dist/modules/<device>/ (the desktop copies them into its library)
+      const services = path.join(root, 'dist/modules', device);
+      if (existsSync(services)) walk(services, services, out, '.dks');
       return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     },
     async read(device, rel) {
       const dir = deviceDir(device);
-      if (rel.split('/').some((p) => p === '' || p === '.' || p === '..') || !rel.endsWith('.dkm'))
+      if (rel.split('/').some((p) => p === '' || p === '.' || p === '..') || !(rel.endsWith('.dkm') || rel.endsWith('.dks')))
         throw new Error(`not a library file: ${JSON.stringify(rel)}`);
-      return toBuffer(await readFile(path.join(dir, rel)));
+      const base = rel.endsWith('.dks') ? path.join(root, 'dist/modules', device) : dir;
+      return toBuffer(await readFile(path.join(base, rel)));
     },
     async deviceStorage(device) {
       const dir = path.join(root, 'devices');

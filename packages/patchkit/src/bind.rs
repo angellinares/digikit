@@ -306,8 +306,9 @@ pub fn bind(
     }
     let keys = Keys::parse(&dkm.register).map_err(|e| err!("header table: {e:?}"))?;
     let hooks: Vec<Pair> = keys.hooks().collect();
+    // a service that hooks no firmware site (lfo) has nothing to bind: it is finished as built, and the firmware is not looked at
     if hooks.is_empty() {
-        return Err(err!("{}: declares no hooks (HOOKS is empty)", dkm.name));
+        return Ok((dks.to_vec(), Vec::new()));
     }
     if hooks.len() > BIND_MAX {
         return Err(err!(
@@ -687,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn more_than_24_hooks_and_no_hooks_are_refused() {
+    fn more_than_24_hooks_are_refused() {
         let hooks: Vec<Pair> = (0..BIND_MAX as u32 + 1).map(|a| Pair { a, b: 0 }).collect();
         let dks = service_file(&hooks, &[]);
         let e = bind(&dks, &[], &Registry::default(), &[]).unwrap_err();
@@ -696,9 +697,15 @@ mod tests {
         // 24 pass the count check and fail on the firmware
         let e = bind(&dks, &[], &Registry::default(), &[]).unwrap_err();
         assert!(!e.0.contains("over the 24"), "{e}");
+    }
+
+    #[test]
+    fn a_service_with_no_hooks_is_returned_unchanged() {
         let dks = service_file(&[], &[]);
-        let e = bind(&dks, &[], &Registry::default(), &[]).unwrap_err();
-        assert!(e.0.contains("declares no hooks"), "{e}");
+        let (file, hooks) = bind(&dks, &[], &Registry::default(), &[]).unwrap();
+        assert_eq!(file, dks, "bound = built");
+        assert!(hooks.is_empty());
+        assert_eq!(bind_json(&hooks).trim(), "[]");
     }
 
     #[test]

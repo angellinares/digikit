@@ -37,7 +37,17 @@ test.skipIf(!have)('svc-test.dks binds to each stock image: same service, more b
     // a bound file is not bound again
     assert.throws(() => binder.bind(a.file, stock), /already bound/);
   }
-  assert.equal(before.hooks, 1, 'the file declares its hook');
   // a file that is no stock image: patchkit's reason comes back
   assert.throws(() => binder.bind(readBytes(dks('dt2')), new Uint8Array(64)), /.+/);
 });
+
+test.skipIf(!haveWasmAndImages || !existsSync(join(root, 'dist', 'modules', 'dt2', 'lfo.dks')))(
+  'lfo.dks hooks no firmware site: bind returns it as built',
+  async () => {
+    const binder = await DkBind.create(readBytes(wasmPath), JSON.stringify(buildBindBundle(root)));
+    const lfo = readBytes(join(root, 'dist', 'modules', 'dt2', 'lfo.dks'));
+    const r = binder.bind(lfo, new Uint8Array(readFileSync(images.dt2)));
+    assert.equal(fileHashHex(r.file), fileHashHex(lfo));
+    assert.deepEqual(r.hooks, []);
+  },
+);
