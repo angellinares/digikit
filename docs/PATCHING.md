@@ -155,7 +155,8 @@ patchkit pack SERVICE-ID -o dist/service.dks
 patchkit bind dist/service.dks --firmware firmware/IMAGE.syx -o dist/service.bound.dks
 ```
 
-`SERVICE-ID` is a service module that declares hooks. The test fixture `test/svc-test` declares none, so bind refuses it (see below).
+`SERVICE-ID` is a service module that declares hooks. The test fixture `test/svc-test` declares one: `cf.menu.hook.settings_list.tail`, the last step of the
+SETTINGS list rebuild.
 Bind creates the output directory and prints one JSON object per hook. This is the format the command prints, not a captured run:
 
 ```text

@@ -9,7 +9,7 @@ service = "svc-test"
 type = "raw"
 author = "digikit"
 status = "experimental"
-summary = "Test fixture: a service provider (.dks) of the test-only service svc-test; it exports dk_svctest_ping"
+summary = "Test fixture: a service provider (.dks) of the test-only service svc-test; it exports dk_svctest_ping and dk_svctest_hits and counts the runs of its hook"
 requires = []
 conflicts = []
 
@@ -20,6 +20,15 @@ conflicts = []
 # The functions the provider exports: each is an [[import]] of its service in sdk/sdk.toml.
 [[export]]
 name = "dk_svctest_ping"
+
+[[export]]
+name = "dk_svctest_hits"
+
+# The hook it takes: the last step of the SETTINGS list rebuild of the firmware (stock on an image without core/digikit-menu, which hooks the same site). The
+# bind step of the user's firmware adds the trampoline; `init` repeats the hook with dk_service_declare_hook.
+[[hook]]
+name = "cf.menu.hook.settings_list.tail"
+entry = "svc_test_settings_tail"
 
 # C, built by `patchkit build`. Packed as a .dks (`patchkit pack test/svc-test -o svc-test.dks`).
 [[object]]

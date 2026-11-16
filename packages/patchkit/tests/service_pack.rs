@@ -99,9 +99,16 @@ fn a_service_packs_to_a_dks_with_provides_and_exports_and_a_user_has_a_hard_need
     let provides: Vec<_> = k.provides().collect();
     assert_eq!(provides, vec![(name_hash("svc-test"), dkm.version)]);
     let exports: Vec<_> = k.exports().collect();
-    assert_eq!(exports.len(), 1);
-    assert_eq!(exports[0].a, name_hash("dk_svctest_ping"));
-    assert!((exports[0].b as usize) < dkm.image.len());
+    let mut names: Vec<u32> = exports.iter().map(|e| e.a).collect();
+    names.sort();
+    let mut want = vec![name_hash("dk_svctest_ping"), name_hash("dk_svctest_hits")];
+    want.sort();
+    assert_eq!(names, want);
+    assert!(exports.iter().all(|e| (e.b as usize) < dkm.image.len()));
+    let hooks: Vec<_> = k.hooks().collect();
+    assert_eq!(hooks.len(), 1, "the hook of the manifest");
+    assert_eq!(hooks[0].a, name_hash("cf.menu.hook.settings_list.tail"));
+    assert!((hooks[0].b as usize) < dkm.image.len());
 
     let user = packed(&here, "test/svc-test-user", &d.join("svc-test-user.dkm"));
     let dkm = Dkm::parse(&user).unwrap();
@@ -110,9 +117,10 @@ fn a_service_packs_to_a_dks_with_provides_and_exports_and_a_user_has_a_hard_need
     assert_eq!(&dkm.register[4..6], &1u16.to_be_bytes(), "table version 1");
     let k = Keys::parse(&dkm.register).unwrap();
     let needs: Vec<_> = k.needs().collect();
-    assert_eq!(needs.len(), 1);
-    assert_eq!(needs[0].service, name_hash("svc-test"));
-    assert!(needs[0].hard);
+    // the service of the test imports, and the runtime's own service (dk_log of `init`)
+    let need = needs.iter().find(|n| n.service == name_hash("svc-test")).expect("a need of svc-test");
+    assert!(need.hard);
+    assert!(needs.iter().all(|n| n.service == name_hash("svc-test") || n.service == name_hash("runtime")));
     assert_eq!(k.provides().count(), 0);
 
     let _ = std::fs::remove_dir_all(&d);
