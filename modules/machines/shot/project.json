@@ -59,6 +59,7 @@
         "plusdrive": true,
         "dksampleWasm": true
       }
-    ]
+    ],
+    "mergeTests": ["tests/shot-dt2.device.test.ts", "tests/shot-dn2-audio.device.test.ts"]
   }
 }

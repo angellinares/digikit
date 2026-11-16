@@ -10,7 +10,6 @@
         "tags": ["S:lfo"],
         "modules": ["test/lfo-shape", "test/lfo-shape-dup"]
       }
-    ],
-    "mergeTests": ["lfo.device.test.ts"]
+    ]
   }
 }

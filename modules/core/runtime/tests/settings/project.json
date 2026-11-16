@@ -17,7 +17,6 @@
         "modules": ["test/settings-a", "test/settings-b"],
         "plusdrive": true
       }
-    ],
-    "mergeTests": ["settings-api.device.test.ts"]
+    ]
   }
 }

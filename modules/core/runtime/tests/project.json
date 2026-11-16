@@ -140,6 +140,11 @@
         "plusdrive": true
       }
     ],
-    "mergeTests": ["upload-depth.device.test.ts", "safe-mode.device.test.ts"]
+    "mergeTests": [
+      "upload-depth.device.test.ts",
+      "safe-mode.device.test.ts",
+      "samples-live.device.test.ts",
+      "samples-store-live.device.test.ts"
+    ]
   }
 }

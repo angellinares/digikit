@@ -11,7 +11,6 @@
         "modules": ["test/files-proof"],
         "sources": ["modules/core/runtime/tests/storage/contract.toml"]
       }
-    ],
-    "mergeTests": ["storage.device.test.ts"]
+    ]
   }
 }
