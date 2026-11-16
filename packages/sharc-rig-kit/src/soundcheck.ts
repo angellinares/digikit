@@ -73,6 +73,9 @@ export interface RigCase {
   name: string;
   device?: string[];
   context?: 'friendly' | 'hostile';
+  /** a machine case starts with poisoned (NaN) bss and voice state; `false` zeroes them and needs `poison_reason` */
+  poison?: boolean;
+  poison_reason?: string;
   track?: number;
   /** DT2: also render the odd voice of the pair after each block (a stereo machine's right channel) */
   right?: boolean;
@@ -151,7 +154,13 @@ const words = (params: Record<string, number>): [string, number][] => Object.ent
 async function runMachine(module: string, device: Device, c: RigCase, dir: string, o: RunOptions): Promise<Trace> {
   const spec = machineSpec(module, device);
   if (!spec) throw new Error(`${module} is no machine for ${device}`);
-  const rig = await MachineRig.open(spec, { recordStores: true, track: c.track ?? 0, open: o.open });
+  if (c.poison === false && !c.poison_reason) throw new Error(`${c.name}: poison = false needs a poison_reason`);
+  const rig = await MachineRig.open(spec, {
+    recordStores: true,
+    track: c.track ?? 0,
+    poison: c.poison !== false,
+    open: o.open,
+  });
   const trace: Trace = {
     kind: 'machine',
     out: [],

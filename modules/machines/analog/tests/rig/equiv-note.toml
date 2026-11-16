@@ -1,6 +1,7 @@
 # analog (fadedlimes/analog): the note pin on the SHARC-only rig. It replaces the PCM pin of tests/equiv.device.test.ts (that file's note, retired after the R12-6 gate and review).
 # Each case plays note 60, velocity 100, every parameter at its manifest default, for 375 blocks (0.25 s, as long as the device pin) in a friendly context,
-# and pins the SHA-256 of the machine's float32 output words (375 blocks of 32 samples). The device pin hashed the same note through the whole firmware
+# with the poisoned memory of every machine rig case (the module's bss and the voice state start as NaN words: a machine that reads state it never wrote
+# shows as a NaN output, which fails the implicit finite rule; that is a machine bug to report, never a value to pin), and pins the SHA-256 of the machine's float32 output words (375 blocks of 32 samples). The device pin hashed the same note through the whole firmware
 # path (track filter, mixer, output); this pin sees only the machine's own DSP. One case per device: the sha256 differs per device.
 # The pins are written by the rig, never by hand: DIGI_RIG_PIN=1 pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/machines/analog/tests/
 # A changed pin is a re-pin and needs Em's review (docs/plans/ledgers/t2-machine-rig-refs.md).

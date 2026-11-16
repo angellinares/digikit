@@ -82,6 +82,8 @@ export interface MachineRigOptions {
   recordStores?: boolean;
   /** ask the rig for the instructions per pc of every `block` call (`MachineBlock.profile`) */
   profile?: boolean;
+  /** `.PKBSS` memory (the module's bss and the voice state blocks) starts as NaN words (default true); false zeroes it and needs a reason at the call site (sound-check cases: `poison_reason`) */
+  poison?: boolean;
   open?: RigOpener;
   /** the placed and linked code: built from the spec by default (a host test passes a made-up one) */
   built?: MachineBuilt;
@@ -106,6 +108,7 @@ export class MachineRig {
   private port!: RigPort;
   private readonly recordStores: boolean;
   private readonly profile: boolean;
+  private readonly poison: boolean;
 
   private constructor(spec: MachineSpec, o: MachineRigOptions) {
     this.spec = spec;
@@ -115,6 +118,7 @@ export class MachineRig {
     this.stepLimit = o.stepLimit ?? 400_000;
     this.recordStores = o.recordStores ?? false;
     this.profile = o.profile ?? false;
+    this.poison = o.poison ?? true;
     this.ctxRng = new PyRandom(o.seed ?? 0xd1617);
     this.byId = new Map(spec.params.map((p) => [p.id, p]));
   }
@@ -159,7 +163,7 @@ export class MachineRig {
     for (const init of b.inits) {
       const view = new DataView(init.bytes.buffer, init.bytes.byteOffset, init.bytes.byteLength);
       for (let k = 0; k < Math.floor(init.bytes.length / 4); k++)
-        q.poke(nw(init.address) + k, init.bss ? NAN : view.getUint32(4 * k, true));
+        q.poke(nw(init.address) + k, init.bss && this.poison ? NAN : view.getUint32(4 * k, true));
     }
     const { port } = await open({
       return_sw: RETURN_SW,

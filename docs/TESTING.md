@@ -740,7 +740,8 @@ words; changing one is a re-pin and needs review like a PCM pin of `tests/scenar
 
 A `same-as` pin comes from the rig itself: a case with a `same-as` check names one device, and `DIGI_RIG_PIN=1 pnpm exec vitest run --config vitest.host.config.ts --project module-rig <module dir>/tests/`
 runs no checks and writes the words hash of every `same-as` signal into its `sha256` line (`pinRigFile` in `soundcheck.ts`; the n-th `sha256` line belongs to the n-th `same-as` check of the file) and prints `pin CASE [device] HASH`.
-The machine note pins of analog, bd, pd and pluck are `tests/rig/equiv-note.toml`: note 60, velocity 100, default parameters, 375 blocks (0.25 s) in a friendly context, one case per device.
+Every machine case starts with poisoned memory: the module's `.PKBSS` and the voice state blocks hold NaN words (`MachineRigOptions.poison`, default true), so a machine that reads state it never wrote gives a NaN output and fails the implicit finite rule. That is a machine bug to report, not a value to pin. `poison = false` on a case zeroes the memory and needs a `poison_reason`.
+The machine note pins of analog, bd, pd and pluck are `tests/rig/equiv-note.toml`: note 60, velocity 100, default parameters, 375 blocks (0.25 s) in a friendly context, one case per device (pluck adds a second note, 67, for 375 blocks).
 
 #### Adapter tests on the rig (`tests/*.rig.test.ts`)
 

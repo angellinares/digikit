@@ -12,9 +12,10 @@ File per module: `modules/machines/<m>/tests/rig/equiv-note.toml`, run by `pnpm 
 | --- | --- | --- |
 | Note | 60, velocity 100, TRIG 1 held | 60, velocity 100, one trigger |
 | Parameters | the menu defaults | the manifest defaults (rig `MachineRig` writes `p.default` of each parameter) |
+| Notes | one | pluck: a second note 67 after the first (750 blocks) |
 | Length | 24000 interleaved float32 samples (0.25 s) from the onset | 375 blocks of 32 samples (0.25 s), mono machine output, from the trigger |
 | Signal | the whole firmware path: machine, track filter, mixer, output | the machine's own DSP through the dsp-voice adapter; no firmware |
-| Voice state at start | uninitialised L2 for analog and pd (`UNINIT`) | zeroed stand-in memory |
+| Voice state at start | uninitialised L2 for analog and pd (`UNINIT`) | poisoned: the module's bss and the voice state blocks are NaN words in every machine rig case (default `poison`, opt-out needs a `poison_reason`); a machine that reads unwritten state gives NaN and fails the finite rule, which is a machine bug to report, not a pin |
 | Pin | SHA-256 of the PCM window | SHA-256 of the float32 output words (`same-as`), one case per device |
 | Also checked | audible | `peak >= 0.01`, `no-clip`, and the implicit rules of every rig case (finite output, context registers, own memory only) |
 
@@ -35,14 +36,14 @@ Each deleted test has the same assertions (`defineEquiv` in `tests/regression/ru
 | 2 | Every module load result is 0 | dynreg equiv; device conformance load |
 | 3 | Loaded count equals the selection and safe mode is 0 | dynreg equiv; device conformance load |
 | 4 | One voice row is claimed by the machine | `test-conformance-rig` (descriptor and voice claim through the gallery); dynreg equiv for the runtime row path. Dropped for the machine itself as a device assertion: the count is a descriptor property |
-| 5 | Pluck only: the address map resolves `_pk_render` to the module's DSP base (`dspName`) | dynreg equiv does not use `dspName`; the address map is tested by the addrmap tests of `tests/regression/runtime` (to verify in review). Open: keep as a one-line check in the module conformance load |
+| 5 | Pluck only: the address map resolves `_pk_render` to the module's DSP base (`dspName`) | machine fixture suite (R12-6), generic addrmap check: a fixture module with a DSP section (e.g. `test/sine`) resolves a module DSP symbol through the device load table. Another lane writes it; not part of this branch. Must be green before the deletion |
 | 6 | PCM from the onset (24000 samples) has the pinned SHA-256 | `tests/rig/equiv-note.toml` (`same-as`), one case per device, see above. The signal differs (machine output, not the firmware path) |
 | 7 | The note is audible (`peak > 0.01`) where no pin exists | `peak min 0.01` in the same cases |
 | 8 | The rows (machine, parameter, page tables) equal a boot of no module, apart from the module's own machine | dynreg equiv (same table diff); descriptor of the machine row from `test-conformance-rig` |
 | 9 | No emulator fault during the note (`expectNoFault`) | implicit rules of every rig case |
-| 10 | Pluck, full tier DT2 only (`equiv-mixed`, note at frame 9500): audible | dropped: a later start frame of the same audible note, no new behaviour; pluck keeps rig cases for restart, decay and tuning |
+| 10 | Pluck, full tier DT2 only (`equiv-mixed`, note at frame 9500): audible | the second note (67) of pluck's rig pin case, which covers state after running a while |
 
-Rows 1 to 5 and 8 depend on the dynreg pin and the device conformance load staying green; they are the part of the deletion for the reviewer to judge.
+Analog and pd's `UNINIT` boot (device-only) maps to the poisoned rig case. Rows 1 to 4 and 8 depend on the dynreg pin and the device conformance load staying green (row 5: the R12-6 fixture check); they are the part of the deletion for the reviewer to judge.
 
 ## Deletion commit
 
