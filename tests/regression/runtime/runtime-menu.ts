@@ -1,7 +1,6 @@
 import { fmtVersion, hasCap, type DkLogEvent, type DkSession } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { emulatorClock, pollUntil, type Session } from '@digi/test-support';
-import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
@@ -16,26 +15,6 @@ export async function openDigikitMenu(tap: Tap, checkpoint?: (name: string) => P
   await checkpoint?.('settings-ninth-row');
   await tap('YES', 3000);
   await checkpoint?.('digikit-main');
-}
-
-/** Legacy tap-based form, for callers that have no `rt` yet; flows/menu.ts has the `rt.ui` form. ABOUT is the first row of the DIGIKIT menu. */
-export async function openRuntimeAbout(
-  tap: Tap,
-  session: Session,
-  dk: DkSession,
-  plan: RuntimePlan,
-  artifacts: string,
-  timeout = 10_000,
-): Promise<string[]> {
-  let initialCount: number | null | undefined;
-  try {
-    initialCount = await session.client.memPeek(planSymbol(plan, 'DK_ABOUT_N'));
-    expect(initialCount, 'ABOUT buffer is empty before its first open').toBe(0);
-    await tap('YES', 0);
-    return await expectRuntimeAbout(session, dk, plan, artifacts, { timeout });
-  } finally {
-    record(artifacts, 'about-before-open', { initialCount: initialCount ?? null });
-  }
 }
 
 /** fill_about publishes incrementally: the runtime row alone precedes BOOT and the final RAM row. */

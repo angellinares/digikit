@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { button, type Session } from '@digi/test-support';
+import { button, emulatorClock, scheduledTurns, waitClock, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
-import { memory, panelOn } from '@digi/regression/runtime/panel.ts';
-import { listenEvents, remoteTurnTaken } from '@digi/regression/runtime/events.ts';
-import { waitEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
+import { memory } from '@digi/regression/runtime/memory.ts';
+import { panelKeys } from '@digi/regression/runtime/flows/panel-keys.ts';
+import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 // Helpers of the SHOT device tests (shot-dn2): WAV fixtures, the sample pool requests of test/track-select, PCM capture with the
 // key held and the tone measurements on it. shot-dt2.device.test.ts has its own copies of the same code (it passed before they were split out).
@@ -127,7 +127,7 @@ const DYNAMIC_ROW = { dt2: 7, dn2: 5 } as const;
 /** The panel path of sample-playback.test.ts: FUNC+SRC, the sole dynamic machine, on the selected track (TRIG 1). */
 export async function selectDynamicMachine(runtime: Pick<TestRuntime, "session" | "ui">, artifacts: string): Promise<string> {
   const { session } = runtime;
-  const ui = panelOn(runtime);
+  const ui = panelKeys(runtime);
   await ui.tap('NO');
   await session.client.inputButton(button('FUNC'), true);
   try {
@@ -241,7 +241,7 @@ export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
       const r = await windowResult();
       if (r.ret !== 0) return { ...r, ms: Date.now() - t0 };
       if (Date.now() - t0 > timeoutMs) throw new Error(`window ${first}+${frames} was not ready after ${timeoutMs} ms`);
-      await waitEmulated(session, 30);
+      await waitClock(emulatorClock(session), 30);
     }
   }
   return { add, clear, select, status, settle, window, windowResult, awaitWindow };
@@ -286,9 +286,10 @@ export async function setSmp(
   /** Send the turns through digikit/remote and wait for INPUT_TAKEN (both modules loaded). DT2's stock-pool fixture holds the remote commands 0x38 to 0x3b, so its test turns through the panel input. */
   viaRemote = false,
 ): Promise<number[]> {
-  const { session } = runtime;
-  const ui = panelOn(runtime);
-  const events = viaRemote ? await listenEvents(runtime) : null;
+  const { session, dk } = runtime;
+  const ui = panelKeys(runtime);
+  const turns = scheduledTurns(session, runtime.clock);
+  const events = viaRemote ? await runtime.listen() : null;
   const trace: number[] = [];
   let taken = 0;
   await session.client.inputButton(button('TRIG 1'), true);
@@ -302,9 +303,13 @@ export async function setSmp(
       if (i === maxTurns) break;
       const dir = now < index ? 1 : -1;
       if (events) {
-        if ((await remoteTurnTaken(runtime, events, 4, dir)) !== 0) taken++;
+        const took = await dk.remoteTurnOnce(4, dir);
+        if (took !== 0) {
+          await events.untilInputTaken(4, took);
+          taken++;
+        }
       } else {
-        await ui.burst('ENC D', 1, dir);
+        await turns.burst('ENC D', 1, dir);
       }
       await ui.settle(60);
     }

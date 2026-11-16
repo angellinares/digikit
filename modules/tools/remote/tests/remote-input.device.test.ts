@@ -1,11 +1,10 @@
-import { remoteInput } from '@digi/test-support';
+import { emulatorClock, remoteInput, waitClock } from '@digi/test-support';
 import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { timePhase } from '@digi/regression/timing.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { runtimeTests, expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
-import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 import {
   captureRemoteOled,
   expectRemoteEnabled,
@@ -73,7 +72,7 @@ async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
     expect(immediate.body.length).toBe(1);
     // Adjacent host requests may span a firmware refill; exact timing is covered by the C pacing unit.
     expect([0, 30]).toContain(immediate.body[0]);
-    await timePhase('settle.remote-refill', () => waitEmulated(session, 3000));
+    await timePhase('settle.remote-refill', () => waitClock(emulatorClock(session), 3000) /* the remote pacing refill has no observable end */);
     const back = await cmd(SERVICE_CMD.REMOTE_TURN, [1, 156]);
     expect(back.status).toBe(0);
     expect(back.body.length).toBe(1);

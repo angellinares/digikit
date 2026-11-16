@@ -8,7 +8,8 @@ import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { withSession, withWaitApi, type TestRuntime } from '../support.ts';
 import { record } from './artifacts.ts';
-import { memory, panelOn } from './panel.ts';
+import { memory } from './memory.ts';
+import { panelKeys } from './flows/panel-keys.ts';
 import { emulatorDk, pollEmulated, expectPollEmulated } from './waits.ts';
 
 // Current DT2 1.17 observations in finding81. All diagnostic accesses are reads.
@@ -69,7 +70,7 @@ async function discovery(
   const out = mkdtempSync(path.join(root, 'dt2-'));
   const shared: { rootTitle?: string } = {};
   console.info('retained stock sampler discovery:', out);
-  const ui = panelOn(runtime);
+  const ui = panelKeys(runtime);
   const { cf, words, dsp } = memory(session);
   async function observe(name: string) {
     const begin = await cf(CF.blocks);
@@ -442,7 +443,7 @@ async function unloadEarlierWhilePlaying(
   rootTitle: string,
 ): Promise<void> {
   const { session } = runtime;
-  const ui = panelOn(runtime);
+  const ui = panelKeys(runtime);
   const { dsp } = memory(session);
   const expectedA = Buffer.from(toneWav(330)).subarray(44, 108).toString('hex');
   const expectedB = Buffer.from(toneWav(990)).subarray(44, 108).toString('hex');

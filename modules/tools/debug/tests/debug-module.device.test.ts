@@ -1,10 +1,9 @@
 import { be32, eventLine, hasCap, moduleNames, runtimeEvent, type DkLogEvent } from '@digi/dk-session';
 import { CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
+import { scheduledTurns } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { waitFrames } from '@digi/regression/runtime/debug-kit.ts';
-import { listenEvents } from '@digi/regression/runtime/events.ts';
-import { panel } from '@digi/regression/runtime/panel.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installModules, installWithDebug, moduleArtifact } from '@digi/regression/runtime/install.ts';
@@ -230,14 +229,14 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
  * detents on knob A of the main screen change one Sound word of the selected track, and the event has the new value above the old (a positive turn). The index is
  * a position of the Sound array (finding 119), so the test does not name it. The test listens from boot: the debug module logs the baseline by itself right after
  * boot, and in about half of the DT2 runs it was logged before a listen at the newest event read its cursor. */
-async function expectParamChange(runtime: PatchedSession): Promise<void> {
+async function expectParamChange(runtime: TestRuntime): Promise<void> {
   const { session } = runtime;
   await expectRuntimeReady(session);
   await installWithDebug(runtime);
-  const events = await listenEvents(runtime, { fromBoot: true });
-  await events.until(LOG_KIND.PARAM_CHANGE, (e) => (e.args[1]! | 0) === -1, { emulatedMs: 20_000 });
-  await panel(session).burst('ENC A', 10, 4);
-  const change = await events.until(LOG_KIND.PARAM_CHANGE, (e) => (e.args[1]! | 0) !== -1, { emulatedMs: 3000 });
+  const events = await runtime.listen({ fromBoot: true });
+  await events.until('PARAM_CHANGE', (e) => (e.args[1]! | 0) === -1, { withinMs: 20_000 });
+  await scheduledTurns(session, runtime.clock).burst('ENC A', 10, 4);
+  const change = await events.until('PARAM_CHANGE', (e) => (e.args[1]! | 0) !== -1, { withinMs: 3000 });
   const [track, index, old, now] = change.args.map((a) => a | 0);
   expect(track, 'the selected track').toBeGreaterThanOrEqual(0);
   expect(track).toBeLessThan(16);

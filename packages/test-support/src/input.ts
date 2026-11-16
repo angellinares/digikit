@@ -89,3 +89,49 @@ export function remoteInput(
     },
   };
 }
+
+/**
+ * Scheduled encoder turns on the daemon's input clock. The stock encoder accelerates by event rate, so a fast burst moves a value much
+ * further than the same turns with a wait between them. Both calls wait in emulated time on `clock`.
+ */
+export function scheduledTurns(session: Pick<Session, 'client'>, clock: Clock) {
+  const { client } = session;
+  async function untilMs(target: number): Promise<void> {
+    while ((await clock.now()) < target) await clock.pause(20);
+  }
+  /** `count` turns of `detents` each, `gapMs` apart. Returns after the last event plus 30 ms. */
+  async function burst(name: string, count: number, detents = 4, gapMs = 7.5): Promise<void> {
+    const start = (await clock.now()) + 5;
+    const code = encoder(name);
+    const events = Array.from({ length: count }, (_, i) => ({
+      at_instr: Math.round((start + i * gapMs) * MS),
+      turn: code,
+      detents,
+    }));
+    await client.inputSchedule(events);
+    await untilMs(events.at(-1)!.at_instr / MS + 30);
+  }
+  /** Burst until `read()` is within `tolerance` of `target`, turning back when it overshoots. Returns the value reached and the bursts used. */
+  async function turnTo(
+    name: string,
+    read: () => Promise<number>,
+    target: number,
+    { tolerance = 0x40, perBurst = 10, maxBursts = 12 } = {},
+  ): Promise<{ value: number; bursts: number; trace: number[] }> {
+    const trace = [await read()];
+    for (let bursts = 0; bursts < maxBursts; bursts++) {
+      const value = trace.at(-1)!;
+      if (Math.abs(value - target) <= tolerance) return { value, bursts, trace };
+      // Fewer events near the target: about 0x100 per event at this rate.
+      const events = Math.max(1, Math.min(perBurst, Math.floor(Math.abs(target - value) / 0x180)));
+      await burst(name, events, value < target ? 4 : -4);
+      await waitClock(clock, 100); // the stock value settles after the last event (nothing observable)
+      trace.push(await read());
+    }
+    const value = trace.at(-1)!;
+    if (Math.abs(value - target) > tolerance)
+      throw new Error(`turnTo ${name}: ${target.toString(16)} not reached: ${trace.map((v) => v.toString(16))}`);
+    return { value, bursts: maxBursts, trace };
+  }
+  return { burst, turnTo };
+}

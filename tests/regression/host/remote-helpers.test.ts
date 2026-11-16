@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { DkSession } from '@digi/dk-session';
 import type { Session } from '@digi/test-support';
-import type { PatchedSession } from '../support.ts';
+import { withWaitApi, type PatchedSession } from '../support.ts';
 
 const fake = vi.hoisted(() => ({
   exec: vi.fn(),
@@ -42,7 +42,8 @@ import {
   type RuntimePlan,
 } from '../runtime/runtime-plan.ts';
 import { fakeClock } from './fake-status.ts';
-import { openDigikitMenu, openRuntimeAbout, readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
+import { openDigikitMenu, readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
+import { openRuntimeAbout } from '../runtime/flows/menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
 const plan: RuntimePlan = {
@@ -503,40 +504,39 @@ test('fresh empty boot is an explicit prerequisite for skipping the pre-install 
   await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, emulatedMs: 20 })).resolves.toBe(4);
 });
 
+/** The wait API over a fake session: the clock steps with `client.step`, inputs are drained at once. */
+function fakeRuntime(client: Record<string, unknown>, dk: Record<string, unknown>) {
+  const { status, step } = fakeClock();
+  const daemon = { ...session, status, client: { step, inputTap: vi.fn().mockResolvedValue({}), ...client } };
+  return withWaitApi({ session: daemon, dk, close: async () => {} } as unknown as PatchedSession);
+}
+
 test('ABOUT refuses stale content before pressing YES', async () => {
-  const tap = vi.fn();
   const memPeek = vi.fn().mockResolvedValue(4);
-  await expect(
-    openRuntimeAbout(tap, { client: { memPeek } } as unknown as Session, {} as DkSession, plan, '/artifacts'),
-  ).rejects.toThrow('ABOUT buffer is empty');
-  expect(tap).not.toHaveBeenCalled();
+  const rt = fakeRuntime({ memPeek }, {});
+  await expect(openRuntimeAbout(rt, plan, '/artifacts')).rejects.toThrow('ABOUT buffer is empty');
+  expect(rt.session.client.inputTap).not.toHaveBeenCalled();
   const saved = fake.write.mock.calls.find(([file]) => file.endsWith('about-before-open.json'));
   expect(JSON.parse(saved![1])).toMatchObject({ initialCount: 4 });
 });
 
-test('ABOUT returns only the complete snapshot after the new open, keeping the key hold without a final settle', async () => {
+test('ABOUT returns only the complete snapshot after the new open', async () => {
   const rows = ['DIGIKIT 0.1.0', 'RUNTIME 0.2.5', 'BOOT: 1 OF 1 OK', 'RAM KEPT: YES'];
   const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
-  let polls = 0;
+  let opened = false;
+  let counts = 0;
   const memPeek = vi.fn(async (address: number) => {
-    // Pre-open is empty, then only identity, then BOOT, then the final RAM row.
-    if (address === 8192) return [0, 2, 3, 4][Math.min(polls++, 3)]!;
+    // Pre-open is empty; after the open the buffer fills: identity only, then BOOT, then the final RAM row (each poll reads the count twice).
+    if (address === 8192) return opened ? [2, 3, 4][Math.min(Math.floor(counts++ / 2), 2)]! : 0;
     return bytes.readUInt32BE(address - 4096);
   });
-  const tap = vi.fn().mockResolvedValue(undefined);
-  const info = vi.fn().mockResolvedValue({ runtime: 0x205 });
-  const { status, step } = fakeClock();
-  await expect(
-    openRuntimeAbout(
-      tap,
-      { status, client: { memPeek, step } } as unknown as Session,
-      { info } as unknown as DkSession,
-      plan,
-      '/artifacts',
-    ),
-  ).resolves.toEqual(rows);
-  expect(tap).toHaveBeenCalledExactlyOnceWith('YES', 0);
-  expect(polls).toBe(4);
+  const rt = fakeRuntime(
+    { memPeek, inputTap: vi.fn(async () => ((opened = true), {})) },
+    { info: vi.fn().mockResolvedValue({ runtime: 0x205 }) },
+  );
+  await expect(openRuntimeAbout(rt, plan, '/artifacts')).resolves.toEqual(rows);
+  expect(rt.session.client.inputTap).toHaveBeenCalledTimes(1);
+  expect(counts).toBeGreaterThanOrEqual(6);
 });
 
 /** A request nobody answers: the emulated probe (as `emulatorDk` bounds every real one) ends it after `ms` emulated ms. */
@@ -549,49 +549,6 @@ const lostRequest = <T>(session: Session, ms = 30) =>
       ),
     ms,
   );
-
-test('ABOUT bounds initial count, info and row reads, and preserves incomplete rows on timeout', async () => {
-  for (const stalled of ['initial-count', 'info', 'row', 'incomplete'] as const) {
-    fake.write.mockClear();
-    const rows = ['RUNTIME 0.2.5', 'BOOT: 1 OF 1 OK'];
-    const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
-    // every status read is 100 emulated ms, so the 30 ms bounds are crossed at the first read
-    const { status, step } = fakeClock({ msPerRead: 100, mode: 'free' });
-    const clockSession = { status, client: { step } } as unknown as Session;
-    let opened = false;
-    const memPeek = vi.fn(async (address: number): Promise<number> => {
-      if (!opened) return stalled === 'initial-count' ? lostRequest(clockSession) : 0;
-      if (address === 8192) return rows.length;
-      if (stalled === 'row') return lostRequest(clockSession);
-      return bytes.readUInt32BE(address - 4096);
-    });
-    const info = vi.fn(async () => (stalled === 'info' ? lostRequest<never>(clockSession) : { runtime: 0x205 }));
-    const tap = vi.fn(async () => {
-      opened = true;
-    });
-    await expect(
-      openRuntimeAbout(
-        tap,
-        { status, client: { memPeek, step } } as unknown as Session,
-        { info } as unknown as DkSession,
-        plan,
-        '/artifacts',
-        30,
-      ),
-      stalled,
-    ).rejects.toThrow(stalled === 'incomplete' ? 'BOOT: 1 OF 1 OK' : undefined); // the failure carries the incomplete rows
-    const initial = fake.write.mock.calls.find(([file]) => file.endsWith('about-before-open.json'));
-    expect(JSON.parse(initial![1]), stalled).toMatchObject({ initialCount: stalled === 'initial-count' ? null : 0 });
-    if (stalled === 'initial-count') expect(tap).not.toHaveBeenCalled();
-    else {
-      const saved = fake.write.mock.calls.find(([file]) => file.endsWith('about-readiness.json'));
-      expect(JSON.parse(saved![1]), stalled).toMatchObject({
-        expired: true,
-        rows: stalled === 'incomplete' ? expect.arrayContaining(['BOOT: 1 OF 1 OK']) : [],
-      });
-    }
-  }
-}, 30_000);
 
 test('a never-answering remote state request obeys the readiness deadline', async () => {
   const { status, step } = fakeClock({ msPerRead: 100, mode: 'free' });

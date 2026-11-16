@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { button } from '@digi/test-support';
+import { button, emulatorClock, waitClock } from '@digi/test-support';
 import { decodeFault, readSettingsRecord, settingsValue } from '@digi/dk-session';
 import { CAP, CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
@@ -14,15 +14,15 @@ import {
   RING_SYMBOLS,
 } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { pollEmulated, waitEmulatedFrames, withEmulatedProbe } from '@digi/regression/runtime/waits.ts';
+import { pollEmulated, withEmulatedProbe } from '@digi/regression/runtime/waits.ts';
 
 const SOURCE_SHIFT = 8;
 /** The watch declares a stop after 4500 blocks (3 s) without a heartbeat; the daemon emulates the DSP far slower than 1500 blocks a second. */
 const BLOCKS_PAST_THE_LIMIT = 9000;
 
-/** Wait until the DSP has run `blocks` more frames (emulated time, not wall time). */
+/** Wait until the DSP has run `blocks` more frames (1500 a second of emulated time, not wall time). */
 async function waitFrames({ session }: PatchedSession, blocks: number): Promise<void> {
-  await waitEmulatedFrames(session, blocks);
+  await waitClock(emulatorClock(session), blocks / 1.5);
 }
 const SITE_VOICE = 1;
 const SITE_FX_SEND = 3;
