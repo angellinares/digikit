@@ -707,14 +707,22 @@ for (const device of DEVICES) {
         const s = await state(next, `pc${k}c`);
         if (fresh) await expectFile(next, s, target, data, `${label}: the new file`);
         else if (replace) expect(s.files.get(target), `${label}: the old file`).toEqual(before.get(target));
-        else expect(s.files.has(target), `${label}: nothing at the destination`).toBe(false);
+        else if (dt2) {
+          // a new file is written at its final name (core/plusdrive-write, no boot cleanup): at most that one file stays, without its hash
+          const left = s.files.get(target);
+          if (left) expect(left.hash, `${label}: the partial file is unhashed`).not.toBe(hex(data, true).slice(0, 8));
+        } else expect(s.files.has(target), `${label}: nothing at the destination`).toBe(false);
         unchanged(before, s.files, [target, 'Cut/cut.bin']);
         // the next upload works, and the destination is as before it
         const more = pattern(9000, 41);
         await bulk2.session.put(SAMPLES, rp('after.bin'), more, { expected: hashU32(more, dt2) });
         const t = await state(next, `pc${k}d`);
         await expectFile(next, t, 'after.bin', more, `${label}: the next upload`);
-        expect(t.files.get(target), `${label}: the destination is unchanged by it`).toEqual(s.files.get(target));
+        if (dt2 && !replace && !fresh) {
+          // the next upload of the same name replaces the partial file and verifies
+          await bulk2.session.put(SAMPLES, rp(target), data, { replace: true, expected: hashU32(data, dt2) });
+          await expectFile(next, await state(next, `pc${k}e`), target, data, `${label}: the re-upload`);
+        } else expect(t.files.get(target), `${label}: the destination is unchanged by it`).toEqual(s.files.get(target));
       }
     }, 3_600_000);
 
