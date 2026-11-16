@@ -377,8 +377,7 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | Fixture | Canonical subject for | Layers |
 | --- | --- | --- |
 | `sine` | The small dynamic machine of the SDK contract (pitched sine, one LEVEL parameter, both devices); the DSP source other fixtures share; pitch checks | host, assembly, rig, device |
-| `dyn-dn2` | A Digitone II machine with its own SYN page of four knobs on the DSP of `sine` | assembly, device |
-| `dyn-params` | Parameter rows of different ranges: registry rows, needs inference, capacity | host, device |
+| `dyn-dn2` | A machine with four parameters of different ranges on the DSP of `sine`, on both devices (Digitone II: its own SYN page of four knobs): registry rows, needs inference, capacity, project round trip | host, assembly, device |
 | `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save; the trace marks (`DK_TRACE_LOG`, `DK_STEP`) that exist only in a `--trace` build (zero-cost proof `trace.rs`); owns the gain DSP the wrappers share | host, assembly, device |
 | `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id) and other defaults (0.25, MIX 64): two effects in one kit; wrapper of the DSP of `dyn-fx-gain` | host, device |
 | `dyn-fx-gain-bipolar` | A signed knob (BIAS, -64 to +63) and the routes master and send | device |

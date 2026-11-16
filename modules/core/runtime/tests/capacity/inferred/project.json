@@ -10,16 +10,11 @@
         "tags": ["C:loading", "S:machines"],
         "modules": [
           "digikit/debug",
-          "digikit/freqshift",
-          "digikit/pluck",
           "digikit/probe",
           "digikit/remote",
-          "fadedlimes/analog",
-          "fadedlimes/bd",
-          "fadedlimes/pd",
           "test/c-demo",
           "test/dyn-fx-gain",
-          "test/dyn-params",
+          "test/dyn-dn2",
           "test/sine",
           "core/services/fx",
           "core/services/machines"

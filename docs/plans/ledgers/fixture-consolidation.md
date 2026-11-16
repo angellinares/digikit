@@ -49,3 +49,18 @@ The DSP sources of `dyn-fx-gain-b`, `-both`, `-send` and `-sendonly` were the DS
 Canonical roles after the step: `dyn-fx-gain` route (master, master); `-both` (master or send, default master); `-send` (master or send, default send); `-sendonly` (send); `-b` second effect id with other defaults and the tab GNB (`dk_fx_mix`, the kit persistence test).
 
 `modules/core/adapters/dynfx/tests/test_dyn_fx.py`: `test/dyn-fx-gain-b` leaves the parametrisation of `test_committed_objects_are_current` (it now builds the object of `dyn-fx-gain`, which is checked) and the `other` pack of `test_the_effect_record_carries_the_id_the_kit_stores` is dropped: the `--name other/name` case of the same test already proves that another module name gives another effect id.
+
+## Step 4: dyn-params is merged into dyn-dn2
+
+`dyn-params` (DT2 only) and `dyn-dn2` (DN2 only) had the same shape: four parameters of different ranges on the DSP of `sine`. `dyn-dn2` now builds for both devices (`dt2-1.17` in `ports` and `targets`, `[uses.dt2]` of one machine, four parameter rows, no page, `record_bytes` 444 copied from `dyn-params`, and a hand-written `dt2` part in `build/gen/gallery.json`). Its `module.c`, DSP and names are unchanged, so the DN2 bytes (two PCM pins: `equiv-dn2-set` and the sine pin) must be byte-identical: checked in phase 2. The values in `uses.dt2` and the DT2 gallery are derived from `dyn-params` and the DN2 gallery; `mise run module:check test/dyn-dn2` rewrites them if they are wrong (phase 2 does not run it; open).
+
+| Deleted | Old assertion | New location |
+| --- | --- | --- |
+| Fixture `dyn-params` | `roundtrip.device.test.ts` DT2 sets and types (`dynp`): project round trip with a run-time machine on track 1 | The same scenarios with `test/dyn-dn2:dyn_pluck` (hint 7 and the panel script unchanged: the position in the SRC list and the knob words must be rechecked on a DT2 run, open). |
+| same | `modules-capacity.device.test.ts`: MODULES reply for two DSP modules (dyn-params, sine) | The same with `test/dyn-dn2` and `test/sine`. |
+| same | `inferred-needs.device.test.ts`, DT2 only | `test/dyn-dn2` runs on both devices (the `DT2_ONLY` filter is deleted). |
+| same | `dkneeds.wasm.test.ts`: wasm reader and CLI give the same needs | The same with `test/dyn-dn2` (DT2 pack). |
+| same | `dynreg`, `core/runtime-tests`, `debug` project module lists | `test/dyn-dn2` where `test/dyn-params` was. |
+| same | DT2 parameter ranges 1..126, 2..125, 4..123 of its four params | DROPPED: no test asserted them. |
+| same | `test_patchkit_registry.py` `test_pack_refuses_a_module_for_the_wrong_device` used `dyn-params` as the DT2-only module and `dyn-dn2` as the DN2-only one | Uses `dyn-dn2-pages` (DN2 only) and `dyn-dsp-hang` (DT2 only). |
+| `inferred-needs.device.test.ts` entries `digikit/freqshift`, `pluck`, `fadedlimes/analog`, `bd`, `pd` (5 boots per device, full tier) | The resources taken equal the needs inferred from the packed module, for a real module of each kind | DROPPED by decision. The fixtures cover each shape: `sine` and `dyn-dn2` (machine), `dyn-fx-gain` (effect), `c-demo` (raw ColdFire module); the debug modules stay. Gap: no service-type module (`svc-test`) and no module with `synth-decl` shape in that test; real DSP code sizes are no longer exercised. |

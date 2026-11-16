@@ -148,7 +148,7 @@ pub struct LoadTable {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Load {
-    /// The name the runtime reports (`test/dyn-params`).
+    /// The name the runtime reports (`test/dyn-dn2`).
     pub id: String,
     pub base: u64,
     #[serde(default)]
