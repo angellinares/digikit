@@ -49,6 +49,9 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm [--size]   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
+  bind    IN.dks --firmware FW.syx -o OUT.dks   bind a packed service to the firmware: a trampoline and a BIND item for each hook it declares;
+                                         prints the bound hooks as JSON; OUT.dks holds firmware bytes: -o is refused in the source tree
+                                         unless under dist/ or out/
   dkm-identity BEFORE_DIR AFTER_DIR      do two sets of .dkm (patchkit pack-all) differ only in the header table? (image, relocs, imports, DSP section compared)
   fit     --json -                       the fit rule (dkrt-fit): {caps, needs, empty?} on stdin -> {each, set, line}; exit 1 on a bad request
   records --json FILE|-                  the decoded records (counts, params, machines, pages, effects) of a committed record block
@@ -647,6 +650,28 @@ plan.json {}",
             if !found.is_empty() {
                 std::process::exit(1);
             }
+        }
+        "bind" => {
+            let dks = read(need(rest)?)?;
+            let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;
+            let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
+            if !patchkit::bind::output_allowed(&a.root, Path::new(&out)) {
+                return Err(Error(format!(
+                    "{out}: the bound file holds firmware bytes and must never be committed: write it under dist/ or out/ (or outside the source tree)"
+                )));
+            }
+            let reg = registry(&a.root)?;
+            let texts = patchkit::fwgen::fw_texts(&a.root)?;
+            let decls: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let (file, hooks) = patchkit::bind::bind(&dks, &read(&fwp)?, &reg, &decls)?;
+            if let Some(d) = Path::new(&out)
+                .parent()
+                .filter(|d| !d.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(d).map_err(|e| Error(format!("{}: {e}", d.display())))?;
+            }
+            write(&out, &file)?;
+            print!("{}", patchkit::bind::bind_json(&hooks));
         }
         "rebuild" => {
             let fw = Firmware::parse(&read(need(rest)?)?)?;

@@ -183,6 +183,26 @@ impl Platform for RealPlatform {
         let _ = (start, len, dkrt_flush as unsafe extern "C" fn(u32, u32));
     }
 
+    unsafe fn read_code(&self, addr: u32, out: &mut [u8]) {
+        let src = addr as *const u8;
+        let mut i = 0;
+        while i < out.len() {
+            out[i] = read_volatile(src.add(i));
+            i += 1;
+        }
+    }
+    unsafe fn write_code(&self, addr: u32, bytes: &[u8]) {
+        let dst = addr as *mut u8;
+        let mut i = 0;
+        while i < bytes.len() {
+            write_volatile(dst.add(i), bytes[i]);
+            i += 1;
+        }
+    }
+    unsafe fn write_word(&self, addr: u32, value: u32) {
+        write_volatile(addr as *mut u32, value)
+    }
+
     unsafe fn block_read(&self, sector: u32, bytes: u32, buf: *mut u8) -> i32 {
         dkfw::storage::block_read(sector, bytes, buf)
     }

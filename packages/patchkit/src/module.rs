@@ -57,6 +57,10 @@ pub struct Manifest {
     /// Their name hashes and entry offsets go in the `EXPORTS` entry of the header table.
     #[serde(default, rename = "export")]
     pub exports: Vec<ExportDef>,
+    /// `[[hook]] name = "cf.menu.hook.settings_list.tail"`, `entry = "my_handler"`: the hook sites a service module takes and the global function of the object
+    /// that handles each. Their name hashes and entry offsets go in the `HOOKS` entry of the header table; `patchkit bind` gives each a trampoline.
+    #[serde(default, rename = "hook")]
+    pub hooks: Vec<ServiceHook>,
     /// `[uses.dt2]`, `[uses.dn2]`: registry rows the module takes on each device (the keys table's three counts). Per device because the runtime
     /// builds different rows per device (DT2 has no page rows).
     #[serde(default)]
@@ -134,9 +138,10 @@ impl Manifest {
     pub fn provided_service(&self) -> Result<Option<crate::dkm::Provided>> {
         let id = &self.module.id;
         if self.module.role != Some(ModuleRole::Service) {
-            if self.module.service.is_some() || !self.exports.is_empty() {
+            if self.module.service.is_some() || !self.exports.is_empty() || !self.hooks.is_empty()
+            {
                 return Err(err!(
-                    "{id}: `service` in [module] and [[export]] belong to a module with `role = \"service\"`"
+                    "{id}: `service` in [module], [[export]] and [[hook]] belong to a module with `role = \"service\"`"
                 ));
             }
             return Ok(None);
@@ -177,9 +182,22 @@ impl Manifest {
                 }
             }
         }
+        let mut hooks: Vec<(String, String)> = vec![];
+        for h in &self.hooks {
+            if h.name.is_empty() || h.entry.is_empty() {
+                return Err(err!(
+                    "{id}: [[hook]] needs a `name` and an `entry`, both not empty"
+                ));
+            }
+            if hooks.iter().any(|(n, _)| *n == h.name) {
+                return Err(err!("{id}: [[hook]] {:?} is declared twice", h.name));
+            }
+            hooks.push((h.name.clone(), h.entry.clone()));
+        }
         Ok(Some(crate::dkm::Provided {
             service: service.clone(),
             exports,
+            hooks,
         }))
     }
 }
@@ -194,6 +212,14 @@ pub fn service_of(m: &Module) -> Result<Option<crate::dkm::Provided>> {
 #[serde(deny_unknown_fields)]
 pub struct ExportDef {
     pub name: String,
+}
+
+/// An entry of `[[hook]]` of a service: the hook of the port files (`devices/ports/`) and the global function of the object that handles it.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceHook {
+    pub name: String,
+    pub entry: String,
 }
 
 /// An entry of `[[record]]`: the kind by its lower-case name (`dkneeds::KIND_NAMES`) and the key of one record of it.

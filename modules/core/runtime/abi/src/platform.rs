@@ -131,6 +131,14 @@ pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storag
     /// Write back and invalidate both caches over a byte range (before running fresh code).
     fn flush(&self, start: u32, len: u32);
 
+    // ---- code and slot words ---------------------------------------------------------------------------------------------
+    /// Read `out.len()` bytes of code at the raw address `addr` (volatile byte copy).
+    unsafe fn read_code(&self, addr: u32, out: &mut [u8]);
+    /// Write `bytes` at the raw address `addr` (volatile byte copy). The caller masks interrupts and flushes the covered lines.
+    unsafe fn write_code(&self, addr: u32, bytes: &[u8]);
+    /// Store one slot word at the 4-aligned address `addr` (one volatile 32-bit store).
+    unsafe fn write_word(&self, addr: u32, value: u32);
+
     // ---- the card --------------------------------------------------------------------------------------------------------
     /// Read `bytes` (a multiple of 512) from `sector` into `buf`; 0 or a negative error.
     unsafe fn block_read(&self, sector: u32, bytes: u32, buf: *mut u8) -> i32;

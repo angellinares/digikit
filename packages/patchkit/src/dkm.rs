@@ -174,6 +174,7 @@ fn table_with_needs(
     imports: &[&str],
     provides: &[dkneeds::keys::Pair],
     exports_add: &[dkneeds::keys::Pair],
+    hooks_add: &[dkneeds::keys::Pair],
 ) -> Result<Vec<u8>> {
     use dkneeds::keys::{Bind, KeyGroup, Keys, Pair, Table, write_table};
     let keys = if reg.is_empty() {
@@ -206,6 +207,7 @@ fn table_with_needs(
         }
     }
     exports.extend_from_slice(exports_add);
+    hooks.extend_from_slice(hooks_add);
     provided.extend_from_slice(provides);
     let key_groups: Vec<KeyGroup> = groups
         .iter()
@@ -261,6 +263,9 @@ pub struct Options {
 pub struct Provided {
     pub service: String,
     pub exports: Vec<String>,
+    /// The hooks the service takes (`[[hook]]`): (hook name of the port, global function of the object that handles it). A `patchkit bind`
+    /// of the file gives each a trampoline.
+    pub hooks: Vec<(String, String)>,
 }
 
 /// "1.2.3" -> 0x010203
@@ -512,13 +517,27 @@ fn pack_inner(
         return Err(err!("a section needs alignment over 16 (the arena's)"));
     }
 
-    let import_off = HEADER;
-    let reloc_off = import_off + imports.len() * IMPORT_LEN;
-    let reg_off = reloc_off + relocs.len() * 8;
     // the header table: the packer's uses and keys (none: a module that keeps nothing) and the needs of the imports the module links
-    let (provides, svc_exports) = match &o.service {
-        None => (vec![], vec![]),
+    let (provides, svc_exports, svc_hooks) = match &o.service {
+        None => (vec![], vec![], vec![]),
         Some(s) => {
+            let mut hk: Vec<dkneeds::keys::Pair> = vec![];
+            for (hook, entry) in &s.hooks {
+                if !linked.globals.iter().any(|g| g == entry) {
+                    return Err(err!(
+                        "the service hooks {hook} with {entry}, which is no global symbol of the object"
+                    ));
+                }
+                let at = sym(entry)?.ok_or_else(|| {
+                    err!("the service hooks {hook} with {entry}, which the object does not define")
+                })?;
+                let a = dkneeds::keys::name_hash(hook);
+                if hk.iter().any(|p| p.a == a) {
+                    return Err(err!("the service hooks {hook} twice"));
+                }
+                hk.push(dkneeds::keys::Pair { a, b: at });
+            }
+            hk.sort_by_key(|p| p.a);
             let mut ex: Vec<dkneeds::keys::Pair> = vec![];
             for n in &s.exports {
                 let at = sym(n)?.ok_or_else(|| {
@@ -537,18 +556,73 @@ fn pack_inner(
                     b: o.version,
                 }],
                 ex,
+                hk,
             )
         }
     };
-    let table = table_with_needs(reg, &imports, &provides, &svc_exports)?;
-    let reg: &[u8] = &table;
+    let table = table_with_needs(reg, &imports, &provides, &svc_exports, &svc_hooks)?;
+    emit(&EmitParts {
+        name: &o.name,
+        version: o.version,
+        role: if o.service.is_some() {
+            ROLE_SERVICE
+        } else {
+            ROLE_MODULE
+        },
+        // the runtime version the module needs: the newest `since` of its service imports, at least the version that introduced the header table,
+        // and the trace flag
+        runtime_word: needed_runtime(imports.iter().copied()).max(crate::sdkgen::table_runtime())
+            | if o.trace { FLAG_TRACE } else { 0 },
+        image: &image,
+        bss: linked.bss_size as u32,
+        align,
+        imports: &imports,
+        relocs: &relocs,
+        entries: [init, fini, tick, menu],
+        table: &table,
+        dsp,
+        max_file,
+    })
+}
+
+/// What [`emit`] lays out as a file.
+pub(crate) struct EmitParts<'a> {
+    pub name: &'a str,
+    pub version: u32,
+    /// [`ROLE_MODULE`] or [`ROLE_SERVICE`], the word at [`H_ROLE`].
+    pub role: u32,
+    /// The word at [`H_RUNTIME`]: the runtime version the module needs and the trace flag.
+    pub runtime_word: u32,
+    pub image: &'a [u8],
+    pub bss: u32,
+    pub align: u32,
+    pub imports: &'a [&'a str],
+    /// (image offset, 0 = base-relative or 1 << 24 | import index), sorted.
+    pub relocs: &'a [(u32, u32)],
+    /// The image offsets of `init`, `fini`, `tick` and `menu`.
+    pub entries: [Option<u32>; 4],
+    /// The header table, already written.
+    pub table: &'a [u8],
+    /// The DSP section (empty: none).
+    pub dsp: &'a [u8],
+    pub max_file: usize,
+}
+
+/// The file layout: header, imports, relocations, header table, DSP section, image, with the file hash. 0x3c..0x40 stay zero.
+pub(crate) fn emit(p: &EmitParts) -> Result<Vec<u8>> {
+    let [init, fini, tick, menu] = p.entries;
+    let (imports, relocs, reg, dsp, image) = (p.imports, p.relocs, p.table, p.dsp, p.image);
+    let import_off = HEADER;
+    let reloc_off = import_off + imports.len() * IMPORT_LEN;
+    let reg_off = reloc_off + relocs.len() * 8;
     let reg_size = reg.len();
     let dsp_off = align_up(reg_off + reg_size, 16);
     let image_off = align_up(dsp_off + dsp.len(), 16);
     let total = image_off + image.len();
-    if total > max_file {
+    if total > p.max_file {
         return Err(err!(
-            "the module file is {total} bytes; the runtime stages {max_file}"
+            "the module file is {total} bytes; the runtime stages {}",
+            p.max_file
         ));
     }
     let mut f = vec![0u8; total];
@@ -556,23 +630,14 @@ fn pack_inner(
     put(&mut f, H_FORMAT, FORMAT);
     put(&mut f, H_SIZE, total as u32);
     put(&mut f, H_HDRSIZE, HEADER as u32);
-    // the runtime version the module needs: the newest `since` of its service imports, at least the version that introduced the header table,
-    // and the trace flag; 0x38..0x40 stay zero
-    put(
-        &mut f,
-        H_RUNTIME,
-        needed_runtime(imports.iter().copied()).max(crate::sdkgen::table_runtime())
-            | if o.trace { FLAG_TRACE } else { 0 },
-    );
-    put(&mut f, H_VERSION, o.version);
-    if o.service.is_some() {
-        put(&mut f, H_ROLE, ROLE_SERVICE);
-    }
-    f[H_NAME..H_NAME + o.name.len()].copy_from_slice(o.name.as_bytes());
+    put(&mut f, H_RUNTIME, p.runtime_word);
+    put(&mut f, H_VERSION, p.version);
+    put(&mut f, H_ROLE, p.role);
+    f[H_NAME..H_NAME + p.name.len()].copy_from_slice(p.name.as_bytes());
     put(&mut f, H_IMAGE_OFF, image_off as u32);
     put(&mut f, H_IMAGE_SIZE, image.len() as u32);
-    put(&mut f, H_BSS, linked.bss_size as u32);
-    put(&mut f, H_ALIGN, align);
+    put(&mut f, H_BSS, p.bss);
+    put(&mut f, H_ALIGN, p.align);
     put(&mut f, H_RELOC_OFF, reloc_off as u32);
     put(&mut f, H_RELOC_N, relocs.len() as u32);
     put(&mut f, H_IMPORT_OFF, import_off as u32);
@@ -597,7 +662,7 @@ fn pack_inner(
         put(&mut f, H_DSP_SIZE, dsp.len() as u32);
         f[dsp_off..dsp_off + dsp.len()].copy_from_slice(dsp);
     }
-    f[image_off..].copy_from_slice(&image);
+    f[image_off..].copy_from_slice(image);
     let sha = file_sha(&f);
     f[H_SHA..H_SHA + 32].copy_from_slice(&sha);
     Ok(f)

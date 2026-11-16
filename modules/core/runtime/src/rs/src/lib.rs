@@ -58,6 +58,8 @@ mod health;
 mod imports;
 mod mailbox;
 mod plan;
+#[allow(dead_code)]
+mod install;
 mod platform;
 mod storage_adapter;
 mod safe_mode;
