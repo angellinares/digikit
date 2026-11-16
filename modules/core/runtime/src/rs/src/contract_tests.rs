@@ -342,13 +342,10 @@ mod service_fixtures {
 
     fn found(dev: &str) -> (Vec<u8>, Found) {
         let svc = packed(dev, "svc-test");
-        let fs = FakeStorage::new();
-        fs.add_dir(ROOT_STORE, b"services");
-        fs.add_file(ROOT_STORE, b"services/svc-test.dks", &svc, 0, [0; 32]);
+        let mut fs = crate::loader::discover::fake::cards(vec![("services/svc-test.dks".into(), svc.clone())]);
         let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
-        let mut block = Block([0; 1024]);
         let mut out = Found::new();
-        unsafe { find(&fs, &services, block.0.as_mut_ptr(), &[name_hash("svc-test")], &mut out) };
+        unsafe { find(&mut fs, &services, &[name_hash("svc-test")], &mut out) };
         (svc, out)
     }
 

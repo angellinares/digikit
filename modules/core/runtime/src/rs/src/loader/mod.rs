@@ -40,15 +40,10 @@ mod seams;
 #[cfg(test)]
 mod tests;
 use image::in_file;
-pub use seams::{Block, Images, RealImages, RealRegistry, Registry};
-#[cfg(test)]
-pub(crate) use seams::Staged;
+pub use seams::{Block, Images, RealImages, RealRegistry, Registry, Staged};
 
 /// The index the log shows for a provider file (`MOD_LOAD` and the events of its load): not a selection index, and not `u32::MAX` (no load running).
 pub const PROVIDER_IDX: u32 = 0xffff_fffe;
-
-/// Most slot words one provider fills.
-pub(crate) const SLOTS_MAX: usize = 16;
 
 /// What a provider record keeps after its load started: the copy of its header table (BIND, EXPORTS and SLOTS; the staged file is gone once `init` reads
 /// from the store) and the size of its image.
@@ -792,6 +787,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
 
     /// Plan the selection `count` modules long from the tables `capture` kept. The hard needs that the runtime does not meet are looked up as `services/<name>.dks`
     /// (`discover::find`, one listing, only when there is such a need); the providers found are planned with the modules and load before them.
+    #[inline(never)]
     pub unsafe fn plan_with_caps(&mut self, count: usize, caps: &[DkrtCap]) -> Plan {
         let n = count.min(SEL_MAX);
         let mut mods: [Option<Keys>; SEL_MAX] = [None; SEL_MAX];
@@ -807,11 +803,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         let mut want = [0u32; WANT_MAX];
         let nw = unmet_needs(&mods[..n], &mut want);
         if nw != 0 {
-            // the listing's state block (`Storage::list_state_bytes`) is a block of the arena for the length of the search
-            if let Some(b) = self.m.alloc(self.p.list_state_bytes(dkrt_abi::storage::ROOT_STORE) as u32) {
-                discover::find(&self.p, &services(), b.ptr, &want[..nw], &mut self.found);
-                self.m.free(b.addr);
-            }
+            discover::find(&mut self.m, &services(), &want[..nw], &mut self.found);
         }
         let provs = parse_provs(&self.found, self.found.n);
         let env = Env { services: services(), runtime: dkrt_sdk::RUNTIME_VERSION, caps };
@@ -820,9 +812,10 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         p
     }
 
-    /// The provider stage of the boot: each provider of the plan in plan order, before any module. A provider the plan refused, or whose own hard need
-    /// failed to load, is not loaded; a provider that fails undoes itself. The result goes to the log (`boot::report_provider`); the module states do not
+    /// The provider stage of the boot: each provider of the plan in plan order, before any module. A provider the plan refused is not loaded; a provider that
+    /// fails (its own provider did not load: E_IMPORT) undoes itself. The result goes to the log (`boot::report_provider`); the module states do not
     /// change (`LOADS` and `DkrtBootInfo` know no provider).
+    #[inline(never)]
     pub unsafe fn load_providers(&mut self, planned: &Plan) {
         self.phase = Phase::Boot;
         self.loaded = [false; PROVIDER_MAX];
@@ -846,21 +839,11 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             let res = match planned.provider_verdicts[j] {
                 dkrt_abi::plan::Verdict::Refused(why) => why.code(),
                 dkrt_abi::plan::Verdict::Accepted => {
-                    let failed = {
-                        let provs = parse_provs(&self.found, planned.np);
-                        match &provs[j] {
-                            Some(t) => plan::failed_need(&services(), t, &provs[..planned.np], &self.loaded[..planned.np]),
-                            None => None,
-                        }
-                    };
-                    if failed.is_some() {
-                        E_MISSING
-                    } else {
-                        let mut path = [0u8; discover::PATH_CAP + 1];
-                        let at = self.found.path(j);
-                        path[..at.len()].copy_from_slice(at);
-                        self.load_provider(path.as_ptr(), j)
-                    }
+                    // a provider whose own provider did not load fails at its imports (E_IMPORT)
+                    let mut path = [0u8; discover::PATH_CAP + 1];
+                    let at = self.found.path(j);
+                    path[..at.len()].copy_from_slice(at);
+                    self.load_provider(path.as_ptr(), j)
                 }
             };
             self.loaded[j] = res == OK;
@@ -872,6 +855,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
     }
 
     /// The settle step: the modules that need a provider that did not load are refused before the module stage starts (`plan::settle`).
+    #[inline(never)]
     pub unsafe fn settle(&mut self, planned: &mut Plan, count: usize) {
         let n = count.min(SEL_MAX);
         let mut mods: [Option<Keys>; SEL_MAX] = [None; SEL_MAX];
@@ -888,6 +872,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
 }
 
 /// The header tables of the first `n` providers the search found.
+#[inline(never)]
 fn parse_provs(found: &Found, n: usize) -> [Option<Keys<'_>>; PROVIDER_MAX] {
     let mut provs: [Option<Keys>; PROVIDER_MAX] = [None; PROVIDER_MAX];
     let mut j = 0;
@@ -902,6 +887,7 @@ fn parse_provs(found: &Found, n: usize) -> [Option<Keys<'_>>; PROVIDER_MAX] {
 const WANT_MAX: usize = 24;
 
 /// The distinct hard needs of `mods` that no service of the runtime meets, into `out`; their count.
+#[inline(never)]
 fn unmet_needs(mods: &[Option<Keys>], out: &mut [u32; WANT_MAX]) -> usize {
     let mut n = 0;
     let mut m = 0;

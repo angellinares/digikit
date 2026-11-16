@@ -96,6 +96,21 @@ impl Images for FakeImages {
         self.live.remove(at);
         self.log.push(Ev::Free(addr));
     }
+    unsafe fn list(&mut self, prefix: *const u8, out: *mut dkrt_sdk::DkrtStoreEntry, max: u32) -> i32 {
+        let n = cstr_len(prefix, 64);
+        let prefix = core::slice::from_raw_parts(prefix, n);
+        let mut k = 0;
+        for (name, bytes) in &self.files {
+            if k < max as usize && name.starts_with(prefix) {
+                let e = &mut *out.add(k);
+                e.path = [0; 64];
+                e.path[..name.len()].copy_from_slice(name);
+                e.size = bytes.len() as u32;
+                k += 1;
+            }
+        }
+        k as i32
+    }
     unsafe fn enter_init(&mut self, rec: usize, init: u32, ctx: *const Ctx) -> i32 {
         self.log.push(Ev::Init(rec, init));
         match self.init {
@@ -620,8 +635,6 @@ unsafe fn staged_boot(svc: Vec<u8>, consumer: Vec<u8>) -> Fake {
     let mut at = SVC_PATH.to_vec();
     l.m.files.insert(at.clone(), svc.clone());
     at.clear();
-    l.p.storage.add_dir(dkrt_abi::storage::ROOT_STORE, b"services");
-    l.p.storage.add_file(dkrt_abi::storage::ROOT_STORE, SVC_PATH, &svc, 0, [0; 32]);
     l.reset_plan();
     l.capture(0, &consumer);
     l

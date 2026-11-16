@@ -49,6 +49,7 @@ impl Installer {
 
     /// Pass 1: check every item, write nothing. Errors: `E_RANGE` (length, trampoline, stock slice), `E_PLAN_FIT` (no room for the sites),
     /// `E_PLAN_OWNER` (an installed site or an earlier item overlaps), `E_HOOK_STOCK` (the live bytes are not the stock bytes).
+    #[inline(never)]
     pub unsafe fn check<P: Platform>(&self, p: &P, binds: &[BindRef], _image_base: u32, image_size: u32) -> Result<(), i32> {
         if self.n + binds.len() > SITES_MAX {
             return Err(E_PLAN_FIT);

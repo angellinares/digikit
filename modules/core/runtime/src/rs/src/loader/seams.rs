@@ -29,6 +29,8 @@ pub trait Images {
     unsafe fn import_addr(&mut self, name: *const u8) -> u32;
     /// The module whose absence leaves the import `name` without an address (`import_needs`).
     unsafe fn import_needs(&mut self, name: *const u8) -> Option<&'static str>;
+    /// The files of the store whose path starts with `prefix` (NUL-terminated), in path order, at most `max` into `out`: the count, or a negative code (`E_BUSY`).
+    unsafe fn list(&mut self, prefix: *const u8, out: *mut dkrt_sdk::DkrtStoreEntry, max: u32) -> i32;
     /// Call `init` of module record `rec` (the address `init` in module memory) with its context; its result.
     unsafe fn enter_init(&mut self, rec: usize, init: u32, ctx: *const Ctx) -> i32;
     unsafe fn enter_fini(&mut self, rec: usize, fini: u32, ctx: *const Ctx);
@@ -55,6 +57,9 @@ impl Images for RealImages {
             return Err(r);
         }
         Ok(Staged { ptr: crate::store::stage() as *const u8, size: found.size })
+    }
+    unsafe fn list(&mut self, prefix: *const u8, out: *mut dkrt_sdk::DkrtStoreEntry, max: u32) -> i32 {
+        crate::store::list(prefix, out, max)
     }
     unsafe fn alloc(&mut self, n: u32) -> Option<Block> {
         let p = crate::arena::alloc(n);

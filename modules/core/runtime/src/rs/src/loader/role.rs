@@ -4,7 +4,7 @@
 //! The service search (`discover.rs`) uses `role_of` and `role_ok`; the loader runs the steps.
 use super::exports::EXPORTS_MAX;
 use super::image::Head;
-use super::{Images, Loader, ProvRec, Registry, SLOTS_MAX};
+use super::{Images, Loader, ProvRec, Registry};
 use dkneeds::keys::{tag, BindRef, Keys};
 use dkrt_abi::platform::Platform;
 use dkrt_sdk::{E_CONTRACT, E_FORMAT, E_NOMEM, OK};
@@ -65,11 +65,13 @@ unsafe fn no_activate<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, 
 unsafe fn no_undo<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: usize) {}
 
 /// The table of the staged file, or the refusal.
+#[inline(never)]
 unsafe fn table_of<'a>(file: *const u8, off: u32, len: u32) -> Result<Keys<'a>, i32> {
     Keys::parse(core::slice::from_raw_parts(file.add(off as usize), len as usize)).map_err(|_| E_FORMAT)
 }
 
 /// The `BIND` items of `keys` into `out`; their count.
+#[inline(never)]
 fn binds_of<'a>(keys: &Keys<'a>, out: &mut [BindRef<'a>; BIND_MAX]) -> usize {
     let mut n = 0;
     while n < BIND_MAX {
@@ -84,12 +86,6 @@ fn binds_of<'a>(keys: &Keys<'a>, out: &mut [BindRef<'a>; BIND_MAX]) -> usize {
 
 const BIND_MAX: usize = dkneeds::BIND_MAX as usize;
 const NO_BIND: BindRef<'static> = BindRef { site: 0, addr: 0, len: 0, tramp: 0, stock: &[] };
-
-/// The data word of slot `id` in the image: the slot mechanism (fill after the commit, clear at IPL 7) is in the installer; the image has no slot words yet
-/// (the first is in R12-6, with the machines), so no id resolves and a provider that declares a slot is refused.
-fn slot_addr(_id: u32) -> Option<u32> {
-    None
-}
 
 unsafe fn service_check<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, file: *const u8, head: &Head) -> i32 {
     if !l.r.abi_ok(crate::rd32(file.add(dkneeds::H_RESERVED as usize))) {
@@ -179,21 +175,12 @@ unsafe fn service_activate<P: Platform, M: Images, R: Registry>(l: &mut Loader<P
     }
     let mut binds = [NO_BIND; BIND_MAX];
     let nb = binds_of(&keys, &mut binds);
-    let mut slots = [(0u32, 0u32); SLOTS_MAX];
-    let mut ns = 0;
-    let mut s = 0;
-    while let Some(w) = keys.words(tag::SLOTS, s) {
-        s += 1;
-        match slot_addr(w.0) {
-            Some(addr) if ns < SLOTS_MAX => {
-                slots[ns] = (addr, base.wrapping_add(w.2));
-                ns += 1;
-            }
-            _ => return E_FORMAT,
-        }
+    // the image has no slot word yet (R12-6): a provider that declares a slot is refused
+    if keys.count(tag::SLOTS) != 0 {
+        return E_FORMAT;
     }
     // the hooks go in last: nothing after this can fail, so a live site is never taken down again
-    match l.installer.install(&l.p, rec as u8, &binds[..nb], base, pr.image_size, &slots[..ns]) {
+    match l.installer.install(&l.p, rec as u8, &binds[..nb], base, pr.image_size, &[]) {
         Ok(()) => OK,
         Err(e) => e,
     }
