@@ -57,11 +57,7 @@ name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result be
 - The input must be a stock image. A patched image is refused.
 - Everything under `out/` is derived from firmware and is never committed.
 
-A machine needs its framework modules, which are added for you (`test/machine-clone` is a patched-in test machine of registry rows; content machines such as the project's PLUCK, `digikit/pluck`, are run-time modules, see below):
-
-```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules test/machine-clone -o out/patch/clone.syx
-```
+A machine is a run-time module (the project's PLUCK, `digikit/pluck`, see below): `machines.dks` on the card acts on its rows. patchkit refuses a patch-time `[[entry]]` row of the `machines` registry.
 
 ### Inspect, check, explain, verify
 
@@ -71,7 +67,7 @@ uv run python -m tools.patchkit.patchkit inspect out/patch/fx.syx               
 uv run python -m tools.patchkit.patchkit check --firmware firmware/Digitakt_II_OS1.17.syx           # which modules fit this firmware
 uv run python -m tools.patchkit.patchkit verify out/patch/fx.syx --base firmware/Digitakt_II_OS1.17.syx   # re-decode and check
 mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/fx
-mise run patch:mem -- core/machines test/machine-clone --device dt2 --firmware 1.17    # bytes used and free per region
+mise run patch:mem -- core/machines core/params --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
 - `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.12").
@@ -355,7 +351,7 @@ first `pnpm dev` in a fresh tree compiles the browser cores and takes several mi
 |---|---|---|
 | Port | Per-firmware facts: named anchors with SHA-256 of the expected bytes, free regions, container limits. Generated, keyed by the `.syx` SHA-256. | `devices/ports/dt2-1.17.toml` |
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
-| Content module | Own code and declarative registry entries. No addresses. | `test/machine-clone` |
+| Content module | Own code and declarative registry entries. No addresses. | `test/registry-demo` |
 
 Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/adapters/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
 

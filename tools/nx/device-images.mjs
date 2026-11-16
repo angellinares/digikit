@@ -25,15 +25,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'digi-images-'));
 const run = promisify(execFile);
 // Static module root lists (`apply --modules`) that tests use: tests/regression/runtime/image-roots.json, also read by runtime-plan.ts.
 // Their image, plan and address map are kept under dist/bytes/images/<device>/<id>.* for the tests to copy.
-// Single projects keep the lists only their tests use in modules/**/tests/image-roots.json (image-roots.ts reads the same files): their lines go to
-// dist/bytes/project-images.sha256, so a project's list changes no key of another test.
-const readSets = (file) => JSON.parse(readFileSync(join(root, file), 'utf8')).sets;
-const sharedSets = readSets('tests/regression/runtime/image-roots.json');
-const projectSets = globSync('modules/**/tests/image-roots.json', { cwd: root }).sort().flatMap(readSets);
-const ids = [...sharedSets, ...projectSets].map((set) => set.id);
-const repeated = ids.find((id, i) => ids.indexOf(id) !== i);
-if (repeated) throw new Error(`root set ${repeated} is listed twice`);
-const rootSets = [...sharedSets, ...projectSets.map((set) => ({ ...set, project: true }))];
+const { sets: rootSets } = JSON.parse(readFileSync(join(root, 'tests/regression/runtime/image-roots.json'), 'utf8'));
 const cells = CELLS.filter((cell) => existsSync(join(root, cell.syx)));
 const jobs = cells.flatMap((cell) => [
   ...(setsOf.get(cell.dev) ?? []).map((set) => ({ cell, label: set, select: ['--set', set] })),
@@ -42,7 +34,6 @@ const jobs = cells.flatMap((cell) => [
     .map((set) => ({
       cell,
       label: `roots:${set.id}`,
-      project: set.project === true,
       select: ['--modules', set.roots.join(',')],
       keep: join(root, 'dist/bytes/images', cell.dev, set.id),
     })),
@@ -52,7 +43,6 @@ for (const dev of new Set(cells.map((cell) => cell.dev)))
   mkdirSync(join(root, 'dist/bytes/images', dev), { recursive: true });
 // The jobs only read; four at a time keep the machine usable. Lines keep the order of the jobs.
 const lines = Array.from({ length: jobs.length }, () => '');
-const isProject = (index) => jobs[index].project === true;
 let next = 0;
 try {
   await Promise.all(
@@ -89,6 +79,4 @@ try {
   rmSync(scratch, { recursive: true, force: true });
 }
 mkdirSync(join(root, 'dist/bytes'), { recursive: true });
-const written = (project) => `${lines.filter((_, i) => isProject(i) === project).join('\n')}\n`;
-writeFileSync(join(root, 'dist/bytes/images.sha256'), written(false));
-writeFileSync(join(root, 'dist/bytes/project-images.sha256'), written(true));
+writeFileSync(join(root, 'dist/bytes/images.sha256'), `${lines.join('\n')}\n`);

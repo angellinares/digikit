@@ -122,15 +122,10 @@ const CRATE_TARGETS = {
       inputs: [
         '{workspaceRoot}/tools/nx/device-images.mjs',
         '{workspaceRoot}/tests/regression/runtime/image-roots.json',
-        '{workspaceRoot}/modules/**/tests/image-roots.json',
         { dependentTasksOutputFiles: '**/*', transitive: true },
       ],
       dependsOn: ['cli', { target: 'build-objects', projects: ['tag:acceptance-image'] }],
-      outputs: [
-        '{workspaceRoot}/dist/bytes/images.sha256',
-        '{workspaceRoot}/dist/bytes/project-images.sha256',
-        '{workspaceRoot}/dist/bytes/images',
-      ],
+      outputs: ['{workspaceRoot}/dist/bytes/images.sha256', '{workspaceRoot}/dist/bytes/images'],
       options: { command: 'node tools/nx/device-images.mjs', cwd: '.' },
     },
   },

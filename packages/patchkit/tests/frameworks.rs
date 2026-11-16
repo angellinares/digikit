@@ -128,17 +128,17 @@ fn section<'a>(p: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
         .unwrap_or_else(|| panic!("no section {name}"))
 }
 
-const CLONE: [&str; 2] = ["core/machines", "test/machine-clone"];
+const PAIR: [&str; 2] = ["core/machines", "core/params"];
 
 #[test]
 fn the_selection_order_does_not_change_the_bytes() {
     let Some(lib) = library(vec![]) else {
         return;
     };
-    let Some(r1) = run(DT2_117, &lib, &CLONE) else {
+    let Some(r1) = run(DT2_117, &lib, &PAIR) else {
         return;
     };
-    let r2 = run(DT2_117, &lib, &["test/machine-clone", "core/machines"]).unwrap();
+    let r2 = run(DT2_117, &lib, &["core/params", "core/machines"]).unwrap();
     assert!(r1.unwrap().syx == r2.unwrap().syx);
 }
 
@@ -148,8 +148,8 @@ fn every_instruction_the_framework_places_decodes() {
         return;
     };
     for (file, ids) in [
-        (DT2_117, &CLONE[..]),
-        (DN2_112, &["core/machines", "test/dn2-clone"][..]),
+        (DT2_117, &["core/machines"][..]),
+        (DN2_112, &["core/machines"][..]),
     ] {
         let Some(r) = run(file, &lib, ids) else {
             continue;
@@ -177,22 +177,18 @@ fn every_instruction_the_framework_places_decodes() {
 }
 
 #[test]
-fn digitone_ii_clone_gets_type_5() {
+fn the_image_keeps_only_the_machine_hooks_that_stay_in_it() {
     let Some(lib) = library(vec![]) else {
         return;
     };
     for file in [DN2_112] {
-        let Some(r) = run(file, &lib, &["core/machines", "test/dn2-clone"]) else {
+        let Some(r) = run(file, &lib, &["core/machines"]) else {
             continue;
         };
         let a = r.unwrap();
         let p = plan(&a);
-        let m = reg(&p, "machines");
-        assert_eq!(
-            (m["first"].as_u64(), m["count"].as_u64()),
-            (Some(5), Some(1))
-        );
-        assert_eq!(m["entries"][0]["index"], 5);
+        // a machine is a run-time module: the registry has no patch-time entry
+        assert_eq!(reg(&p, "machines")["entries"].as_array().unwrap().len(), 0);
         // no DSP selector table and no per-type byte on the Digitone II
         assert!(
             p["sections"]
