@@ -290,3 +290,25 @@ macro_rules! service {
         }
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_module_record_is_four_words_and_a_missing_entry_is_zero() {
+        // the packer reads `dk_module` as four words (init, fini, tick, menu) and takes a zero word for no entry
+        assert_eq!(
+            core::mem::size_of::<ModuleDef>(),
+            4 * core::mem::size_of::<usize>()
+        );
+        let none = ModuleDef {
+            init: None,
+            fini: None,
+            tick: None,
+            menu: None,
+        };
+        let words: [usize; 4] = unsafe { core::mem::transmute(none) };
+        assert_eq!(words, [0; 4]);
+    }
+}
