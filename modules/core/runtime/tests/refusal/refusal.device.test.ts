@@ -125,7 +125,7 @@ cardRigs('refusal fixtures and module states', { dsp: 'cold', roots: COUPLED_ROO
   test('a hard need nobody provides is E_MISSING', async () => {
     const seen = await patchedSeen();
     expectModule(seen, 5, 'REFUSED', loadCode('E_MISSING'));
-    expect(moduleStateText(seen.loads[5]!)).toContain('refused: a service it needs');
+    expect(moduleStateText(seen.loads[5]!)).toContain('refused: the service 0xdeadbeef that it needs');
   });
 
   test('keys for a kind nobody owns are refused with E_PLAN_KIND and the kind', async () => {
