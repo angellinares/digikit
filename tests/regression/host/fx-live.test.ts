@@ -5,10 +5,12 @@ import { button, type Session } from '@digi/test-support';
 import { expect, test, vi } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { evidence, pickSine } from '../runtime/fx-live.ts';
+import { fakeClock } from './fake-status.ts';
 
 test('numeric input hint controls list movement and a failed chord still releases FUNC', async () => {
-  const client = { inputButton: vi.fn(), inputTap: vi.fn(), step: vi.fn() };
-  const session = { options: { device: 'dn2' }, client } as unknown as Session;
+  const { status, step } = fakeClock();
+  const client = { inputButton: vi.fn(async () => {}), inputTap: vi.fn(), step };
+  const session = { options: { device: 'dn2' }, client, status } as unknown as Session;
   await pickSine(session, 2);
   expect(client.inputTap.mock.calls.filter(([code]) => code === button('DOWN'))).toHaveLength(2);
   client.inputTap.mockRejectedValueOnce(new Error('panel failed'));
@@ -20,15 +22,17 @@ test.each([
   ['dt2', 7],
   ['dn2', 5],
 ] as const)('default %s sine hint keeps its original list position', async (device, hint) => {
-  const client = { inputButton: vi.fn(), inputTap: vi.fn(), step: vi.fn() };
-  const session = { options: { device }, client } as unknown as Session;
+  const { status, step } = fakeClock();
+  const client = { inputButton: vi.fn(async () => {}), inputTap: vi.fn(), step };
+  const session = { options: { device }, client, status } as unknown as Session;
   await pickSine(session);
   expect(client.inputTap.mock.calls.filter(([code]) => code === button('DOWN'))).toHaveLength(hint);
 });
 
 test.each([-1, 0.5, NaN])('invalid numeric sine hint %s does not press a panel key', async (hint) => {
-  const client = { inputButton: vi.fn(), inputTap: vi.fn(), step: vi.fn() };
-  const session = { options: { device: 'dn2' }, client } as unknown as Session;
+  const { status, step } = fakeClock();
+  const client = { inputButton: vi.fn(async () => {}), inputTap: vi.fn(), step };
+  const session = { options: { device: 'dn2' }, client, status } as unknown as Session;
   await expect(pickSine(session, hint)).rejects.toThrow('nonnegative list position');
   expect(client.inputTap).not.toHaveBeenCalled();
   expect(client.inputButton).not.toHaveBeenCalled();

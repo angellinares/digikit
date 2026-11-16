@@ -35,6 +35,7 @@ vi.mock('../runtime/fx-live.ts', async (original) => ({
 }));
 vi.mock('../runtime/ready.ts', async (original) => ({ ...(await original<object>()), expectRuntimeUi: fake.ready }));
 import { withRouteFxSession } from '../runtime/fx-route-live.ts';
+import { fakeClock } from './fake-status.ts';
 import {
   withPreparedFxSession,
   readTextRows,
@@ -228,12 +229,14 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
 }
 
 test('route diagnostic text decodes big endian words and panel chords release on failure', async () => {
+  const { status, step } = fakeClock();
   const session = {
+    status,
     client: {
       memPeek: vi.fn(async () => 0x41420000),
-      inputButton: vi.fn(),
+      inputButton: vi.fn(async () => {}),
       inputTap: vi.fn().mockRejectedValue(new Error('panel failure')),
-      step: vi.fn(),
+      step,
     },
   } as unknown as Session;
   expect(await readTextRows(session, 4096, 2, 4)).toEqual(['AB', 'AB']);

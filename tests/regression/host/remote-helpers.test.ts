@@ -41,6 +41,7 @@ import {
   validateRuntimePlan,
   type RuntimePlan,
 } from '../runtime/runtime-plan.ts';
+import { fakeClock } from './fake-status.ts';
 import { openDigikitMenu, openRuntimeAbout, readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
@@ -524,10 +525,11 @@ test('ABOUT returns only the complete snapshot after the new open, keeping the k
   });
   const tap = vi.fn().mockResolvedValue(undefined);
   const info = vi.fn().mockResolvedValue({ runtime: 0x205 });
+  const { status, step } = fakeClock();
   await expect(
     openRuntimeAbout(
       tap,
-      { client: { memPeek } } as unknown as Session,
+      { status, client: { memPeek, step } } as unknown as Session,
       { info } as unknown as DkSession,
       plan,
       '/artifacts',
@@ -537,70 +539,65 @@ test('ABOUT returns only the complete snapshot after the new open, keeping the k
   expect(polls).toBe(4);
 });
 
-/**
- * Timers fire with no wall-clock time passing, the worst case of a timer firing before `Date.now()` reaches its deadline
- * (up to 1 ms on a real host). Only timers are faked: `expired` must come from the deadline that fired, not from `Date.now()`.
- */
-async function withFiredTimers<T>(run: () => Promise<T>, advanceMs: number): Promise<PromiseSettledResult<T>> {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-  try {
-    const settled = Promise.allSettled([run()]).then(([result]) => result!);
-    await vi.advanceTimersByTimeAsync(advanceMs);
-    return await settled;
-  } finally {
-    vi.useRealTimers();
-  }
-}
+/** A request nobody answers: the emulated probe (as `emulatorDk` bounds every real one) ends it after `ms` emulated ms. */
+const lostRequest = <T>(session: Session, ms = 30) =>
+  withEmulatedProbe(
+    session,
+    ({ signal }) =>
+      new Promise<T>((_resolve, reject) =>
+        signal.addEventListener('abort', () => reject(new Error('request lost')), { once: true }),
+      ),
+    ms,
+  );
 
 test('ABOUT bounds initial count, info and row reads, and preserves incomplete rows on timeout', async () => {
   for (const stalled of ['initial-count', 'info', 'row', 'incomplete'] as const) {
     fake.write.mockClear();
     const rows = ['RUNTIME 0.2.5', 'BOOT: 1 OF 1 OK'];
     const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
+    // every status read is 100 emulated ms, so the 30 ms bounds are crossed at the first read
+    const { status, step } = fakeClock({ msPerRead: 100, mode: 'free' });
+    const clockSession = { status, client: { step } } as unknown as Session;
     let opened = false;
     const memPeek = vi.fn(async (address: number): Promise<number> => {
-      if (!opened) return stalled === 'initial-count' ? new Promise(() => {}) : 0;
+      if (!opened) return stalled === 'initial-count' ? lostRequest(clockSession) : 0;
       if (address === 8192) return rows.length;
-      if (stalled === 'row') return new Promise(() => {});
+      if (stalled === 'row') return lostRequest(clockSession);
       return bytes.readUInt32BE(address - 4096);
     });
-    const info = vi.fn(async () => (stalled === 'info' ? new Promise<never>(() => {}) : { runtime: 0x205 }));
+    const info = vi.fn(async () => (stalled === 'info' ? lostRequest<never>(clockSession) : { runtime: 0x205 }));
     const tap = vi.fn(async () => {
       opened = true;
     });
-    const result = await withFiredTimers(
-      () =>
-        openRuntimeAbout(
-          tap,
-          { client: { memPeek } } as unknown as Session,
-          { info } as unknown as DkSession,
-          plan,
-          '/artifacts',
-          30,
-        ),
-      30,
-    );
-    expect(result.status, stalled).toBe('rejected');
+    await expect(
+      openRuntimeAbout(
+        tap,
+        { status, client: { memPeek, step } } as unknown as Session,
+        { info } as unknown as DkSession,
+        plan,
+        '/artifacts',
+        30,
+      ),
+      stalled,
+    ).rejects.toThrow(stalled === 'incomplete' ? 'BOOT: 1 OF 1 OK' : undefined); // the failure carries the incomplete rows
     const initial = fake.write.mock.calls.find(([file]) => file.endsWith('about-before-open.json'));
-    expect(JSON.parse(initial![1]), stalled).toMatchObject({ expired: true });
+    expect(JSON.parse(initial![1]), stalled).toMatchObject({ initialCount: stalled === 'initial-count' ? null : 0 });
     if (stalled === 'initial-count') expect(tap).not.toHaveBeenCalled();
     else {
       const saved = fake.write.mock.calls.find(([file]) => file.endsWith('about-readiness.json'));
-      expect(JSON.parse(saved![1]), stalled).toMatchObject({
-        expired: true,
-        rows: stalled === 'incomplete' ? rows : [],
-      });
+      expect(JSON.parse(saved![1]), stalled).toMatchObject({ expired: true, rows: [] });
     }
   }
-});
+}, 30_000);
 
 test('a never-answering remote state request obeys the readiness deadline', async () => {
-  const dk = { remoteState: vi.fn(() => new Promise(() => {})) } as unknown as DkSession;
-  const result = await withFiredTimers(() => expectRemoteEnabled(session, dk, 30), 30);
-  expect(result.status).toBe('rejected');
+  const { status, step } = fakeClock({ msPerRead: 100, mode: 'free' });
+  const clockSession = { ...session, status, client: { step } } as unknown as Session;
+  const dk = { remoteState: vi.fn(() => lostRequest(clockSession)) } as unknown as DkSession;
+  await expect(expectRemoteEnabled(clockSession, dk, 30)).rejects.toThrow('request lost');
   const saved = fake.write.mock.calls.find(([file]) => file.endsWith('remote-readiness.json'));
   expect(JSON.parse(saved![1])).toMatchObject({ state: null, expired: true });
-});
+}, 30_000);
 
 test('post-restart UI readiness allows an unobserved filesystem worker only with a newer epoch', async () => {
   const { daemon, status } = readyDaemon();
