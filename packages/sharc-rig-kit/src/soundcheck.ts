@@ -7,7 +7,7 @@
  * wrote only its own memory, the output is finite); the `[[case.check]]` tables add the sound: level, pitch, decay, tones, the comparison
  * with a reference table. A check names its `kind` and may limit itself to `blocks = [first, end)` of the case.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parse } from 'smol-toml';
 import {
@@ -566,4 +566,34 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
     }
   }
   return results;
+}
+
+/**
+ * Write the pins of a file: run every case that has a `same-as` check and put the words hash of the check's signal into its `sha256` line.
+ * A case with such a check names one device, so the n-th `sha256 = "..."` line of the file belongs to the n-th `same-as` check in file order.
+ * Returns the hashes written, as `case [device] hash`. This is the only writer of a rig reference pin: a changed pin is a re-pin and needs review.
+ */
+export async function pinRigFile(module: string, file: string, o: RunOptions = {}): Promise<string[]> {
+  const dir = path.dirname(file);
+  const hashes: string[] = [];
+  const lines: string[] = [];
+  const isFx = fxSpec(module) !== null && !DEVICES.some((d) => machineSpec(module, d));
+  for (const c of loadRigFile(file).case) {
+    const pins = (c.check ?? []).filter((k) => k.kind === 'same-as');
+    if (pins.length === 0) continue;
+    const devices = (c.device ?? [...DEVICES]).filter((d): d is Device => (DEVICES as readonly string[]).includes(d));
+    if (devices.length !== 1) throw new Error(`${c.name}: a case with a same-as check names exactly one device`);
+    const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, devices[0]!, c, dir, o);
+    if (t.failure !== null) throw new Error(`${c.name}: ${t.failure}`);
+    for (const k of pins) {
+      const h = wordsHash(signal(t, k));
+      hashes.push(h);
+      lines.push(`${c.name} [${devices[0]}] ${h}`);
+    }
+  }
+  let n = 0;
+  const text = readFileSync(file, 'utf8').replace(/^sha256 = ".*"$/gm, () => `sha256 = "${hashes[n++] ?? ''}"`);
+  if (n !== hashes.length) throw new Error(`${file} has ${n} sha256 lines for ${hashes.length} same-as checks`);
+  writeFileSync(file, text);
+  return lines;
 }
