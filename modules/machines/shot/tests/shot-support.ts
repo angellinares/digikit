@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { button, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
-import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { memory, panelOn } from '@digi/regression/runtime/panel.ts';
 import { listenEvents, remoteTurnTaken } from '@digi/regression/runtime/events.ts';
 import { waitEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
@@ -125,8 +125,9 @@ export function expectSplitPair(name: string, c: Capture, from: number, to: numb
 const DYNAMIC_ROW = { dt2: 7, dn2: 5 } as const;
 
 /** The panel path of sample-playback.test.ts: FUNC+SRC, the sole dynamic machine, on the selected track (TRIG 1). */
-export async function selectDynamicMachine({ session }: Pick<PatchedSession, 'session'>, artifacts: string): Promise<string> {
-  const ui = panel(session);
+export async function selectDynamicMachine(runtime: Pick<TestRuntime, "session" | "ui">, artifacts: string): Promise<string> {
+  const { session } = runtime;
+  const ui = panelOn(runtime);
   await ui.tap('NO');
   await session.client.inputButton(button('FUNC'), true);
   try {
@@ -278,7 +279,7 @@ export function expectedWindow(stored: Uint8Array, channels: number, first: numb
  * detent and turns toward the target (a detent may move one unit or several); it stops on `word >> 8 === index`. Returns the words seen. A failure
  * lists the detents the firmware decoder took and the last events of the log, so "not taken" and "taken, word did not move" differ. */
 export async function setSmp(
-  runtime: PatchedSession,
+  runtime: TestRuntime,
   readWord: () => Promise<number>,
   index: number,
   maxTurns = 30,
@@ -286,7 +287,7 @@ export async function setSmp(
   viaRemote = false,
 ): Promise<number[]> {
   const { session } = runtime;
-  const ui = panel(session);
+  const ui = panelOn(runtime);
   const events = viaRemote ? await listenEvents(runtime) : null;
   const trace: number[] = [];
   let taken = 0;

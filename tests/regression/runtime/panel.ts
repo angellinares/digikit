@@ -1,6 +1,7 @@
 import { button, encoder, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { expectPollEmulated } from './waits.ts';
+import type { Ui } from './ui.ts';
 
 /** ColdFire instructions per emulated millisecond. */
 const MS = 132_000;
@@ -77,6 +78,29 @@ export function panel(session: Session) {
     return { value, bursts: maxBursts, trace };
   }
   return { tap, chord, turn, settle, burst, turnTo };
+}
+
+/**
+ * The panel calls of `panel()` over `rt.ui`: the input goes through `Ui` and waits until the firmware took it (`drained`), then the old settle
+ * stays as the fixed wait, since the tests have no observable condition for "the page is drawn". `burst` and `turnTo` stay on `panel()`: `Input` has
+ * no scheduled turns.
+ */
+export function panelOn({ session, ui }: { session: Session; ui: Ui }) {
+  const old = panel(session);
+  const settle = (ms: number, why = 'the page settles after the input (nothing observable)') => ui.wait({ ms, why });
+  async function tap(name: string | number, settleMs = 80): Promise<void> {
+    await ui.tap(name, { until: { drained: true } });
+    await settle(settleMs);
+  }
+  async function chord(held: string, key: string | number): Promise<void> {
+    await ui.tap(key, { until: { drained: true }, held });
+    await settle(300);
+  }
+  async function turn(name: string, detents: number): Promise<void> {
+    await ui.turn(name, detents, { until: { drained: true } });
+    await settle(200);
+  }
+  return { tap, chord, turn, settle, burst: old.burst, turnTo: old.turnTo };
 }
 
 /** Read-only ColdFire and DSP memory access over the control socket. */

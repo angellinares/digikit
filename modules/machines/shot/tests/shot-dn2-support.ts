@@ -6,7 +6,7 @@ import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
-import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { memory, panelOn } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { RATE, selectDynamicMachine, trackApi, trackRecord, wav } from './shot-support.ts';
@@ -66,7 +66,7 @@ async function setup(runtime: Parameters<Parameters<typeof runtimeTests>[1]>[0],
   // The daemon answers every peek on the emulation thread; a tight poll loop starves the guest (stall faults), so polls are 60 ms apart.
   const settle = (track: number, timeoutMs = 120_000, each?: Parameters<typeof api.settle>[2]) => api.settle(track, timeoutMs, each, 60);
   const mem = memory(session);
-  const ui = panel(session);
+  const ui = panelOn(runtime);
   const log: Record<string, unknown> = {};
   const failures: string[] = [];
   /** Run one phase; a failure is recorded and the next phase runs. */

@@ -5,16 +5,17 @@ import { record } from '@digi/regression/runtime/artifacts.ts';
 import { shot } from '@digi/regression/runtime/fx-session.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { installModule, moduleArtifact } from '@digi/regression/runtime/install.ts';
-import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { memory, panelOn } from '@digi/regression/runtime/panel.ts';
 import { prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 
 runtimeTests(
   'native callback page cycles and routes PARAM and LOCAL turns',
-  async ({ session, dk }) => {
+  async (runtime) => {
+    const { session, dk } = runtime;
     await expectRuntimeReady(session);
     await installModule(dk, 'test/native-page', moduleArtifact(session.options.device, 'test/native-page'));
-    const ui = panel(session);
+    const ui = panelOn(runtime);
     const artifacts = path.join(session.runDir, 'native-page-proof');
     fs.mkdirSync(artifacts, { recursive: true });
     const plan = await prepareRuntimePlan(session, artifacts, ['mf_native_register']);

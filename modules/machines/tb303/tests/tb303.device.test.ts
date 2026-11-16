@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { button } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
-import { panel } from '@digi/regression/runtime/panel.ts';
+import { panelOn } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
@@ -19,8 +19,9 @@ const TAIL_MS = 3000;
 const SILENT_AFTER_MS = 2500;
 
 /** The dynamic machine is the only one on the card: row 7 of the DT2 machine list, on the selected track (TRIG 1). */
-async function selectDynamicMachine({ session }: Pick<PatchedSession, 'session'>): Promise<void> {
-  const ui = panel(session);
+async function selectDynamicMachine(runtime: Pick<TestRuntime, "session" | "ui">): Promise<void> {
+  const { session } = runtime;
+  const ui = panelOn(runtime);
   await ui.tap('NO');
   await session.client.inputButton(button('FUNC'), true);
   try {

@@ -4,10 +4,10 @@ import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { openSamples } from '@digi/dk-session/samples';
 import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
-import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { memory, panelOn } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { expectedWindow, setSmp, trackApi as sharedTrackApi } from './shot-support.ts';
@@ -153,8 +153,9 @@ function expectSplitPair(name: string, c: Capture, from: number, to: number, lef
 // ---- the device ----------------------------------------------------------------------------------------------------------------
 
 /** The panel path of sample-playback.test.ts: the sole dynamic machine, row 7 of the DT2 machine list, on the selected track (TRIG 1). */
-async function selectDynamicMachine({ session }: Pick<PatchedSession, 'session'>, artifacts: string): Promise<string> {
-  const ui = panel(session);
+async function selectDynamicMachine(runtime: Pick<TestRuntime, "session" | "ui">, artifacts: string): Promise<string> {
+  const { session } = runtime;
+  const ui = panelOn(runtime);
   await ui.tap('NO');
   await session.client.inputButton(button('FUNC'), true);
   try {
@@ -501,7 +502,7 @@ runtimeTests(
       // bursts. The read-back is word 4 (PITCH) of `_dv_params`, the parameter words that core/dsp-voice builds every block and passes to SHOT
       // as R12 (the words SHOT actually reads). The buffer is rewritten only while a voice renders, so TRIG 1 is held during the turn.
       const PITCH_OCTAVE = 0x6000;
-      const ui = panel(session);
+      const ui = panelOn(runtime);
       const mem = memory(session);
       const paramsPlan = tablePlan;
       const pitchAddress = planSymbol(paramsPlan, '_dv_params') + 4 * 4; // a byte-alias address; one little-endian word per parameter

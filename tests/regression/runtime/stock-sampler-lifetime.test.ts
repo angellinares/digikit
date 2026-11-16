@@ -6,9 +6,9 @@ import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { openSamples } from '@digi/dk-session/samples';
 import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { withSession } from '../support.ts';
+import { withSession, withWaitApi, type TestRuntime } from '../support.ts';
 import { record } from './artifacts.ts';
-import { memory, panel } from './panel.ts';
+import { memory, panelOn } from './panel.ts';
 import { emulatorDk, pollEmulated, expectPollEmulated } from './waits.ts';
 
 // Current DT2 1.17 observations in finding81. All diagnostic accesses are reads.
@@ -58,14 +58,18 @@ function actionBarTop(data: string | undefined): number | null {
 const ACTION = { unload: 24, replace: 32 };
 
 /** Returns the title of the SAMPLES root menu as observed in this run. */
-async function discovery(session: Session, dk: DkSession): Promise<{ out: string; rootTitle: string }> {
+async function discovery(
+  runtime: Pick<TestRuntime, 'session' | 'ui'>,
+  dk: DkSession,
+): Promise<{ out: string; rootTitle: string }> {
+  const { session } = runtime;
   const root = path.join(repoRoot(), 'out/runs/stock-sampler-lifetime');
   mkdirSync(root, { recursive: true });
   // Discovery evidence is retained even when this test passes.
   const out = mkdtempSync(path.join(root, 'dt2-'));
   const shared: { rootTitle?: string } = {};
   console.info('retained stock sampler discovery:', out);
-  const ui = panel(session);
+  const ui = panelOn(runtime);
   const { cf, words, dsp } = memory(session);
   async function observe(name: string) {
     const begin = await cf(CF.blocks);
@@ -432,8 +436,13 @@ async function slotState(session: Session, slot: number) {
  * play slot 2, then UNLOAD slot 1 through the stock SAMPLING menu. The block vector shifts only its 0x34-byte
  * records; PCM stays in place.
  */
-async function unloadEarlierWhilePlaying(session: Session, out: string, rootTitle: string): Promise<void> {
-  const ui = panel(session);
+async function unloadEarlierWhilePlaying(
+  runtime: Pick<TestRuntime, 'session' | 'ui'>,
+  out: string,
+  rootTitle: string,
+): Promise<void> {
+  const { session } = runtime;
+  const ui = panelOn(runtime);
   const { dsp } = memory(session);
   const expectedA = Buffer.from(toneWav(330)).subarray(44, 108).toString('hex');
   const expectedB = Buffer.from(toneWav(990)).subarray(44, 108).toString('hex');
@@ -581,9 +590,10 @@ test('stock DT2 slot binding and active ten-second replacement discovery', async
   const session = handle.session;
   await session.client.call('run.mode', { mode: 'free' });
   const dk = emulatorDk(session);
+  const runtime = withWaitApi({ session, dk, close: async () => {} });
   try {
-    const { out, rootTitle } = await discovery(session, dk);
-    await unloadEarlierWhilePlaying(session, out, rootTitle);
+    const { out, rootTitle } = await discovery(runtime, dk);
+    await unloadEarlierWhilePlaying(runtime, out, rootTitle);
   } finally {
     dk.cancelPending();
   }
