@@ -7,7 +7,7 @@ import { overlayArgs, plusdriveBinary } from '@digi/regression/runtime/card-kit.
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { advance, word } from '@digi/regression/runtime/fx-live.ts';
+import { word, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 
 /**
  * core/sdhc-large through the real writers, driven over the usb-fast bulk link (the emulator's usb.bulk.in / usb.bulk.out).
@@ -49,8 +49,8 @@ for (const device of DEVICES) {
     const boot = async () => {
       const mod = rig.mod('digikit/usb-fast');
       const dk = await rig.pausedBoot(await rig.card({ name: 'sl-base', modules: [mod], selection: [mod.name] }));
-      if (dt2) await advance(rig.session, 2000); // the boot recovery of the staging folder
-      for (let i = 0; i < 100 && (await EmuBulkLink.connectCallback(call)) === undefined; i++) await advance(rig.session, 100);
+      if (dt2) await rig.runtime.ui.wait({ ms: 2000, why: SETTLE }); // the boot recovery of the staging folder
+      for (let i = 0; i < 100 && (await EmuBulkLink.connectCallback(call)) === undefined; i++) await rig.runtime.ui.wait({ ms: 100, why: SETTLE });
       const notes: string[] = [];
       const choice = await chooseBulk(dk, EmuBulkLink.opener(call, { stepInstructions: 100_000 }), (l) => notes.push(l), { timeoutMs: 20_000, resyncMs: 200, log: (l) => notes.push(l) });
       expect(choice, `a bulk link is negotiated: ${notes.join('; ')}`).toBeDefined();

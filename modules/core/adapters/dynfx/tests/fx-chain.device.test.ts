@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { describe, expect, test } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import { withWaitApi, type PatchedSession } from '@digi/regression/support.ts';
 import {
   analysisJson,
   bounded,
@@ -36,7 +36,7 @@ for (const device of DEVICES) {
       await rpc(session, 'run.mode', { mode: 'paused' });
       await rpc(session, 'pcm.tap', { action: 'start' });
       // DT2 checks the assigned sine type and selected-track readback; DN2 retains its hint-only choice.
-      await selectSine(runtime, context.profile);
+      await selectSine(withWaitApi(runtime), context.profile);
       const current = await frames(session);
       const trigger = triggerFrame(device);
       record(context.artifacts, `${tag}-timing`, { currentFrame: current, triggerFrame: trigger });

@@ -1,12 +1,9 @@
 import { asciiOf, be32, type DkLogEvent, type DkSession } from '@digi/dk-session';
 import { CMD, LOG_KIND } from '@digi/dk-session/gen_proto';
-import { button, MS, type Session } from '@digi/test-support';
+import { emulatorClock, waitClock, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
-import { advance, rpc, word } from './fx-live.ts';
+import { rpc, word } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
-import { waitEmulatedFrames } from './waits.ts';
-import { openDigikitMenu, readAboutRows } from './runtime-menu.ts';
-import type { RuntimePlan } from './runtime-plan.ts';
 
 /**
  * Helpers only the debug, card, crash and safe-mode scenarios use (tests/regression/runtime/{debug-module,card-safety,safe-mode,crash-capture,debug-guard}).
@@ -76,20 +73,12 @@ export function crashRecord(events: DkLogEvent[]) {
 
 // ---- emulated time and keys --------------------------------------------------------------------------------------------------------
 
+/** DSP frames per emulated millisecond (1500 a second). */
+const FRAMES_PER_MS = 1.5;
+
 /** Wait until the DSP has run `blocks` more frames (emulated time, not wall time). */
 export function waitFrames({ session }: { session: Session }, blocks: number): Promise<void> {
-  return waitEmulatedFrames(session, blocks);
-}
-
-/** The ABOUT page of the DIGIKIT menu, opened through the panel in a session that runs freely (keys held in emulated time). */
-export async function openAbout(runtime: { session: Session }, plan: RuntimePlan): Promise<string[]> {
-  const tap = async (name: string, settleMs = 1200) => {
-    await runtime.session.client.inputTap(button(name), 100 * MS);
-    await waitFrames(runtime, Math.round(settleMs * 1.5));
-  };
-  await openDigikitMenu(tap);
-  await tap('YES', 3000); // ABOUT is the first row
-  return readAboutRows(runtime.session, plan);
+  return waitClock(emulatorClock(session), Math.ceil(blocks / FRAMES_PER_MS));
 }
 
 /** Pause the run and give `op` a protocol session that steps the emulator (the scenarios that press keys with stepped time). */
@@ -102,7 +91,7 @@ export async function pausedProtocol<T>(runtime: PatchedSession, op: (dk: DkSess
 export async function settleHang(session: Session, address: number, limitMs = 9000): Promise<boolean> {
   for (let i = 0; i < Math.floor(limitMs / 400); i++) {
     const before = await word(session, address);
-    await advance(session, 400);
+    await waitClock(emulatorClock(session), 400);
     if ((await word(session, address)) === before) return true;
   }
   return false;

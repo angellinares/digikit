@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { button, encoder } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { advance, analysisJson, bounded, rpc } from '@digi/regression/runtime/fx-live.ts';
+import { analysisJson, bounded, rpc, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { FX, SINE } from '@digi/regression/runtime/fixtures.ts';
-import { shot, tap, selectSine } from '@digi/regression/runtime/fx-session.ts';
+import { shot, selectSine } from '@digi/regression/runtime/fx-session.ts';
 import { amountShown, setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { trackRouteSuite } from './fx-track-route-support.ts';
@@ -22,39 +22,39 @@ trackRouteSuite('lock', { initial: 'send', presets: ['send'], base: false }, (t)
             const { session } = runtime;
             const { artifacts, profile } = context;
             await selectSine(runtime, profile);
-            await tap(session, 'NO', 300);
+            await runtime.ui.tap('NO', { until: { ms: 300, why: REDRAW } });
             if (turn === 'send' || turn === 'amount') await pageTwo(runtime);
             await shot(session, artifacts, `lock-${turn}-page`);
             const held = turn === 'none' || turn === 'send';
             let cc: { hex: string };
             try {
               if (held) {
-                await tap(session, 'RECORD', 200);
-                await tap(session, 'TRIG 1', 200);
+                await runtime.ui.tap('RECORD', { until: { ms: 200, why: REDRAW } });
+                await runtime.ui.tap('TRIG 1', { until: { ms: 200, why: REDRAW } });
                 await bounded(() => session.client.inputButton(button('TRIG 1'), true));
-                await advance(session, 100);
+                await runtime.ui.wait({ ms: 100, why: SETTLE });
               }
               await rpc(session, 'midi.out');
-              if (turn === 'amount') await setAmount(session, profile, 'ENC A', 0, 40);
+              if (turn === 'amount') await setAmount(runtime, profile, 'ENC A', 0, 40);
               else if (turn === 'send') {
                 await bounded(() => session.client.inputTurn(encoder('ENC A'), 11));
-                await advance(session, 10);
+                await runtime.ui.wait({ ms: 10, why: SETTLE });
               }
-              await advance(session, 300);
+              await runtime.ui.wait({ ms: 300, why: SETTLE });
               await shot(session, artifacts, `lock-${turn}-turned`);
               cc = await rpc<{ hex: string }>(session, 'midi.out');
             } finally {
               if (held) await bounded(() => session.client.inputButton(button('TRIG 1'), false));
             }
             if (held) {
-              await advance(session, 300);
-              await tap(session, 'RECORD', 300);
+              await runtime.ui.wait({ ms: 300, why: SETTLE });
+              await runtime.ui.tap('RECORD', { until: { ms: 300, why: REDRAW } });
             }
             const shown = await amountShown(session, profile, 0);
-            await tap(session, 'SETTINGS', 400, 'FUNC');
-            await tap(session, 'YES', 700);
-            await tap(session, 'YES', 500);
-            await advance(session, 3500);
+            await runtime.ui.tap('SETTINGS', { until: { ms: 400, why: REDRAW }, held: 'FUNC' });
+            await runtime.ui.tap('YES', { until: { ms: 700, why: REDRAW } });
+            await runtime.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
+            await runtime.ui.wait({ ms: 3500, why: SETTLE });
             const overlay = path.join(artifacts, `lock-${turn}.overlay.bin`);
             await rpc(session, 'card.overlay', { path: overlay });
             locks.set(turn, { overlay, cc: cc!.hex, shown });

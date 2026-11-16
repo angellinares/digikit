@@ -1,10 +1,9 @@
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import type { Device, Session } from '@digi/test-support';
+import type { Device } from '@digi/test-support';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
-import { advance, pickSine, rpc } from '@digi/regression/runtime/fx-live.ts';
-import { tap } from '@digi/regression/runtime/fx-session.ts';
+import { pickSine, rpc, REDRAW, SETTLE, type Rt } from '@digi/regression/runtime/fx-live.ts';
 import { FIRMWARE, FULL_TIER, describeOn } from '@digi/regression/runtime/devices.ts';
 import {
   diffSlot,
@@ -82,56 +81,57 @@ const storeName = (id: string) => `modules/${id.split('/').at(-1)}.dkm`;
 
 /** The panel script that makes the project: the run-time machine on track 1 (and the second one on track 2), parameter values, a p-lock and a sound lock on step 1 of track 1. */
 async function buildProject(
-  session: Session,
+  rt: Rt,
   device: Device,
   machines: { track: number; type: number; hint: number }[],
 ) {
+  const { session } = rt;
   for (const m of machines) {
-    if (m.track !== 1) await tap(session, `TRIG ${m.track}`, 300, 'TRK');
+    if (m.track !== 1) await rt.ui.tap(`TRIG ${m.track}`, { until: { ms: 300, why: REDRAW }, held: 'TRK' });
     if (device === 'dt2') {
       // The first SRC list after a project save may not take, so the hint is tried up to four times; every try starts from the top of the list (12 UP presses).
       const seen: [number, number][] = [];
       for (const downs of [m.hint, m.hint, m.hint, m.hint, m.hint + 1, m.hint - 1]) {
-        await pickSine(session, downs, 12);
+        await pickSine(rt, downs, 12);
         seen.push([downs, await trackType(session, m.track)]);
         if (seen.at(-1)![1] === m.type) break;
       }
       expect(seen.at(-1)![1], `track ${m.track} holds type ${m.type}; (downs, type) ${JSON.stringify(seen)}`).toBe(
         m.type,
       );
-    } else await pickSine(session, m.hint);
-    await tap(session, device === 'dt2' ? 'SRC' : 'SYN', 300);
+    } else await pickSine(rt, m.hint);
+    await rt.ui.tap(device === 'dt2' ? 'SRC' : 'SYN', { until: { ms: 300, why: REDRAW } });
     for (const [enc, by] of [
       ['ENC A', 9],
       ['ENC B', -7],
     ] as const)
-      await panelTurn(session, enc, by, 100);
+      await panelTurn(rt, enc, by, 100);
   }
-  if (machines.some((m) => m.track !== 1)) await tap(session, 'TRIG 1', 300, 'TRK');
+  if (machines.some((m) => m.track !== 1)) await rt.ui.tap('TRIG 1', { until: { ms: 300, why: REDRAW }, held: 'TRK' });
   // a note trig, a p-lock and a preset (sound) lock on it: GRID RECORDING, tap the trig, hold it and turn knobs
-  await tap(session, 'RECORD', 200);
-  await tap(session, 'TRIG 1', 200);
+  await rt.ui.tap('RECORD', { until: { ms: 200, why: REDRAW } });
+  await rt.ui.tap('TRIG 1', { until: { ms: 200, why: REDRAW } });
   await panelKey(session, 'TRIG 1', true);
-  await advance(session, 100);
-  await panelTurn(session, 'ENC C', LOCK_TURN, 100);
-  await panelTurn(session, 'LEVEL', SOUND_LOCK_TURN, 300);
+  await rt.ui.wait({ ms: 100, why: SETTLE });
+  await panelTurn(rt, 'ENC C', LOCK_TURN, 100);
+  await panelTurn(rt, 'LEVEL', SOUND_LOCK_TURN, 300);
   await panelKey(session, 'TRIG 1', false);
-  await advance(session, 300);
-  await tap(session, 'RECORD', 200);
+  await rt.ui.wait({ ms: 300, why: SETTLE });
+  await rt.ui.tap('RECORD', { until: { ms: 200, why: REDRAW } });
 }
 
-async function saveProject(session: Session, device: Device) {
-  await tap(session, 'SETTINGS', 300, 'FUNC');
-  await tap(session, 'YES', 500); // slot 001
-  if (device === 'dn2')
-    await tap(session, 'YES', 3500); // the name, save
-  else await advance(session, 3500);
+async function saveProject(rt: Rt, device: Device) {
+  await rt.ui.tap('SETTINGS', { until: { ms: 300, why: REDRAW }, held: 'FUNC' });
+  await rt.ui.tap('YES', { until: { ms: 500, why: REDRAW } }); // slot 001
+  if (device === 'dn2') await rt.ui.tap('YES', { until: { ms: 3500, why: REDRAW } }); // the name, save
+  else await rt.ui.wait({ ms: 3500, why: SETTLE });
 }
 
-async function loadProject(session: Session) {
-  await tap(session, 'SETTINGS', 300);
-  for (let i = 0; i < 3; i++) await tap(session, 'YES', 500);
-  await tap(session, 'YES', 6000);
+async function loadProject(rt: Rt) {
+  const { session } = rt;
+  await rt.ui.tap('SETTINGS', { until: { ms: 300, why: REDRAW } });
+  for (let i = 0; i < 3; i++) await rt.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
+  await rt.ui.tap('YES', { until: { ms: 6000, why: REDRAW } });
   await session.expectNoFault('project loaded');
 }
 
@@ -171,7 +171,7 @@ for (const sc of SCENARIOS) {
         // Python `wait_dsp`: a module's DSP part follows its ColdFire part (result LOADING); step up to 5 s until none is left
         let info = await bootInfo(session, kit.plan);
         for (let i = 0; i < 50 && info.results.includes(E_LOADING); i++) {
-          await advance(session, 100);
+          await rt.ui.wait({ ms: 100, why: SETTLE });
           info = await bootInfo(session, kit.plan);
         }
         expect(info.loaded, `${label}: every module loaded`).toBe(sel.length);
@@ -197,14 +197,14 @@ for (const sc of SCENARIOS) {
         if (step === 0) {
           machines = sc.machines.map((m) => ({ ...m, type: known[m.machine]! }));
           types = sc.types.map((t) => known[t]!);
-          await saveProject(session, device);
+          await saveProject(rt, device);
           const baseOverlay = await exportOverlay('base');
           baseSlots = slotSectors(baseOverlay);
           for (const s of baseSlots.keys()) touched.add(s);
           baseCardAfter = cardAfter(card, baseOverlay, path.join(kit.artifacts, `${sc.name}-base.after`));
-          await buildProject(session, device, machines);
-        } else await loadProject(session);
-        await saveProject(session, device);
+          await buildProject(rt, device, machines);
+        } else await loadProject(rt);
+        await saveProject(rt, device);
         const overlay = await exportOverlay('save');
         const slots = slotSectors(overlay);
         for (const s of slots.keys()) touched.add(s);

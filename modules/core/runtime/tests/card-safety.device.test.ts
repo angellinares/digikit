@@ -16,7 +16,8 @@ import {
   statusOf,
 } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { NONE, openAbout, opStatuses } from '@digi/regression/runtime/debug-kit.ts';
+import { NONE, opStatuses } from '@digi/regression/runtime/debug-kit.ts';
+import { openAbout } from '@digi/regression/runtime/flows/menu.ts';
 import { cardStore, deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { logEvents, ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { withinRuntimeDeadline } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
+import { withWaitApi } from '@digi/regression/support.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
@@ -65,7 +66,7 @@ for (const device of DEVICES) {
       await timePhase('protocol.restart', () => bounded(() => dirty.dk.restart()), timingContext(dirty.session));
       dirty.dk.cancelPending();
       const rebootDk = emulatorDk(dirty.session);
-      const reboot = { session: dirty.session, dk: rebootDk, close: dirty.close };
+      const reboot = withWaitApi({ session: dirty.session, dk: rebootDk, close: dirty.close });
       try {
         await timePhase(
           'protocol.waitForBoot',

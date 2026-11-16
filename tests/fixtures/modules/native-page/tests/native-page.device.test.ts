@@ -1,3 +1,4 @@
+import { scheduledTurns } from '@digi/test-support';
 import { expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -5,16 +6,19 @@ import { record } from '@digi/regression/runtime/artifacts.ts';
 import { shot } from '@digi/regression/runtime/fx-session.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { installModule, moduleArtifact } from '@digi/regression/runtime/install.ts';
-import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { memory } from '@digi/regression/runtime/memory.ts';
+import { panelKeys } from '@digi/regression/runtime/flows/panel-keys.ts';
 import { prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 
 runtimeTests(
   'native callback page cycles and routes PARAM and LOCAL turns',
-  async ({ session, dk }) => {
+  async (runtime) => {
+    const { session, dk } = runtime;
     await expectRuntimeReady(session);
     await installModule(dk, 'test/native-page', moduleArtifact(session.options.device, 'test/native-page'));
-    const ui = panel(session);
+    const ui = panelKeys(runtime);
+    const turns = scheduledTurns(session, runtime.clock);
     const artifacts = path.join(session.runDir, 'native-page-proof');
     fs.mkdirSync(artifacts, { recursive: true });
     const plan = await prepareRuntimePlan(session, artifacts, ['mf_native_register']);
@@ -74,13 +78,13 @@ runtimeTests(
     await shot(session, artifacts, 'page-one');
     expect(before.draws, 'custom page draw callback ran').toBeGreaterThan(0);
     expect(before.track).toBe(0);
-    await ui.burst('ENC A', 30, 4, 2);
+    await turns.burst('ENC A', 30, 4, 2);
     await ui.settle(300); // the panel tick drains its accumulated delta in bounded chunks
     const left = await observed();
     record(artifacts, 'after-A', left);
     expect(left.start, 'A edits START through the native path').toBeGreaterThan(before.start);
     expect(left.end).toBe(before.end);
-    await ui.burst('ENC H', 30, -4, 2);
+    await turns.burst('ENC H', 30, -4, 2);
     await ui.settle(300);
     const right = await observed();
     record(artifacts, 'after-H', right);
@@ -103,7 +107,7 @@ runtimeTests(
     ]);
     // Page zero retains its ordinary mapping: END (word 1) is on C on both devices (shared knob map); cycling restores saved words.
     await ui.tap(source);
-    await ui.burst('ENC C', 30, -4, 2);
+    await turns.burst('ENC C', 30, -4, 2);
     await ui.settle(300);
     await ui.tap(source);
     const normal = await observed();

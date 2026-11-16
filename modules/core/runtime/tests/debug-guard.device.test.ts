@@ -6,8 +6,7 @@ import { expect, test } from 'vitest';
 import { bootInfoLoaded } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { pausedProtocol } from '@digi/regression/runtime/debug-kit.ts';
-import { advance, frames, pickSine, readFloatWav, rpc, windowRms } from '@digi/regression/runtime/fx-live.ts';
-import { tap } from '@digi/regression/runtime/fx-session.ts';
+import { frames, pickSine, readFloatWav, rpc, windowRms, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 
 /**
@@ -39,15 +38,15 @@ cardRigs('debug guard', { dsp: 'sharc', full: true, uploads: true, roots: RT, sy
 
       const log = () => pausedProtocol(runtime, (dk) => dk.readLog());
       const uiFirst = ofKind(await log(), LOG_KIND.UI_FIRST)[0]!.args[0]!;
-      for (let i = 0; i < 60 && (await frames(session)) < uiFirst + 3300; i++) await advance(session, 500);
+      for (let i = 0; i < 60 && (await frames(session)) < uiFirst + 3300; i++) await runtime.ui.wait({ ms: 500, why: SETTLE });
 
       const types = new Map((await pausedProtocol(runtime, (dk) => dk.modules())).map((m) => [m.name, m.types[0]!]));
       const tNan = types.get('test/dyn-guard-nan')!;
       const pick = async (track: number, want: number, hint: number) => {
-        if (track > 1) await tap(session, `TRIG ${track}`, 300, 'TRK');
+        if (track > 1) await runtime.ui.tap(`TRIG ${track}`, { until: { ms: 300, why: REDRAW }, held: 'TRK' });
         for (const downs of dt2 ? [hint, hint + 1, hint - 1] : [hint]) {
-          await pickSine(session, downs);
-          await advance(session, 800);
+          await pickSine(runtime, downs);
+          await runtime.ui.wait({ ms: 800, why: SETTLE });
           const changed = ofKind(await log(), LOG_KIND.MACHINE_CHANGE).some(
             (e) => e.args[0] === track - 1 && e.args[2] === want,
           );
@@ -59,10 +58,10 @@ cardRigs('debug guard', { dsp: 'sharc', full: true, uploads: true, roots: RT, sy
         await pick(1, types.get('test/sine')!, HINT.sine);
         await pick(2, tNan, HINT.nan);
         // track 2's delay send up: FX page, encoder E
-        await tap(session, 'FX', 300);
+        await runtime.ui.tap('FX', { until: { ms: 300, why: REDRAW } });
         for (let i = 0; i < 4; i++) {
           await session.client.inputTurn(encoder('ENC E'), 1);
-          await advance(session, 30);
+          await runtime.ui.wait({ ms: 30, why: SETTLE });
         }
       } else await pick(1, tNan, HINT.dn2);
 
@@ -70,16 +69,16 @@ cardRigs('debug guard', { dsp: 'sharc', full: true, uploads: true, roots: RT, sy
       await rpc(session, 'pcm.tap', { action: 'start' });
       await rpc(session, 'pcm.tap', { action: 'capture', path: wav });
       if (dt2) await session.client.inputButton(button('TRIG 1'), true); // the sine, held
-      await advance(session, 400);
+      await runtime.ui.wait({ ms: 400, why: SETTLE });
       const key = dt2 ? 'TRIG 2' : 'TRIG 1';
       for (let i = 0; i < 10; i++) {
-        await tap(session, key, 0); // ten presses of the NaN machine in about a second
-        await advance(session, 100);
+        await runtime.ui.tap(key, { until: { drained: true } }); // ten presses of the NaN machine in about a second
+        await runtime.ui.wait({ ms: 100, why: SETTLE });
       }
-      await advance(session, 1500); // a poll of the guard's words is a second apart
+      await runtime.ui.wait({ ms: 1500, why: SETTLE }); // a poll of the guard's words is a second apart
       await rpc(session, 'pcm.tap', { action: 'capture_stop' });
       if (dt2) await session.client.inputButton(button('TRIG 1'), false);
-      await advance(session, 2500);
+      await runtime.ui.wait({ ms: 2500, why: SETTLE });
 
       const events = await log();
       const faults = ofKind(events, LOG_KIND.MACHINE_FAULT);
@@ -98,8 +97,8 @@ cardRigs('debug guard', { dsp: 'sharc', full: true, uploads: true, roots: RT, sy
       expect(disabled[0]!.args[0], "for the fixture's type").toBe(tNan);
       expect(disabled[0]!.flags & 1).toBe(1);
 
-      await tap(session, key, 0); // no fault after the switch-off: a press now changes nothing
-      await advance(session, 2500);
+      await runtime.ui.tap(key, { until: { drained: true } }); // no fault after the switch-off: a press now changes nothing
+      await runtime.ui.wait({ ms: 2500, why: SETTLE });
       expect(
         ofKind(await log(), LOG_KIND.MACHINE_FAULT),
         'a press after the switch-off causes no new fault',

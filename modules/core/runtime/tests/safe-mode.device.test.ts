@@ -1,5 +1,5 @@
 import { be32 } from '@digi/dk-session';
-import { button, type Device } from '@digi/test-support';
+import { button, emulatorClock, waitClock, type Device } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { bootInfo, bootInfoLoaded, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
@@ -9,7 +9,7 @@ import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
 import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
 import { stateName } from '@digi/regression/runtime/load-states.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { waitEmulatedFrames, waitForBootEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
+import { waitForBootEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 /**
  * Safe mode and power cuts (the Python scenarios, deleted: safe-fault, safe-late-fault and cut-selection, all full
@@ -160,7 +160,7 @@ for (const held of [true, false]) {
           await rpc(h.session, 'run.mode', { mode: 'free' });
           try {
             if (held) await rpc(h.session, 'input.button', { code: button('RECORD'), down: false });
-            await waitEmulatedFrames(h.session, 150);
+            await waitClock(emulatorClock(h.session), 100); // 150 frames of the released key reach the firmware
           } finally {
             try {
               await drainInputs(h.session);

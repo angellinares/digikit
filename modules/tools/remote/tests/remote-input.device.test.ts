@@ -1,35 +1,35 @@
+import { emulatorClock, remoteInput, waitClock } from '@digi/test-support';
 import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { timePhase } from '@digi/regression/timing.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { runtimeTests, expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
-import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 import {
   captureRemoteOled,
   expectRemoteEnabled,
   installRemote,
   prepareRemote,
-  remoteTap,
   withRemoteRelease,
 } from '@digi/regression/runtime/remote.ts';
-import { openDigikitMenu, openRuntimeAbout } from '@digi/regression/runtime/runtime-menu.ts';
+import { openDigikitMenu, openRuntimeAbout } from '@digi/regression/runtime/flows/menu.ts';
 
 /** KEY navigation opens semantic ABOUT content; TURN reports accepted signed deltas. */
-async function expectRemoteKeys(runtime: PatchedSession): Promise<void> {
+async function expectRemoteKeys(runtime: TestRuntime): Promise<void> {
   const { session, dk } = runtime;
-  await withRemoteRelease(dk, async () => {
+  await withRemoteRelease(dk, runtime.clock, async () => {
     const plan = await prepareRemote(runtime);
     let shots = 0;
     const shot = (name: string) => captureRemoteOled(session, `${String(++shots).padStart(2, '0')}-${name}`);
-    const tap = async (name: string, settleMs = 1200) => {
-      await remoteTap(session, dk, name, settleMs);
-      await shot(name.toLowerCase());
-    };
+    // every key is a remote KEY request; the OLED capture follows each (the captures stay an artifact, not a wait)
+    const ui = runtime.ui.with(remoteInput(dk, runtime.clock));
+    const rt = { ...runtime, ui };
     await shot('start');
-    await openDigikitMenu(tap);
-    await openRuntimeAbout(tap, session, dk, plan, liveArtifacts(session, 'remote-input'));
-    for (let i = 0; i < 4; i++) await tap('NO', 2000);
+    const o = { holdMs: 300, gapMs: 1200 };
+    await openDigikitMenu(rt, { ...o, checkpoint: async (name) => shot(name) });
+    await openRuntimeAbout(rt, plan, liveArtifacts(session, 'remote-input'), o);
+    for (let i = 0; i < 4; i++) await ui.tap('NO', { holdMs: 300, until: { ms: 2000, why: 'remote keys do not pass the input queue' } });
+    await shot('after-back');
     try {
       expect(await dk.remoteTurnOnce(1, 20)).toBe(20);
       expect(await dk.remoteTurnOnce(1, -20)).toBe(-20);
@@ -53,7 +53,7 @@ async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
     return [reply.status, ...reply.body];
   };
   expect(await state()).toEqual([0, 1, 1, 30]);
-  await withRemoteRelease(dk, async () => {
+  await withRemoteRelease(dk, emulatorClock(session), async () => {
     expect([
       (await cmd(SERVICE_CMD.REMOTE_KEY, [2, 1])).status,
       (await cmd(SERVICE_CMD.REMOTE_KEY, [2, 0])).status,
@@ -72,7 +72,7 @@ async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
     expect(immediate.body.length).toBe(1);
     // Adjacent host requests may span a firmware refill; exact timing is covered by the C pacing unit.
     expect([0, 30]).toContain(immediate.body[0]);
-    await timePhase('settle.remote-refill', () => waitEmulated(session, 3000));
+    await timePhase('settle.remote-refill', () => waitClock(emulatorClock(session), 3000) /* the remote pacing refill has no observable end */);
     const back = await cmd(SERVICE_CMD.REMOTE_TURN, [1, 156]);
     expect(back.status).toBe(0);
     expect(back.body.length).toBe(1);

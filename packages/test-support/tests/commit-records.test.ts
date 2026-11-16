@@ -3,13 +3,7 @@ import { test } from 'vitest';
 import { decodeCommitEvent, readBlock } from '../src/commit-records.ts';
 
 test('the commit event gives the counts and the block range', () => {
-  const c = decodeCommitEvent({
-    seq: 1,
-    time: 0,
-    kind: 99,
-    flags: 0,
-    args: [2, 1 | (4 << 8) | (1 << 16), 0x47e90000, 640, 0],
-  });
+  const c = decodeCommitEvent({ args: [2, 1 | (4 << 8) | (1 << 16), 0x47e90000, 640, 0] });
   assert.deepEqual(c, { index: 2, machineRows: 1, paramRows: 4, pageRows: 1, addr: 0x47e90000, size: 640 });
 });
 

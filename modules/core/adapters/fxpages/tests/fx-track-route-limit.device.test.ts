@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { SINE } from '@digi/regression/runtime/fixtures.ts';
 import { shot, selectSine } from '@digi/regression/runtime/fx-session.ts';
 import { setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
@@ -25,9 +25,9 @@ trackRouteSuite('limit', { initial: 'limit', presets: ['limit'], base: false }, 
           await selectSine(runtime, context.profile);
           await pageTwo(runtime);
           await shot(runtime.session, context.artifacts, 'limit-page2');
-          await setAmount(runtime.session, context.profile, 'ENC A', 0, 20);
-          if (context.sendSlots >= 2) await setAmount(runtime.session, context.profile, 'ENC B', 0, 30, 1);
-          await advance(runtime.session, 300);
+          await setAmount(runtime, context.profile, 'ENC A', 0, 20);
+          if (context.sendSlots >= 2) await setAmount(runtime, context.profile, 'ENC B', 0, 30, 1);
+          await runtime.ui.wait({ ms: 300, why: SETTLE });
           expect((await amounts(runtime, 0))[0]).toBe(20);
           expect((await amounts(runtime, 1))[0]).toBe(context.sendSlots >= 2 ? 30 : 0);
           expect((await amounts(runtime, 2))[0]).toBe(0);
