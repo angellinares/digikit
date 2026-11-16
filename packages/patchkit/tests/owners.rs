@@ -311,7 +311,7 @@ fn every_item_of_the_runtime_object_has_an_owner() {
     }
     let items: usize = h.values().map(|(n, _)| n).sum();
     assert!(items > 500, "{items}");
-    assert!(h["shared"].0 > 0 && h["S:machines"].0 > 0 && h["C:storage"].0 > 0);
+    assert!(h["shared"].0 > 0 && h["S:samples"].0 > 0 && h["C:storage"].0 > 0);
     // deterministic
     assert_eq!(h, hashes(&o, &owners).unwrap());
 }

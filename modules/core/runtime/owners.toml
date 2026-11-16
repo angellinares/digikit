@@ -4,7 +4,7 @@
 # match one prefix, or `patchkit owners` fails and names the module paths that lack an owner. A C symbol (an exported `#[no_mangle]`
 # function) is shared; an anonymous constant (a string, a vtable, a table) belongs to the owner of the items that use it, or is shared.
 #
-# `S:` tags are services and are removed when the service becomes a `.dks` file (fx, R12-5, is out; machines, R12-6); `C:` tags stay.
+# `S:` tags are services and are removed when the service becomes a `.dks` file (fx and machines are out); `C:` tags stay.
 # When unsure, put a path in `shared`: a wider owner only reruns more tests.
 
 shared = [
@@ -35,7 +35,6 @@ shared = [
   "dkrt::debug_selected_params",
 ]
 
-"S:machines" = ["dkrt_svc_machines"]
 "S:samples" = ["dkrt_svc_samples"]
 "S:lfo" = ["dkrt_svc_lfo"]
 
