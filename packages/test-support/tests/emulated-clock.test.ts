@@ -152,3 +152,30 @@ test('waitClock lets the time pass in steps of at most 50 ms', async () => {
   await waitClock(clock, 0);
   assert.equal(clock.pauses.length, 3);
 });
+
+test('waitClock and pollUntil fail with a clear message when the clock never moves', async () => {
+  const frozen: Clock = { now: async () => 7, pause: async () => {} };
+  const advance = async (p: Promise<unknown>) => {
+    const out = p.then(
+      () => 'ok',
+      (e: Error) => e,
+    );
+    for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(500);
+    return out;
+  };
+  const slowFrozen: Clock = { now: frozen.now, pause: (ms) => new Promise((r) => setTimeout(r, ms)) };
+  const waited = await advance(waitClock(slowFrozen, 1000, { hangMs: 2000 }));
+  assert.ok(
+    waited instanceof Error && /wait of 1000 ms: emulated clock stuck at 7 ms/.test(waited.message),
+    String(waited),
+  );
+  const polled = await advance(
+    pollUntil(slowFrozen, async () => 0, Boolean, {
+      withinMs: 10_000,
+      message: 'ready',
+      hangMs: 2000,
+      intervalMs: 100,
+    }),
+  );
+  assert.ok(polled instanceof Error && /ready: emulated clock stuck at 7 ms/.test(polled.message), String(polled));
+});

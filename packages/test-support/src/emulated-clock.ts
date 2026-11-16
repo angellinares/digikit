@@ -95,9 +95,12 @@ export async function pollUntil<T>(
     intervalMs?: number;
     retry?: boolean;
     onWait?: (r: { kind: 'state'; what: string; clockMs: number; wallMs: number; ok: boolean }) => void;
+    /** Wall time the clock may stand still before the wait fails (default `DIGI_CLOCK_STUCK_MS`, 60 s). */
+    hangMs?: number;
   },
 ): Promise<T> {
-  const { withinMs, message, intervalMs = 200, retry = false, onWait } = opts;
+  const { withinMs, message, intervalMs = 200, retry = false, onWait, hangMs = stuckMs() } = opts;
+  const stuck = stuckGuard(typeof message === 'string' ? message : 'poll', hangMs);
   const wallStart = Date.now();
   let start: number | undefined;
   let clockMs = 0;
@@ -118,6 +121,7 @@ export async function pollUntil<T>(
       failure = error;
     }
     clockMs = await clock.now();
+    stuck(clockMs);
     // A clock that drops (reboot, restore) starts the count again.
     if (start === undefined || clockMs < start) start = clockMs;
     onWait?.({ kind: 'state', what, clockMs: clockMs - start, wallMs: Date.now() - wallStart, ok: false });
@@ -130,11 +134,32 @@ export async function pollUntil<T>(
   }
 }
 
-/** Let `ms` of clock time pass (an explicit fixed wait): pause in steps of at most 50 ms until now - start >= ms. */
-export async function waitClock(clock: Clock, ms: number): Promise<void> {
+/** Wall time a clock may stand still while a wait pauses it (a halted guest, a daemon that does not step) before the wait fails. */
+const stuckMs = () => Number(process.env.DIGI_CLOCK_STUCK_MS ?? 60_000);
+
+/** Throws when the clock `now` did not move for `hangMs` of wall time: a wait on a clock that never moves would end only at the test timeout. */
+function stuckGuard(what: string, hangMs: number) {
+  let last: number | undefined;
+  let lastAdvance = Date.now();
+  return (now: number) => {
+    if (last === undefined || now !== last) lastAdvance = Date.now();
+    last = now;
+    if (Date.now() - lastAdvance >= hangMs)
+      throw new Error(`${what}: emulated clock stuck at ${now} ms for ${hangMs} ms (a halted or stopped guest?)`);
+  };
+}
+
+/** Let `ms` of clock time pass (an explicit fixed wait): pause in steps of at most 50 ms until now - start >= ms. Fails when the clock stands still for `hangMs` of wall time. */
+export async function waitClock(
+  clock: Clock,
+  ms: number,
+  { hangMs = stuckMs() }: { hangMs?: number } = {},
+): Promise<void> {
   const start = await clock.now();
+  const stuck = stuckGuard(`wait of ${ms} ms`, hangMs);
   for (let now = start; now - start < ms; now = await clock.now()) {
     await clock.pause(Math.min(50, ms - (now - start)));
+    stuck(await clock.now());
   }
 }
 
