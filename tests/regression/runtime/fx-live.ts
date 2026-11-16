@@ -32,6 +32,7 @@ import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type Runtim
 import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
 import { GAIN, SINE } from './fixtures.ts';
 import { drainInputs } from './fx-session.ts';
+import { moduleResultsNote } from './runtime-menu.ts';
 import { pollEmulated } from './waits.ts';
 
 const exec = promisify(execFile);
@@ -408,17 +409,22 @@ export async function inspect(
   await expectRuntimeUi(session, plan, artifacts, { afterEpoch });
   const names = [SINE, ...(wet ? [GAIN] : [])];
   let modules: DkModule[] = [];
-  await pollEmulated(
-    session,
-    async () => {
-      modules = await bounded(() => dk.modules());
-      const boot = planSymbol(plan, 'DKRT_BOOT');
-      const results = await Promise.all(names.map((_, i) => word(session, boot + 40 + i * 4)));
-      return { names: modules.map((module) => module.name), results };
-    },
-    (state) => JSON.stringify(state) === JSON.stringify({ names, results: names.map(() => 0) }),
-    { emulatedMs: 30_000, intervalMs: 500, message: 'the expected modules and results' },
-  );
+  let results: number[] = [];
+  try {
+    await pollEmulated(
+      session,
+      async () => {
+        modules = await bounded(() => dk.modules());
+        const boot = planSymbol(plan, 'DKRT_BOOT');
+        results = await Promise.all(names.map((_, i) => word(session, boot + 40 + i * 4)));
+        return { names: modules.map((module) => module.name), results };
+      },
+      (state) => JSON.stringify(state) === JSON.stringify({ names, results: names.map(() => 0) }),
+      { emulatedMs: 30_000, intervalMs: 500, message: 'the expected modules and results' },
+    );
+  } catch (error) {
+    throw new Error(`${(error as Error).message}${await moduleResultsNote(session, plan, results)}`);
+  }
   const capacity = await bounded(() => dk.capacity());
   expect(capacity.FX_SLOTS).toEqual({ limit: slots, used: wet ? 1 : 0, largest: 0 });
   const settings = await bounded(() => readSettingsRecordIfPresent(dk));

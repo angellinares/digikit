@@ -15,6 +15,7 @@ import { moduleArtifact } from './install.ts';
 import { boundService, neededServices, SERVICE_MODULES } from './service-files.ts';
 import { bindServiceSymbols, rememberShipMap } from './service-symbols.ts';
 import { expectRuntimeUi } from './ready.ts';
+import { moduleResultsNote } from './runtime-menu.ts';
 import { pollEmulated } from './waits.ts';
 import { analysisJson, bounded, evidence, options, pickSine, word, type Rt } from './fx-live.ts';
 import {
@@ -161,16 +162,20 @@ export async function inspectFxBoot(
   const boot = planSymbol(plan, 'DKRT_BOOT');
   let modules = await bounded(() => dk.modules());
   let results: number[] = [];
-  await pollEmulated(
-    session,
-    async () => {
-      modules = await bounded(() => dk.modules());
-      results = await Promise.all(expectedResults.map(async (_, i) => (await word(session, boot + 40 + i * 4)) | 0));
-      return { names: modules.map((module) => module.name), results };
-    },
-    (state) => JSON.stringify(state) === JSON.stringify({ names: expectedNames, results: expectedResults }),
-    { emulatedMs: 30_000, intervalMs: 500, message: 'the expected modules and results' },
-  );
+  try {
+    await pollEmulated(
+      session,
+      async () => {
+        modules = await bounded(() => dk.modules());
+        results = await Promise.all(expectedResults.map(async (_, i) => (await word(session, boot + 40 + i * 4)) | 0));
+        return { names: modules.map((module) => module.name), results };
+      },
+      (state) => JSON.stringify(state) === JSON.stringify({ names: expectedNames, results: expectedResults }),
+      { emulatedMs: 30_000, intervalMs: 500, message: 'the expected modules and results' },
+    );
+  } catch (error) {
+    throw new Error(`${(error as Error).message}${await moduleResultsNote(session, plan, results)}`);
+  }
   const capacity = await bounded(() => dk.capacity());
   await drainInputs(session);
   await bounded(() => session.client.call('run.mode', { mode: 'paused' }));

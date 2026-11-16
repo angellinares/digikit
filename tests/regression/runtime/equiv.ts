@@ -6,6 +6,7 @@ import { expect, test } from 'vitest';
 import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
 import { readLoadTable, resolveAddresses } from '@digi/regression/runtime/addrmap.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
+import { moduleResultsNote } from '@digi/regression/runtime/runtime-menu.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import {
   bounded,
@@ -122,7 +123,10 @@ export function defineEquiv(scenarios: Equiv[]): void {
           const info = await bootInfo(session, run.plan);
           const n = sc.modules.length;
           expect(info.count, 'the selection loaded at boot').toBe(n);
-          expect(info.results, 'every module result is 0').toEqual(Array(n).fill(0));
+          expect(
+            info.results,
+            `every module result is 0${await moduleResultsNote(session, run.plan, info.results)}`,
+          ).toEqual(Array(n).fill(0));
           expect([info.loaded, info.safe]).toEqual([n, 0]);
           const got = await decodeTables(session, run.plan);
           const used = (await voiceRows(session, run.plan)).filter(([type]) => type !== FREE_TYPE);
