@@ -408,9 +408,7 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
   (`hook.<site>[.<offset>].tail`; PC-relative forms are re-encoded or refused) so that the routine can run them and
   return (`.return`). Mode `replace` drops them. Mode `retarget` rewrites the target of an existing call.
 - **Pointer-slot stubs.** A `[[slot]] name = "frame_type"` reserves a 4-byte word, zero at build, in the module's
-  `cf.expansion` data (`place =` changes the region), and `<module id>.slots` is the address of a table the runtime reads:
-  `{magic 0x534c5401, count}`, then per slot `{FNV-1a name hash, word address}` (all big endian), then the words.
-  `slot.<name>` is the address of one word. An `op = "stub"` (`hook`, `slot`, `scratch`, optional `tail`) puts a `jmp.l`
+  `cf.expansion` data (`place =` changes the region); `slot.<name>` is the address of the word. An `op = "stub"` (`hook`, `slot`, `scratch`, optional `tail`) puts a `jmp.l`
   at the hook site that enters a generated stub in `hook.<site>[.<offset>].tail`. The stub loads the slot into `scratch`;
   a zero slot runs the displaced instructions (re-encoded like a `before` hook) and jumps back to `.return`, so the image
   behaves as stock; a non-zero slot is jumped to. Use it for interrupt-level sites that a service loaded later has to
@@ -422,6 +420,26 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
   beq.b +4; move.l dN,-(sp); rts` (12 bytes each). A site whose displaced code patchkit cannot re-encode (a `(d8,PC,Xn)`
   operand) is refused with the site named; `tail = "<symbol>"` gives a hand-written stock path (`jmp.l` there) and the
   displaced instructions are dropped.
+- **The image's info table.** The image has one export table, `dkrt_info_table`: big endian `{magic 0x444b4954 "DKIT", count}`,
+  then per entry `{FNV-1a name hash, address}`. patchkit writes it from the `[[slot]]` entries (the address of the word) and the
+  `[[info]]` entries (`name`, `symbol`: an expression that gives the address, by default the symbol `name`; `devices`) of every
+  adapter of the image, and refuses two entries with one hash (`slots_max` and `info_max` in `sdk/sdk.toml` bound the counts).
+  The runtime reads it through `Platform::info(name_hash)` (`CoreApi::info`, the core import `dkc_info`) and names no adapter
+  table: a service finds the data table of its adapter, or a slot word, by the hash of the name. An image without entries has no
+  table (the optional link of the runtime resolves to 0).
+- **Raw hooks and their tails.** A hook with no `handler` in `devices/fw/` is a raw hook: its entry takes the whole control
+  flow of the site (mode `replace`), so `patchkit bind` makes the entry itself the `BIND` trampoline and the runtime writes
+  `jmp entry` at the site. When the entry falls through to the displaced stock instructions, the hook declares the exit
+  `tail = true`. The asm refers to the tail by the undefined symbol `dk_tail_<8 hex digits of name_hash(hook)>`
+  (`bind::tail_import`), which `patchkit pack` keeps as an import. `bind` appends the tail, the displaced instructions of the
+  site as in the user's firmware (PC-relative forms are refused as for a `before` hook) followed by `jmp.l` to site + length,
+  turns each reference into a base-relative relocation to it and drops the import. The `BIND` item carries the stock bytes of
+  the site as for any hook, so the runtime refuses a firmware that differs with E_HOOK_STOCK before it installs anything. An
+  unbound `.dks` has no firmware bytes.
+- **Hooks per device.** One `.dks` serves both devices. `[[hook]]` in the module's `module.toml` has `devices`; the `service!`
+  call lists `(name, entry)` for every device, `(name, entry, dt2)` or `(name, entry, dn2)` for one, and declares at `init` those of
+  the running device. `bind` binds the hooks that the firmware's port declares and writes only those into `HOOKS` of the bound
+  file. `patchkit service-check` compares the manifest and the call per device.
 - **Sections copied from the image.** `[[section]]` copies bytes of the user's image at patch time (a stock table),
   may append one row per registry entry, and places the result. This is how a framework extends a firmware table
   without storing it.

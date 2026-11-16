@@ -205,6 +205,10 @@ details in [docs/PATCHING.md](../docs/PATCHING.md) "Pointer-slot stubs").
 | `scratch` | `d0`..`d7`, `a0`..`a6`: the register the stub overwrites; it must be in the hook's `regs.clobbers` |
 | `tail` | optional: expression of a hand-written stock path, for a site patchkit cannot re-encode |
 
+A slot word is also an entry of the image's one info table `dkrt_info_table` (name hash of the slot name, address of the word). `[[info]] name = "...", symbol = "...", devices = [...]`
+adds the address of a data table of the module to the same table, so that a service finds it by name hash (`dkc_info`); two entries with one hash are refused
+(docs/PATCHING.md "The image's info table").
+
 ```toml
 [[slot]]
 name = "frame_type"
