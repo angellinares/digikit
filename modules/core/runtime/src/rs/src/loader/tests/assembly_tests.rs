@@ -71,7 +71,8 @@ fn service_file(dev: Dev, leaf: &str, nx: &str) -> Vec<u8> {
         return std::fs::read(bound).unwrap();
     }
     let f = packed(dev, leaf, "dks", nx);
-    let k = Keys::parse(&table_of(&f)).unwrap();
+    let table = table_of(&f);
+    let k = Keys::parse(&table).unwrap();
     assert!(k.count(tag::HOOKS) == 0, "{leaf}.dks has hooks and no bound file: run `pnpm nx:pilot run {nx}:bind`");
     f
 }
