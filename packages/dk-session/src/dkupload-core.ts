@@ -810,6 +810,9 @@ export async function storeSpace(
 
 const RPC_HEADER = [0xf0, 0x00, 0x20, 0x3c, 0x10, 0x00];
 const RPC_SCREENSHOT = 0x04;
+/** The wait of one readiness probe (`waitRpcService`) and how many to send: up to about 30 s of the boot's intro. */
+const RPC_READY_PROBE_MS = 1000;
+const RPC_READY_TRIES = 30;
 /** Format 1, width 128, height 64, length 1024 (big endian): the 9 bytes before the shadow buffer in a Screenshot reply. */
 const SCREEN_HEADER = [0x01, 0x00, 0x80, 0x00, 0x40, 0x00, 0x00, 0x04, 0x00];
 export const SCREEN_BYTES = 1024;
@@ -860,6 +863,8 @@ export class DkSession {
   private emulatedProbe: EmulatedProbe | undefined;
   private fileHashOk = false;
   private turn: Promise<unknown> = Promise.resolve();
+  /** False from `restart()` until a stock MidiRpc request has been answered in the new boot (`waitRpcService`). */
+  private rpcProven = true;
   /** Aborted by `cancelPending`: the requests made before it (waiting for a reply or for their turn) fail with kind `cancelled`. */
   private ctl = new AbortController();
   constructor(transport: DkTransport, options: DkSessionOptions = {}) {
@@ -1256,6 +1261,7 @@ export class DkSession {
   /** RESTART: the reply comes first, then the device resets. See `waitForBoot`. */
   async restart(): Promise<void> {
     await this.ok(GCMD.RESTART, 'restart');
+    this.rpcProven = false;
   }
   /** LOG (the debug module `digikit/debug`): events from `from` on (the log of this boot), `[oldest, newest, events]`. */
   async logPage(from: number, quick: Quick = false): Promise<[number, number, DkLogEvent[]]> {
@@ -1497,43 +1503,66 @@ export class DkSession {
    * timed out may have been done, so the caller decides (`RpcFiles` does not repeat one).
    */
   rpc(type: number, payload: Uint8Array = new Uint8Array(), timeoutMs: number = this.timeoutMs): Promise<Uint8Array> {
-    const signal = this.ctl.signal;
-    const lost = () =>
-      new DkError({ error: `no reply to MidiRpc ${type.toString(16)} from the device`, kind: 'timeout' });
     const next = this.turn.then(async () => {
-      if (signal.aborted) throw cancelledError();
-      await abortable(Promise.resolve(this.t.send(rpcRequest(type, this.takeSeq(), payload))), signal);
-      // on the emulator the wait is in emulated time (the probe's signal ends it), `limit.ms` of wall time only guards a dead link
-      const wait = async (wallMs: number, stop: AbortSignal) => {
-        const deadline = Date.now() + wallMs;
-        for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
-          const raw = await abortable(this.t.recv(left, stop), stop);
-          if (!raw) break;
-          const r = parseRpcReply(raw);
-          if (r && r[0] === type) return r[1].slice();
-        }
-        throw lost();
-      };
-      if (!this.emulatedProbe) return wait(timeoutMs, signal);
-      return this.emulatedProbe(async (limit) => {
-        const c = new AbortController();
-        const stop = () => c.abort();
-        if (signal.aborted || limit.signal.aborted) c.abort();
-        signal.addEventListener('abort', stop, { once: true });
-        limit.signal.addEventListener('abort', stop, { once: true });
-        try {
-          return await wait(limit.ms, c.signal);
-        } catch (e) {
-          if (limit.signal.aborted && !signal.aborted && e instanceof DkError && e.kind === 'cancelled') throw lost();
-          throw e;
-        } finally {
-          signal.removeEventListener('abort', stop);
-          limit.signal.removeEventListener('abort', stop);
-        }
-      }, timeoutMs);
+      if (!this.rpcProven) await this.waitRpcService();
+      return this.rpcOnce(type, payload, timeoutMs);
     });
     this.turn = next.catch(() => {});
     return next;
+  }
+
+  /**
+   * After `restart()` the digikit runtime answers while the firmware still shows its intro, and the stock MidiRpc service drops every request until the
+   * intro ends (measured on the emulator: a first +Drive request after an install got no reply, the next one did). Before the first stock request of a
+   * boot, ask the read-only Screenshot until it answers, so a write is never the request that is lost. Gives up after `RPC_READY_TRIES` tries: the
+   * real request then goes out as it would have.
+   */
+  private async waitRpcService(): Promise<void> {
+    for (let i = 0; i < RPC_READY_TRIES; i++) {
+      try {
+        await this.rpcOnce(RPC_SCREENSHOT, new Uint8Array(), RPC_READY_PROBE_MS);
+        break;
+      } catch (e) {
+        if (!(e instanceof DkError) || e.kind !== 'timeout') throw e;
+      }
+    }
+    this.rpcProven = true;
+  }
+
+  private async rpcOnce(type: number, payload: Uint8Array, timeoutMs: number): Promise<Uint8Array> {
+    const signal = this.ctl.signal;
+    const lost = () =>
+      new DkError({ error: `no reply to MidiRpc ${type.toString(16)} from the device`, kind: 'timeout' });
+    if (signal.aborted) throw cancelledError();
+    await abortable(Promise.resolve(this.t.send(rpcRequest(type, this.takeSeq(), payload))), signal);
+    // on the emulator the wait is in emulated time (the probe's signal ends it), `limit.ms` of wall time only guards a dead link
+    const wait = async (wallMs: number, stop: AbortSignal) => {
+      const deadline = Date.now() + wallMs;
+      for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
+        const raw = await abortable(this.t.recv(left, stop), stop);
+        if (!raw) break;
+        const r = parseRpcReply(raw);
+        if (r && r[0] === type) return r[1].slice();
+      }
+      throw lost();
+    };
+    if (!this.emulatedProbe) return wait(timeoutMs, signal);
+    return this.emulatedProbe(async (limit) => {
+      const c = new AbortController();
+      const stop = () => c.abort();
+      if (signal.aborted || limit.signal.aborted) c.abort();
+      signal.addEventListener('abort', stop, { once: true });
+      limit.signal.addEventListener('abort', stop, { once: true });
+      try {
+        return await wait(limit.ms, c.signal);
+      } catch (e) {
+        if (limit.signal.aborted && !signal.aborted && e instanceof DkError && e.kind === 'cancelled') throw lost();
+        throw e;
+      } finally {
+        signal.removeEventListener('abort', stop);
+        limit.signal.removeEventListener('abort', stop);
+      }
+    }, timeoutMs);
   }
 
   /** The firmware's own Screenshot (stock MidiRpc 0x04): the 1024 bytes of the OLED shadow buffer (`screenPixel`), taking its turn with the other requests. */
