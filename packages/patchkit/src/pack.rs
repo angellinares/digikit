@@ -116,6 +116,7 @@ pub fn pack_module(lib: &Library, id: &str, o: &PackOptions) -> Result<Packed> {
         trace: o.trace,
         stereo: false,
         gate: false,
+        service: crate::module::service_of(m)?,
     };
     // a run-time module declares in `init`: `[[machine]]`/`[[fx]]` in module.toml; the table at 0x90 is the keys table
     let mut dsp: Vec<u8> = vec![];

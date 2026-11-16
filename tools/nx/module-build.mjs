@@ -1,6 +1,6 @@
 // Build and pack: the patchkit command, the build input lists and the build-objects, pack and pack-aliases targets.
 // It does not hold device-test cache keys (device-test-keys.mjs) or the shape of test targets (device-tests.mjs).
-import { dkm, dkmMap, manifestClosure, manifestArgs, packDevices } from './module-manifests.mjs';
+import { packOut, packMap, manifestClosure, manifestArgs, packDevices } from './module-manifests.mjs';
 import { packSourceInputs } from './pack-inputs.mjs';
 
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
@@ -97,13 +97,13 @@ export const packTarget = (workspaceRoot, byId, m, devices) => {
     cache: false,
     inputs: packInputs(workspaceRoot, byId, manifests),
     dependsOn: ['patchkit:cli'],
-    outputs: devices.flatMap((d) => [`{workspaceRoot}/${dkm(d, m.id)}`, `{workspaceRoot}/${dkmMap(d, m.id)}`]),
+    outputs: devices.flatMap((d) => [`{workspaceRoot}/${packOut(d, m)}`, `{workspaceRoot}/${packMap(d, m)}`]),
     options: {
       commands: [
         'mkdir -p dist/modules/dt2 dist/modules/dn2',
         ...devices.map(
           (d) =>
-            `${PK} pack ${m.id} ${manifestArgs(manifests)} --device ${d} --addrmap ${dkmMap(d, m.id)} -o ${dkm(d, m.id)}`,
+            `${PK} pack ${m.id} ${manifestArgs(manifests)} --device ${d} --addrmap ${packMap(d, m)} -o ${packOut(d, m)}`,
         ),
       ],
       parallel: false,
@@ -125,9 +125,9 @@ export const packAliasesTarget = (workspaceRoot, byId, recs) => {
       aliasSources.add(source);
       for (const d of packDevices(src.manifest)) {
         aliasCmds.push(
-          `${PK} pack ${source} ${manifestArgs(manifestClosure(byId, [source]))} --device ${d} --name ${alias} -o ${dkm(d, alias)}`,
+          `${PK} pack ${source} ${manifestArgs(manifestClosure(byId, [source]))} --device ${d} --name ${alias} -o ${packOut(d, src.manifest, alias)}`,
         );
-        aliasOutputs.push(`{workspaceRoot}/${dkm(d, alias)}`);
+        aliasOutputs.push(`{workspaceRoot}/${packOut(d, src.manifest, alias)}`);
       }
     }
   if (!aliasCmds.length) return undefined;

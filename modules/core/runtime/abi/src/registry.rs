@@ -99,6 +99,7 @@ pub struct RegState {
 
 /// The arguments of the callbacks of the records `apply` is about to write (modules): the k-th ACTION record's `arg` and the k-th
 /// native page record's `arg`. Set by the commit just before `apply`, cleared by it.
+#[repr(C)]
 pub struct ApplyArgs {
     pub click: [u32; 32],
     pub native: [u32; 8],

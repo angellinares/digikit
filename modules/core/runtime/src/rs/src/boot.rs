@@ -162,6 +162,8 @@ pub unsafe extern "C" fn dkrt_boot() {
         }
         // a safe boot loads no module: show the safe-mode screen in place of the stock intro (no storage access, built here on the main-OS task)
         crate::intro::show_safe(reason);
+        // no provider loads and the installer writes nothing: every hook site stays stock
+        loader::set_safe();
         let mut k = 0;
         while k < SEL_MAX {
             b.results[k] = E_SAFE_MODE;
@@ -178,67 +180,20 @@ pub unsafe extern "C" fn dkrt_boot() {
     }
     // The frames that carry DSP code do not flow yet (they start with the sound engine, later in the task), so a module's CF part
     // goes live now and its DSP part follows over the UI-loop passes (`LOADING` in the report until then).
-    loader::EARLY = true;
     // the type numbers of every machine of the selection, before the first load (reads the files; the staging buffer is free)
     assign::plan(&r);
-    // the boot plan over the header tables that read gave: the order to load in, and a module the plan refuses is not loaded
-    let planned = crate::plan::run(r.count as usize);
+    // the boot plan over the header tables that read gave, with the providers the search found for the hard needs the runtime does not meet: the order to
+    // load in, and a module the plan refuses is not loaded
+    let mut planned = loader::plan_selection(r.count as usize);
+    // the providers load before any module; a module that needs one that did not load is refused before the module stage
+    loader::load_providers(&planned);
+    loader::settle(&mut planned, r.count as usize);
     let mut k = 0;
     while k < r.count as usize {
         states().planned(k, planned.verdicts[k]);
         k += 1;
     }
-    let mut pos = 0;
-    while pos < r.count as usize {
-        let k = planned.order[pos] as usize;
-        crate::selection::BOOT_IDX = k as u32;
-        loader::MISSING = [0; NEEDS_LEN];
-        let res = match planned.verdicts[k] {
-            dkrt_abi::plan::Verdict::Accepted => {
-                states().init(k);
-                let res = loader::load(r.paths[k].as_ptr());
-                states().finished(k, res);
-                res
-            }
-            dkrt_abi::plan::Verdict::Refused(why) => why.code(),
-        };
-        st().last_result = res;
-        b.results[k] = res;
-        if res == OK {
-            b.loaded += 1;
-        }
-        let p = r.paths[k].as_ptr();
-        let mut at = 0;
-        let mut i = 0;
-        while i < SEL_PATH && *p.add(i) != 0 {
-            if *p.add(i) == b'/' {
-                at = i + 1;
-            }
-            i += 1;
-        }
-        let bad = if res == OK || res == LOADING { dlog::INFO } else { logk::F_ERROR };
-        dlog::ev(
-            logk::MOD_LOAD,
-            bad,
-            [k as u32, res as u32, dlog::word_of(p, at, SEL_PATH), dlog::word_of(p, at + 4, SEL_PATH), dlog::word_of(p, at + 8, SEL_PATH)],
-        );
-        let mut j = 0;
-        while j < NAME_LEN - 1 && at + j < SEL_PATH && *p.add(at + j) != 0 {
-            BOOT_NAME[k][j] = *p.add(at + j);
-            j += 1;
-        }
-        if res == E_IMPORT && loader::MISSING[0] != 0 {
-            let m = loader::MISSING;
-            b.needs[k] = m;
-            dlog::ev(
-                logk::MOD_NEEDS,
-                logk::F_ERROR,
-                [k as u32, dlog::word_of(m.as_ptr(), 0, NEEDS_LEN), dlog::word_of(m.as_ptr(), 4, NEEDS_LEN), dlog::word_of(m.as_ptr(), 8, NEEDS_LEN), 0],
-            );
-        }
-        pos += 1;
-    }
-    loader::EARLY = false;
+    loader::boot(&r, &planned);
     crate::selection::BOOT_IDX = u32::MAX;
     // core/introblank: no module took the intro, so the black intro has nothing to wait for
     crate::intro::end_blank();
@@ -250,8 +205,73 @@ pub unsafe extern "C" fn dkrt_boot() {
     }
 }
 
+/// The result `res` of the load of selection entry `k` (the file at `path`): the boot record, the log events and the name the LOADS report shows.
+pub unsafe fn report_module(k: usize, path: *const u8, res: i32, missing: &[u8; NEEDS_LEN]) {
+    let b = info();
+    st().last_result = res;
+    b.results[k] = res;
+    if res == OK {
+        b.loaded += 1;
+    }
+    let p = path;
+    let mut at = 0;
+    let mut i = 0;
+    while i < SEL_PATH && *p.add(i) != 0 {
+        if *p.add(i) == b'/' {
+            at = i + 1;
+        }
+        i += 1;
+    }
+    let bad = if res == OK || res == LOADING { dlog::INFO } else { logk::F_ERROR };
+    dlog::ev(
+        logk::MOD_LOAD,
+        bad,
+        [k as u32, res as u32, dlog::word_of(p, at, SEL_PATH), dlog::word_of(p, at + 4, SEL_PATH), dlog::word_of(p, at + 8, SEL_PATH)],
+    );
+    let mut j = 0;
+    while j < NAME_LEN - 1 && at + j < SEL_PATH && *p.add(at + j) != 0 {
+        BOOT_NAME[k][j] = *p.add(at + j);
+        j += 1;
+    }
+    if res == E_IMPORT && missing[0] != 0 {
+        let m = *missing;
+        b.needs[k] = m;
+        dlog::ev(
+            logk::MOD_NEEDS,
+            logk::F_ERROR,
+            [k as u32, dlog::word_of(m.as_ptr(), 0, NEEDS_LEN), dlog::word_of(m.as_ptr(), 4, NEEDS_LEN), dlog::word_of(m.as_ptr(), 8, NEEDS_LEN), 0],
+        );
+    }
+}
+
+/// The result `res` of the load of the provider file at the store path `path` (`services/<name>.dks`) that provides the service `hash`, loaded at `base` (0 when
+/// it did not load): log only. The event is `MOD_LOAD` with the provider index (`loader::PROVIDER_IDX`, not a selection index), the result, the first four
+/// characters of the file name, the service hash and the base; the boot record and `LOADS` do not change.
+pub unsafe fn report_provider(path: &[u8], res: i32, hash: u32, base: u32) {
+    let mut at = 0;
+    let mut i = 0;
+    while i < path.len() {
+        if path[i] == b'/' {
+            at = i + 1;
+        }
+        i += 1;
+    }
+    let mut name = [0u8; 4];
+    let mut j = 0;
+    while j < 4 && at + j < path.len() {
+        name[j] = path[at + j];
+        j += 1;
+    }
+    let bad = if res == OK { dlog::INFO } else { logk::F_ERROR };
+    dlog::ev(
+        logk::MOD_LOAD,
+        bad,
+        [loader::PROVIDER_IDX, res as u32, dlog::word_of(name.as_ptr(), 0, 4), hash, base],
+    );
+}
+
 /// The DSP part of the module loaded for selection index `idx` is over with result `r` (called by the DSP loader).
-pub unsafe fn note_result(idx: u32, r: i32) {
+pub unsafe fn report_dsp(idx: u32, r: i32) {
     dlog::ev(logk::MOD_DSP, if r == OK { dlog::INFO } else { logk::F_ERROR }, [idx, r as u32, 0, 0, 0]);
     if (idx as usize) < SEL_MAX {
         let b = info();

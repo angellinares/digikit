@@ -96,6 +96,8 @@ pub const FIT_BRIEF: usize = 32;
 pub const FIT_MEM: usize = 8;
 /// Paths of the selection (`[limits.max] modules` of sdk/sdk.toml).
 pub const SEL_MAX: usize = 8;
+/// Provider slots of the boot plan (`[limits.format] provider_max` of sdk/sdk.toml), separate from the selection.
+pub const PROVIDER_MAX: usize = 6;
 
 /// dkrt_status result. The caller owns the memory; the layout only grows at the end.
 #[repr(C)]
@@ -371,7 +373,7 @@ pub struct DkrtBootInfo {
     pub needs: [[u8; NEEDS_LEN]; SEL_MAX],
     /// per selected module: its STATE_* ([load.state] of sdk/sdk.toml); a selection index at or above count is STATE_SELECTED
     pub states: [u8; SEL_MAX],
-    /// per selected module with state STATE_REFUSED: what the plan refused on (E_PLAN_KIND the kind; E_PLAN_OWNER the kind, slot or hook site; E_PLAN_KEY the kind and the key; E_PLAN_FIT the CAPK_* kind); zeros otherwise
+    /// per selected module with state STATE_REFUSED: what the plan refused on (E_PLAN_KIND the kind; E_MISSING the name hash of the service whose provider is missing or did not load; E_PLAN_OWNER the kind, slot or hook site; E_PLAN_KEY the kind and the key; E_PLAN_FIT the CAPK_* kind); zeros otherwise
     pub detail: [[u32; 2]; SEL_MAX],
 }
 const _: () = assert!(size_of::<DkrtBootInfo>() == 248, "DkrtBootInfo size");

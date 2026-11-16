@@ -635,8 +635,8 @@ name = "dk_service_declare_slot"
 service = "runtime"
 since = "0.8.0"
 context = "init"
-sig = "i32 (dk_module_ctx *ctx, u32 slot, u32 flags)"
-doc = "A service module declares a plug-in point (slot) it takes. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL."
+sig = "i32 (dk_module_ctx *ctx, u32 slot, u32 flags, const void *entry)"
+doc = "A service module declares a plug-in point (slot) it takes, with the function that fills it. See dk_service_declare_kind. Returns 0, or DK_E_DECL_FULL."
 
 [[import]]
 name = "dk_service_declare_hook"
@@ -1162,6 +1162,26 @@ context = "any"
 sig = "u32 (u32 slot, u32 *out_fn)"
 doc = "The poll function in slot 0 to 3 of `dkrt_poll_add` and its owner: returns 0 for an empty slot (or a slot past 3), 1 + the record index of the module whose loaded code holds the function, or 0xff for a function outside every module (the firmware image: the patched-in core modules). Writes the function's address to `*out_fn` when `out_fn` is not null and the slot is used. For a profiler that names the rows of the poll spans."
 
+# Test-only (`test = true`): an import of the test-only service `svc-test`, which a `.dks` provider (tests/fixtures/modules/svc-test) exports. It is in no
+# public header, doc or template and not in the runtime's table (no `requires`): a module that calls it resolves it at load from the provider's EXPORTS.
+[[import]]
+name = "dk_svctest_ping"
+service = "svc-test"
+since = "0.8.2"
+context = "any"
+sig = "i32 ()"
+doc = "Test only: returns 42 from the svc-test provider."
+test = true
+
+[[import]]
+name = "dk_svctest_hits"
+service = "svc-test"
+since = "0.8.2"
+context = "any"
+sig = "u32 ()"
+doc = "Test only: how often the provider's hook ran (the last step of the firmware's SETTINGS list rebuild)."
+test = true
+
 [[import]]
 name = "dk_debug_track_type"
 service = "runtime"
@@ -1595,6 +1615,7 @@ FILEHASH = 12       # store format 4: the 32-byte hash of BEGIN, END, LIST and V
 RENAME = 13         # the RENAME command (rename or move one store entry)
 READBACK = 14       # END (and the SDK file_close) read the written file back from the card and compare its content hash with the running hash and BEGIN's before the commit: a host may skip its VERIFY after a successful END
 LOADS = 15          # the LOADS command (the result of each module of the boot selection, and the missing module of an E_IMPORT)
+SVC_ABI = 16        # the INFO reply ends with `svc_abi`: u32, the ABI fingerprint of interfaces B and C (`dkrt_abi::SVC_ABI`) a service file (.dks) must carry in header word H_SVC_ABI
 
 [capacity.kinds]   # the `kind` byte of a CAPACITY entry (u8 kind, u32 limit, u32 used, u32 largest); additive: a number is never reused.
                    # `fit = true`: a resource a fit looks at, with its `label` for a person (CAP_FIT in the generated code); every kind is in CAP_KINDS
@@ -1635,7 +1656,12 @@ rust = "dkrt_svc_fx::records::Fx"
 
 [[service]]
 name = "lfo"
-rust = "dkrt_svc_lfo::records::Lfo"
+
+# A `[[service]]` without `rust` is provided by a `.dks` provider (a module with `role = "service"`), not by a runtime row: it is in no generated table.
+# `test = true`: a test-only service; it and its `[[import]]` rows (also `test = true`) are left out of the public SDK headers, docs and templates.
+[[service]]
+name = "svc-test"
+test = true
 
 # The record kinds of the `register` section of a `.dkm` (docs/plans/runtime-and-services.md R7): one table for the runtime, dkneeds and patchkit
 # (`patchkit gen` writes `records::KINDS` and one `KIND_<NAME>` and `LEN_<NAME>` per kind into gen_sdk.rs and packages/dkneeds/src/gen_limits.rs).
@@ -1683,7 +1709,9 @@ dkm_header = 160    # 0xa0: the header of a `.dkm` (init, fini, menu and tick of
 #   +0  u32 magic "DKTB" (`table_magic`)   +4  u16 version (`table_version`)   +6  u16 n_entries
 #   then, in ascending tag order, each tag at most once: u16 tag, u16 count, u32 payload_bytes, the payload.
 # Tags: 1 NEEDS (service name hash, minimum version, hard or optional), 2 USES (resource id, count; ids in [records.resources]), 3 KEYS (record kind, n, keys: the
-# machine keys, effect ids and the keys of a service's kind), 4 KINDS (kind, length, handler entry: a service module's kinds), 5 SLOTS, 6 HOOKS, 7 EXPORTS, 8 RESOURCES.
+# machine keys, effect ids and the keys of a service's kind), 4 KINDS (kind, length, handler entry: a service module's kinds), 5 SLOTS, 6 HOOKS, 7 EXPORTS, 8 RESOURCES,
+# and, in a version 2 table only: 9 PROVIDES (service name hash, version: the services the module provides), 10 BIND (site hash, address, stock length, trampoline offset,
+# then the stock bytes padded to 4, at most 64: the firmware sites a service binds). In a version 2 table a SLOTS item has 12 bytes (slot id, flags, entry).
 # A module that needs and keeps nothing has the 8-byte head. A file with no table, or another magic, is the format of runtime 0.7: E_CONTRACT.
 dsp_header = 64     # 0x40: the header of the DSP section
 max_records = 32    # records of the `register` table
@@ -1696,8 +1724,11 @@ granule = 64        # the DSP area's placement granule
 dsp_slack = 8       # bytes the DSP range may start before its alignment
 arena_hdr = 16      # the arena's block header
 table_magic = 1145787458  # 0x444b5442 "DKTB": the first word of the header table of a `.dkm` (packages/dkneeds/src/keys.rs); another word is a file of the 0.7 format
-table_version = 1   # the version of the header table (a change is a MINOR of the runtime)
-collect_bytes = 7206  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
+table_version = 2   # the newest version of the header table a reader accepts (1 and 2; a writer uses 2 only for a table with PROVIDES or BIND; a change is a MINOR of the runtime)
+provider_max = 6    # provider slots of the boot plan (the services that provide; separate from the module records, SEL_MAX)
+bind_max = 24       # BIND items (hook sites) of one provider file (`patchkit bind` refuses more)
+install_sites = 48  # hook sites installed at once over all providers (the installer's table: machines 21 + fx 9 and room)
+collect_bytes = 7486  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
 
 # The layout of the `.dkm` file and of its DSP section: byte offsets (big endian words), entry sizes and magics that the packer (packages/patchkit
 # dkm.rs, dkmdsp.rs), the reader of the DSP container (packages/dksharc dkds.rs), dkneeds and the runtime (loader.rs, dsp, services) share. `patchkit gen`
@@ -1720,7 +1751,8 @@ consts = [
     { name = "H_SHA", value = 16, doc = "Header: 32 bytes of sha256 over the file with these bytes zero." },
     { name = "H_RUNTIME", value = 48, doc = "Header word: the runtime version the module needs (bit 31: built with DK_TRACE)." },
     { name = "H_VERSION", value = 52, doc = "Header word: the module's version." },
-    { name = "H_RESERVED", value = 56, doc = "Header word: reserved." },
+    { name = "H_ROLE", value = 56, doc = "Header word: the role (0 module, 1 service)." },
+    { name = "H_SVC_ABI", value = 60, doc = "Header word: the ABI fingerprint of a service file (`dk_svc_abi`, the `dkrt-abi` boundary hash); 0 for a module and for a file that uses neither interface B nor C." },
     { name = "H_NAME", value = 64, doc = "Header: the module name, NAME_LEN bytes." },
     { name = "H_IMAGE_OFF", value = 96, doc = "Header word: ColdFire image offset." },
     { name = "H_IMAGE_SIZE", value = 100, doc = "Header word: ColdFire image size." },
@@ -1846,6 +1878,7 @@ E_PLAN_OWNER = { code = -76, text = "the boot plan refused the module: another m
 E_PLAN_KEY = { code = -77, text = "the boot plan refused the module: another module of the selection has the same key for a kind" }
 E_PLAN_FIT = { code = -78, text = "the boot plan refused the module: its uses do not fit what the earlier modules of the selection left" }
 E_DECL_KIND = { code = -79, text = "a service declared a record kind that the header table does not carry, or with another length" }
+E_HOOK_STOCK = { code = -82, text = "a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init" }
 E_NO_DSP = { code = -30, text = "DSP code in the file, no DSP loader in the image" }
 E_DSP_FORMAT = { code = -31, text = "the DSP section is malformed" }
 E_DSP_IMPORT = { code = -32, text = "a DSP symbol is not exported by the image" }
@@ -1865,6 +1898,7 @@ E_CARD_RO = { code = -47, text = "the card's store area is not ours and not blan
 E_CONTRACT = { code = -48, text = "the module needs another runtime version than this one (another major or minor, or a higher patch)" }
 E_TABLE = { code = -49, text = "the runtime's tables failed their check" }
 E_MISSING = { code = -73, text = "the service is not in the image (the module that provides it is not loaded)" }
+E_SVC_ABI = { code = -81, text = "a service file was built for another runtime ABI (its header word H_SVC_ABI differs from the runtime's fingerprint)" }
 
 [load.state]        # the state of a module of the boot selection (LOADS v2, `DkrtBootInfo.states`); never renumber
 SELECTED = { code = 0, text = "in the selection, not planned yet" }
