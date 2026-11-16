@@ -1125,7 +1125,7 @@ mod tests {
         assert!(d.same_as(&table));
         // a table that has more, or another kind, is not the same
         let mut more = table;
-        more.slot(1, 0);
+        more.slot(1, 0, 0);
         assert!(!d.same_as(&more));
         let mut other = Declare::new();
         other.kind(91, 24);

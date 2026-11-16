@@ -618,7 +618,14 @@ fn pack_inner(
             )
         }
     };
-    let table = table_with_needs(reg, &imports, &provides, &svc_exports, &svc_hooks, &svc_kinds)?;
+    let table = table_with_needs(
+        reg,
+        &imports,
+        &provides,
+        &svc_exports,
+        &svc_hooks,
+        &svc_kinds,
+    )?;
     emit(&EmitParts {
         name: &o.name,
         version: o.version,
