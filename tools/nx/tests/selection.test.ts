@@ -104,7 +104,10 @@ it('keeps every gated runtime device file in exactly one owner command', () => {
       const targets = Object.entries(owner.targets)
         .filter(
           ([name, target]) =>
-            /^test-device(-full)?(--|$)/.test(name) && !name.endsWith('--dn2') && target.options?.command,
+            /^test-device(-full)?(--|$)/.test(name) &&
+            // one half per file: the DT2 half, or the DN2 half of a file that has no DT2 half
+            !(name.endsWith('--dn2') && owner.targets[name.replace(/--dn2$/, '--dt2')]) &&
+            target.options?.command,
         )
         .map(([, target]) => target);
       const files = targets.flatMap((target) =>

@@ -6,6 +6,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/plusdrive-write.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["A:core/plusdrive-write", "C:storage"],
         "modules": ["test/file-write"],
         "plusdrive": true

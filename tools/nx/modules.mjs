@@ -134,6 +134,7 @@ export const createNodesV2 = [
           deviceTargets('test-device', root, deviceTests, recs, null, importInputs, pythonInputs, uploadable, {
             twin: true,
             moduleId: m.id,
+            projectDevices: devices,
             mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
             base: ctx.workspaceRoot,
           }),
