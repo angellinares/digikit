@@ -8,6 +8,7 @@ import path from 'node:path';
 import { parse } from 'smol-toml';
 import { ROOT } from './rig.ts';
 import { patchkit } from './toolchain.ts';
+import { galleryGaps as rigGalleryGaps, hasGallery } from './gallery-gaps.mjs';
 
 export const DEVICES = ['dt2', 'dn2'] as const;
 export type Device = (typeof DEVICES)[number];
@@ -266,23 +267,8 @@ function deviceFile(short: string): Toml {
 export function galleryGaps(mid: string): string[] {
   const moddir = moduleDir(mid);
   const man = manifest(moddir);
-  if (!entryRow(man)) return [];
-  const gallery = readGallery(moddir, mid, '`patchkit gen`');
-  const fromPort = (t: string) => t.split('-')[0]!;
-  const wanted = new Set<string>([
-    ...Object.keys((man.targets ?? {}) as Toml).map(fromPort),
-    ...((man.module?.ports ?? []) as string[]).map(fromPort),
-    ...((man.object ?? []) as Toml[]).flatMap((o) => (o.devices ?? []) as string[]),
-  ]);
-  const out: string[] = [];
-  for (const m of (gallery.machines ?? []) as Toml[])
-    for (const d of [...wanted].sort()) {
-      const dev = m.devices?.[d];
-      if (!dev) out.push(`${d}: machine ${m.id} is not listed in build/gen/gallery.json`);
-      else if (!(gallery.params?.[d] ?? []).length && man.uses?.[d]?.param_rows !== 0)
-        out.push(`${d}: machine ${m.id} has no parameter in build/gen/gallery.json`);
-    }
-  return out;
+  if (!hasGallery(man)) return [];
+  return rigGalleryGaps(man, readGallery(moddir, mid, '`patchkit gen`'), 'build/gen/gallery.json');
 }
 
 export function machineSpec(mid: string, device: Device): MachineSpec | null {
