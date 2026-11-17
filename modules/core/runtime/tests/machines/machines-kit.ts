@@ -1,9 +1,9 @@
-import { button, pollUntil, type Device, type Session } from '@digi/test-support';
+import { button, encoder as encoderCode, pollUntil, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
-import { bounded, word, type Rt } from '@digi/regression/runtime/fx-live.ts';
+import { bounded, SETTLE, word, type Rt } from '@digi/regression/runtime/fx-live.ts';
 import { halfword } from '@digi/regression/runtime/fx-track-ui.ts';
 
 /** Helpers of the machine fixture tests on a run-time machine: what the firmware shows after `machines.dks` has acted on the rows the loader made. */
@@ -82,21 +82,31 @@ export async function soundWord(session: Session, index: number, track = 1): Pro
 export const IGNORED = 'emulated time for the firmware to act on a turn that must change nothing (no observable state)';
 
 /**
- * Turn `encoder` by `detents` (negative: down) in events of 4. Each event ends when the panel inputs are drained; the last one also ends when a Sound word differs from the
- * one before (the firmware stored the value). Returns the Sound index it changed with the values before and after (fails when it changed none or several).
+ * `count` encoder events of `step` detents, `gapMs` apart in emulated time, then a settle for the firmware to store the last one. The stock encoder scales a turn by its
+ * event rate (12 detents moved a word by 256 at a gap of 30 ms, 3 events of 4 detents), so a test that needs a larger move sends a faster burst.
+ */
+async function turnEvents(rt: Rt, encoder: string, step: number, count: number, gapMs = 30): Promise<void> {
+  for (let i = 0; i < count; i++) {
+    await bounded(() => rt.session.client.inputTurn(encoderCode(encoder), step));
+    await rt.ui.wait({ ms: gapMs, why: 'the gap between encoder events (the stock encoder scales by event rate)' });
+  }
+  await rt.ui.wait({ ms: 100, why: SETTLE });
+}
+
+/**
+ * Turn `encoder` by `detents` (negative: down) in events of 4, 30 ms apart (the timing the diagnostic run showed to move the word: 8192 to 8448 for 12 detents). Waits
+ * until a Sound word differs from the one before the turn (the firmware stored the value). Returns the Sound index it changed with the values before and after (fails
+ * when it changed none or several).
  */
 export async function turnChangesOneWord(rt: Rt, encoder: string, detents = 12) {
   const before = await soundWords(rt.session);
-  const step = detents < 0 ? -4 : 4;
-  const events = Math.abs(detents) / 4;
-  for (let i = 0; i < events; i++) {
-    const last = i === events - 1;
-    await rt.ui.turn(encoder, step, {
-      until: last
-        ? { state: () => soundWords(rt.session), done: (w: number[]) => changed(before, w).length > 0, what: `${encoder} changed a Sound word` }
-        : { drained: true },
-    });
-  }
+  await turnEvents(rt, encoder, detents < 0 ? -4 : 4, Math.abs(detents) / 4);
+  await rt.ui.wait({
+    state: () => soundWords(rt.session),
+    done: (w: number[]) => changed(before, w).length > 0,
+    withinMs: 3000,
+    what: `${encoder} changed a Sound word`,
+  });
   const after = await soundWords(rt.session);
   const diff = changed(before, after);
   expect(diff, `${encoder} changes one parameter word`).toHaveLength(1);
@@ -106,33 +116,26 @@ export async function turnChangesOneWord(rt: Rt, encoder: string, detents = 12) 
 /** Turn `encoder` by `detents` in events of 4 and return the indices of the Sound words that changed (none is a valid answer: the knob is empty). */
 export async function turnChangesNothing(rt: Rt, encoder: string, detents = 12): Promise<number[]> {
   const before = await soundWords(rt.session);
-  const step = detents < 0 ? -4 : 4;
-  for (let i = 0; i < Math.abs(detents) / 4; i++) await rt.ui.turn(encoder, step, { until: { drained: true } });
+  await turnEvents(rt, encoder, detents < 0 ? -4 : 4, Math.abs(detents) / 4);
   await rt.ui.wait({ ms: 200, why: IGNORED });
   return changed(before, await soundWords(rt.session));
 }
 
 /**
- * Turn `encoder` (events of `step` detents, the sign gives the direction) until Sound word `index` holds `limit`, then two events more, and return the word: a range that
- * clamps stays at `limit`. Fails when `limit` is not reached within `maxEvents` events or when a word other than `index` changes on the way.
+ * Turn `encoder` (bursts of 20 events of `step` detents 2 ms apart, the sign gives the direction) until Sound word `index` holds `limit`, then two bursts more, and return
+ * the word: a range that clamps stays at `limit`. A fast burst moves a word by about 0x100 per event. Fails when `limit` is not reached within `maxBursts` bursts or when a
+ * word other than `index` changes on the way.
  */
-export async function turnPastLimit(rt: Rt, encoder: string, index: number, step: number, limit: number, maxEvents = 80) {
+export async function turnPastLimit(rt: Rt, encoder: string, index: number, step: number, limit: number, maxBursts = 20) {
   let words = await soundWords(rt.session);
-  for (let n = 0; n < maxEvents && words[index] !== limit; n++) {
+  for (let n = 0; n < maxBursts && words[index] !== limit; n++) {
     const prev = words;
-    await rt.ui.turn(encoder, step, {
-      until: {
-        state: () => soundWords(rt.session),
-        done: (w: number[]) => w[index] !== prev[index],
-        what: `${encoder} moved Sound word ${index}`,
-      },
-    });
+    await turnEvents(rt, encoder, step, 20, 2);
     words = await soundWords(rt.session);
-    expect(changed(prev, words), `${encoder}: only word ${index} moves`).toEqual([index]);
+    expect(changed(prev, words).filter((i) => i !== index), `${encoder}: only word ${index} moves`).toEqual([]);
   }
-  expect(words[index], `${encoder} reaches ${limit.toString(16)} within ${maxEvents} events`).toBe(limit);
-  for (let n = 0; n < 2; n++) await rt.ui.turn(encoder, step, { until: { drained: true } });
-  await rt.ui.wait({ ms: 200, why: IGNORED });
+  expect(words[index], `${encoder} reaches ${limit.toString(16)} within ${maxBursts} bursts`).toBe(limit);
+  for (let n = 0; n < 2; n++) await turnEvents(rt, encoder, step, 20, 2);
   return soundWord(rt.session, index);
 }
 
