@@ -72,7 +72,7 @@ DSP loading, then active or failed.
 There is no version word. The stub-contract `.inc` (register pinning, slot semantics, the displaced-instruction rule) joins the input of the SVC_ABI
 hash. A service built against another contract is refused with E_SVC_ABI.
 
-Boot order: provider ColdFire part, provider DSP part (load, acknowledge), slot fill, then settle. Settle sees the final state of the provider.
+Boot order: the boot loads the ColdFire half of every provider, then the modules, as today. The provider's DSP job is queued first, before the jobs of its dependents. The ColdFire half is live from boot, the slots stay 0 (stock audio) until the provider's DSP code is acknowledged, and dependents show DSP loading until then. Settle runs at boot as before: the boot hook cannot wait for the DSP, because the frames that carry DSP code do not flow in it.
 
 ### 2.6 Failure rule
 
@@ -80,19 +80,18 @@ All or nothing, as on the ColdFire side. The DSP part belongs to the service. If
 fails:
 
 - The ColdFire hooks go back to stock, the slots stay 0, and the service has no export, site or block.
-- Dependents are refused with E_MISSING in settle.
+- The service goes through the shared unload lifecycle, the one that unloads a module whose DSP part fails (clear slots and row table, drain counters, `fini`, registry remove, release DSP, free). Its dependents (by NEEDS) go through the same lifecycle with E_MISSING in their module states, and their queued DSP jobs are removed. The services get `Service::remove(owner)` calls as for any unload. The core has no kind-specific code in this path.
 - Audio is stock.
 
-This is the rule that provider failure has today (`loader/mod.rs` `load_providers` and settle; test `loader/tests.rs` near line 981) and that content
-modules have (a DSP transfer failure makes the whole module FAILED).
+This is late teardown: provider failure at the ColdFire stage is still refused at boot (`load_providers` and settle), and a failure of the DSP part takes the service down afterwards by the same lifecycle that modules have (a DSP transfer failure makes the whole module FAILED).
 
-Open check before step 4: does the zero-DSP test framework acknowledge DSP transfers? If it does not, fix the framework, not the rule.
+The zero-DSP test peer never acknowledges a DSP transfer (`docs/TESTING.md`): a service with a DSP part needs a coupled session, and the test harness refuses it in any other mode.
 
 ### 2.7 Hot reload (S5, later)
 
 Load the new DSP section beside the old one, rewrite the slots in one chunk, wait two confirmed blocks, free the old section. The stub reads its slot
 once per call, which makes this safe. Invalidating the DSP instruction cache before reuse stays open ([digikit-hot-reload.md](digikit-hot-reload.md)).
-The DSP backend of the Installer trait is where it goes.
+The DSP backend of the Installer trait is where it goes, and the unload lifecycle is the one hot reload uses for services and modules ([digikit-hot-reload.md](digikit-hot-reload.md), "Where the code lives"): the slot swap of S5 is the same slot write as the install, and a failed install is the same teardown as an unload.
 
 ## 3. DK_SPAN (R4 reconciliation)
 
