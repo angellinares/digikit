@@ -410,7 +410,7 @@ fn check_dks(dir: &Path, needs_dks: bool, neutral: &[(String, String)]) -> Vec<S
 }
 
 /// The `devices` of every `[[slot]]` of the `module.toml` files under `at` (an image adapter's pointer slots), by slot name; an empty list is every device.
-/// A slot name declared in two places is listed in `twice`.
+/// A slot name declared in two places for a common device (or for every device) is listed in `twice`; on disjoint devices the lists are joined.
 fn adapter_slots(
     at: &Path,
     out: &mut std::collections::BTreeMap<String, Vec<String>>,
@@ -447,11 +447,20 @@ fn adapter_slots(
                 let Some(name) = sl.get("name").and_then(|n| n.as_str()) else {
                     continue;
                 };
-                if out
-                    .insert(name.to_string(), strings(sl.get("devices")))
-                    .is_some()
-                {
-                    twice.push(name.to_string());
+                let devices = strings(sl.get("devices"));
+                match out.get_mut(name) {
+                    None => {
+                        out.insert(name.to_string(), devices);
+                    }
+                    // the same name on disjoint devices is one slot per device; an empty list is every device
+                    Some(have)
+                        if have.is_empty()
+                            || devices.is_empty()
+                            || devices.iter().any(|d| have.contains(d)) =>
+                    {
+                        twice.push(name.to_string());
+                    }
+                    Some(have) => have.extend(devices),
                 }
             }
         }
