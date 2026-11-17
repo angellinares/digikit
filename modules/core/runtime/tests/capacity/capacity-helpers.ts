@@ -3,10 +3,8 @@ import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, type CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { word } from '@digi/regression/runtime/fx-live.ts';
 import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
-import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { LOADED, type Geometry, type Want } from '@digi/regression/runtime/synth.ts';
-import { boundService, SERVICE_MODULES, servicePath } from '@digi/regression/runtime/service-files.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
 import { stateName, statesFor } from '@digi/regression/runtime/load-states.ts';
 
@@ -30,20 +28,6 @@ export async function bootEntries(rig: CardRig, tag: string, entries: Entry[], f
   const info = await bootInfo(rt.session, rig.plan);
   const { mods, cap } = await rig.usb(rt, async (dk) => ({ mods: await dk.modules(), cap: await dk.capacity() }));
   return { rt, info, mods, cap };
-}
-
-/**
- * The arena bytes the services of the card hold with no module loaded: a boot of a card with the bound service files `services` (names of `SERVICE_MODULES`) and an
- * empty selection. The providers' blocks stay in the arena (`Geometry.providerArena`).
- */
-export async function providerArena(rig: CardRig, tag: string, services: string[]): Promise<number> {
-  const files = await Promise.all(
-    services.map(async (name) => ({
-      name: servicePath(name),
-      file: await boundService(rig.device, name, moduleArtifact(rig.device, SERVICE_MODULES[name]!)),
-    })),
-  );
-  return (await bootEntries(rig, `${tag}-providers`, [], files)).cap.ARENA!.used;
 }
 
 /** Every nonzero range [off, off + len) lies in [lo, hi) and no two overlap. */

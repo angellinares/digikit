@@ -6,8 +6,7 @@ import { cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts
 import { needsOf, parseDspSection, relocate } from '@digi/regression/runtime/dkm.ts';
 import { dspBytes } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
-import { neededServices } from '@digi/regression/runtime/service-files.ts';
-import { bootEntries, COUPLED_ROOTS, expectBoot, providerArena, SYMBOLS, type Entry } from './capacity-helpers.ts';
+import { bootEntries, COUPLED_ROOTS, expectBoot, SYMBOLS, type Entry } from './capacity-helpers.ts';
 import {
   ARENA_HDR,
   block,
@@ -16,7 +15,7 @@ import {
   DKM_FIXTURE_HEADER,
   DSP_GRANULE,
   E_NOMEM,
-  fullSet,
+  fullSetOnBoot,
   geometryOf,
   LOADED,
   packSynth,
@@ -78,9 +77,13 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
     'full set: every limit is filled to its last unit and the next module of each kind is refused',
     async () => {
       await rig.first();
-      // M declares machines, so the card holds machines.dks
-      const g = { ...geometryOf(rig.device, rig.plan), providerArena: await providerArena(rig, 'full', ['machines']) };
-      const entries = await synthEntries(rig, 'full', await fullSet(g, []));
+      const g = geometryOf(rig.device, rig.plan);
+      // M declares machines, so machines.dks loads for it: F is sized by a boot of M, V and D (what the provider holds is in its `ARENA.largest`)
+      const set = await fullSetOnBoot(g, [], async (before) => {
+        const probe = await synthEntries(rig, 'full-probe', before);
+        return (await bootEntries(rig, 'full-probe', probe)).cap.ARENA!.largest;
+      });
+      const entries = await synthEntries(rig, 'full', set);
       const got = await bootEntries(rig, 'full', entries);
       const mods = await expectBoot(rig, g, entries, got);
       expectFull(g, mods, got.cap);
@@ -162,11 +165,15 @@ cardRigs('capacity, coupled', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, 
     async () => {
       await rig.first();
       const refFile = moduleArtifact(rig.device, REFERENCE);
-      const services = [...new Set(['machines', ...neededServices([refFile])])];
-      const g = { ...geometryOf(rig.device, rig.plan), providerArena: await providerArena(rig, 'coupled-full', services) };
+      const g = geometryOf(rig.device, rig.plan);
       const [refNeeds] = await needsOf([refFile]);
-      const fill = await synthEntries(rig, 'coupled-full', await fullSet(g, [usageOf(refNeeds!)]));
-      const entries: Entry[] = [{ name: REFERENCE, file: refFile, want: LOADED }, ...fill];
+      const refEntry: Entry = { name: REFERENCE, file: refFile, want: LOADED };
+      // F is sized by a boot of the reference, M, V and D, so that the providers they need are loaded
+      const set = await fullSetOnBoot(g, [usageOf(refNeeds!)], async (before) => {
+        const probe = await synthEntries(rig, 'coupled-probe', before);
+        return (await bootEntries(rig, 'coupled-probe', [refEntry, ...probe])).cap.ARENA!.largest;
+      });
+      const entries: Entry[] = [refEntry, ...(await synthEntries(rig, 'coupled-full', set))];
       const got = await bootEntries(rig, 'coupled-full', entries);
       const mods = await expectBoot(rig, g, entries, got);
       expectFull(g, mods, got.cap);
