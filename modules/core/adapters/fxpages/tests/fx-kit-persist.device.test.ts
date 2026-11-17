@@ -17,7 +17,7 @@ import { halfword, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
+import { hasServiceSymbols, symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const GAIN_B = 'test/dyn-fx-gain-b';
@@ -176,16 +176,20 @@ for (const device of DEVICES) {
           await kit.poke(32, 0x4800);
           stockK1 = await stock();
           expect(stockK1).not.toBe(raw);
-          const saves = await cell('fxp_nsave');
+          // the hook cells are the fx service file's: the stock boot (no effect) has none, only the stock kit values are checked
+          const hooked = hasServiceSymbols(runtime);
+          const saves = hooked ? await cell('fxp_nsave') : 0;
           await ui().saveKit(1, 'k1');
-          expect(await cell('fxp_nsave')).toBeGreaterThan(saves);
-          expect(await spare(await cell('fxp_save_dst'))).toEqual(Array(fx.store_halfwords).fill(0));
+          if (hooked) {
+            expect(await cell('fxp_nsave')).toBeGreaterThan(saves);
+            expect(await spare(await cell('fxp_save_dst'))).toEqual(Array(fx.store_halfwords).fill(0));
+          }
           await kit.poke(32, 0x2000);
           const moved = await stock();
           expect(moved).not.toBe(stockK1);
-          const loads = await cell('fxp_nload');
+          const loads = hooked ? await cell('fxp_nload') : 0;
           const loaded = await ui().loadKit(1, 'k1');
-          expect(await cell('fxp_nload')).toBeGreaterThan(loads);
+          if (hooked) expect(await cell('fxp_nload')).toBeGreaterThan(loads);
           expect(Math.abs((await stock()) - stockK1)).toBeLessThanOrEqual(0x40);
           expect(await stock()).not.toBe(moved);
           expect(loaded.file).toEqual(Array(fx.store_halfwords).fill(0));

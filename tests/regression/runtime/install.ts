@@ -87,9 +87,14 @@ export async function installModules(
   );
 }
 
-/** One prepared module alone (a test that does not read the log). */
-export function installModule(dk: DkSession, id: string, artifact: string): Promise<void> {
-  return installModules(dk, [{ id, artifact }]);
+/** One prepared module alone (a test that does not read the log). Pass `device` to put the services it needs on the card. */
+export function installModule(
+  dk: DkSession,
+  id: string,
+  artifact: string,
+  options?: { device?: Device; session?: Pick<Session, 'status' | 'client'> },
+): Promise<void> {
+  return installModules(dk, [{ id, artifact }], options);
 }
 
 /** The debug module and the modules `ids`, in one selection and one restart. */

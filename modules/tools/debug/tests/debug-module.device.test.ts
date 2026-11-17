@@ -216,6 +216,7 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
   await installModules(
     dk,
     ['digikit/remote', DEBUG_MODULE].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
+    { device },
   );
   expect((await dk.modules()).map((m) => m.name)).toEqual(['digikit/remote', 'digikit/debug']);
   await expectPollEmulated(session, async () => (await dk.readLog()).some((e) => e.kind === LOG_KIND.UI_FIRST), (value) => expect(value).toBe(true), { emulatedMs: 60000, intervalMs: 1000 });

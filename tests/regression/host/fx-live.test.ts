@@ -92,11 +92,14 @@ test('a case with no tap run gets guard, overlay and fault evidence and no PCM r
   const runtime = { session } as PatchedSession;
   const overlays: string[] = [];
   try {
-    await expect(evidence(runtime, directory, 'idle', overlays)).resolves.toBeUndefined();
+    await expect(evidence(runtime, directory, 'idle', overlays, false)).resolves.toBeUndefined();
     expect(guardReport).toHaveBeenCalled();
     expect(call).toHaveBeenCalledWith('card.overlay', expect.anything());
     expect(call).not.toHaveBeenCalledWith('pcm.tap', expect.anything());
     expect(expectNoFault).toHaveBeenCalledWith('idle');
+    await expect(evidence(runtime, directory, 'loud', overlays)).rejects.toThrow(
+      'the case requires audio but no PCM tap ran',
+    );
     (session as unknown as { pcmTapStarted: boolean }).pcmTapStarted = true;
     await expect(evidence(runtime, directory, 'broken', overlays)).rejects.toThrow('report failed');
   } finally {

@@ -5,7 +5,7 @@ import { REDRAW, SETTLE, bounded, rpc, word, type Rt } from './fx-live.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword } from './fx-track-ui.ts';
 import { type RuntimePlan } from './runtime-plan.ts';
-import { symbolsOf } from './service-symbols.ts';
+import { hasServiceSymbols, symbolsOf } from './service-symbols.ts';
 
 export const bits = (value: number) => {
   const bytes = Buffer.alloc(4);
@@ -116,6 +116,8 @@ export async function pageState(runtime: Pick<TestRuntime, 'session'>, plan: Run
 }
 
 export async function expectNoPages(runtime: Pick<TestRuntime, 'session'>, plan: RuntimePlan) {
+  // a boot without an effect has no fx service file: the page state is the service's, so there is no page list to read and no page is owned
+  if (!hasServiceSymbols(runtime)) return;
   const state = await pageState(runtime, plan);
   expect(state.count, 'stock page list is selected').toBe(0);
   expect(state.owner, 'no page is owned').toEqual([0, 0, 0, 0]);

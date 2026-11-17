@@ -96,8 +96,8 @@ for (const device of DEVICES) {
         presets: {
           dry: { selection: ['modules/m0.dkm'] },
           wet: { selection: ['modules/m0.dkm', 'modules/m1.dkm'] },
-          // no service files on this card: the effect is refused
-          nofx: { selection: ['modules/m0.dkm', 'modules/m1.dkm'], noServices: true },
+          // no fx service file on this card (machines.dks stays): the effect is refused
+          nofx: { selection: ['modules/m0.dkm', 'modules/m1.dkm'], noServices: ['fx'] },
           full: { selection: inventory.map((_, index) => `modules/m${index}.dkm`) },
         },
       });
@@ -207,7 +207,7 @@ for (const device of DEVICES) {
         const nofx = await fixture.reload(context.baseline('nofx'));
         // The sine loads; the effect module is REFUSED: its record kind has no owner (the fx service file is not on the card), E_MISSING.
         const state = await inspectFxBoot(nofx, plan, [SINE], artifacts, 'nofx-boot', [0, loadCode('E_MISSING')], {
-          noServices: true,
+          noServices: ['fx'],
         });
         rememberEpoch(state.epoch);
         expect(state.capacity.FX_SLOTS?.used ?? 0, 'no effect row is in use').toBe(0);

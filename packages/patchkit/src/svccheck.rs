@@ -11,6 +11,8 @@
 //!   `src/fw.rs` (firmware calls). It is required when the service's `[[service]]` row has no `rust` (the service is a file), and checked whenever it exists.
 //!   The `[[hook]]` entries of `dks/module.toml` equal the hooks of the `service!` call, per device (an entry with `devices`, and a call entry `(name, entry, dt2)`).
 //!   Assembler (`asm!`, `global_asm!`, `naked`) is only in `dks/src/hooks.rs`, and firmware names (`cf.` hook and anchor names, `dkfw`) only under `dks/`.
+//! - **Fills equal the slots.** A `[[fill]]` of `dks/module.toml` names a `[[slot]]` of an image adapter (`modules/core/adapters/**/module.toml`). When the
+//!   slot must exist (a typo is an error). When the slot exists only on some devices (`devices` in its `[[slot]]`), the fill names `devices` too and only devices the slot has.
 //! - **One entry.** The crate exports at most one entry symbol, `dk_module`: the entry that carries the service's `ServiceRow` (interface B). A service
 //!   linked into the runtime exports none yet (the runtime names its row in the generated table); a second export of any other name is a second row
 //!   symbol. The state a device test reads by name (`DKRT_FXP`, `DKRT_FXS`: a `static` named `DKRT_*`) is state, not an entry, and is allowed.
@@ -407,8 +409,116 @@ fn check_dks(dir: &Path, needs_dks: bool, neutral: &[(String, String)]) -> Vec<S
     out
 }
 
-/// Every problem of the service crate at `dir`; empty when it is as the layout says.
+/// The `devices` of every `[[slot]]` of the `module.toml` files under `at` (an image adapter's pointer slots), by slot name; an empty list is every device.
+fn adapter_slots(at: &Path, out: &mut std::collections::BTreeMap<String, Vec<String>>) {
+    let Ok(rd) = std::fs::read_dir(at) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        if p.is_dir() {
+            let skip = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| matches!(n, "target" | "build" | "dist" | "node_modules"));
+            if !skip {
+                adapter_slots(&p, out);
+            }
+        } else if p.file_name().is_some_and(|n| n == "module.toml") {
+            let Some(t) = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|t| t.parse::<toml::Table>().ok())
+            else {
+                continue;
+            };
+            for sl in t
+                .get("slot")
+                .and_then(|s| s.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let Some(sl) = sl.as_table() else { continue };
+                let Some(name) = sl.get("name").and_then(|n| n.as_str()) else {
+                    continue;
+                };
+                out.insert(name.to_string(), strings(sl.get("devices")));
+            }
+        }
+    }
+}
+
+/// The strings of a TOML array (none for anything else).
+fn strings(v: Option<&toml::Value>) -> Vec<String> {
+    v.and_then(|d| d.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The `[[fill]]` entries of `dks/module.toml` whose devices differ from the devices of the adapter slot they fill. A slot that exists on every device (no
+/// `devices`) takes any fill; a slot limited to some devices takes only fills that name `devices`, all of them among the slot's.
+fn fill_problems(dir: &Path, adapters: &Path) -> Vec<String> {
+    let mut out = vec![];
+    // without an adapters folder (a service checked on its own) there is nothing to compare with
+    if !adapters.is_dir() {
+        return out;
+    }
+    let Some(m) = std::fs::read_to_string(dir.join("dks/module.toml"))
+        .ok()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+    else {
+        return out;
+    };
+    let mut slots = std::collections::BTreeMap::new();
+    adapter_slots(adapters, &mut slots);
+    for f in m
+        .get("fill")
+        .and_then(|f| f.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let Some(t) = f.as_table() else { continue };
+        let Some(name) = t.get("slot").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        let Some(have) = slots.get(name) else {
+            out.push(format!(
+                "dks/module.toml: [[fill]] `{name}` names a slot that no image adapter declares ([[slot]] in an adapter module.toml)"
+            ));
+            continue;
+        };
+        if have.is_empty() {
+            continue;
+        }
+        let want = strings(t.get("devices"));
+        if want.is_empty() {
+            out.push(format!(
+                "dks/module.toml: [[fill]] `{name}` has no `devices`, but the image adapter has the slot only on {}",
+                have.join(", ")
+            ));
+        }
+        for d in want.iter().filter(|d| !have.contains(d)) {
+            out.push(format!(
+                "dks/module.toml: [[fill]] `{name}` is for {d}, but the image adapter has the slot only on {}",
+                have.join(", ")
+            ));
+        }
+    }
+    out
+}
+
+/// Every problem of the service crate at `dir`; empty when it is as the layout says. The image adapters are at `../../adapters` of the service folder
+/// (`modules/core/adapters`).
 pub fn check(dir: &Path, sdk: &Path) -> Result<Vec<String>> {
+    check_with_adapters(dir, sdk, &dir.join("../../adapters"))
+}
+
+/// `check` with the folder of the image adapters named (the fills of the service file are compared with the `[[slot]]` entries under it).
+pub fn check_with_adapters(dir: &Path, sdk: &Path, adapters: &Path) -> Result<Vec<String>> {
     let name = dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -500,6 +610,9 @@ pub fn check(dir: &Path, sdk: &Path) -> Result<Vec<String>> {
     // declarations equal the manifest
     let (kinds, row) = manifest(sdk, &name)?;
     for p in check_dks(dir, matches!(row, Some(None)), &srcs) {
+        problem(p);
+    }
+    for p in fill_problems(dir, adapters) {
         problem(p);
     }
     match row {

@@ -1289,6 +1289,12 @@ id = 4
 name = "BOOT_RECORD"
 args = ["seq", "copy", "boot_counter", "selected", "flags"]
 
+# a module file was loaded (the CF part; result 1: the DSP part follows) or refused (a negative result, error level): the selection index, the result and the file name
+# (12 characters in three words). A provider file (a service, `.dks`) has the index 0xfffffffe and other words: [0xfffffffe, result, name4, hash, base], the first four
+# characters of the file name, the service hash and the base address of the loaded file (0 when it did not load). For the result
+# E_DECL_KIND the last two words are the declare-check diagnosis: `hash` is the first word of the first item that the service's `init` and the header table do not both hold
+# (the item's hash or id), `base` its tag (4 KINDS, 5 SLOTS, 6 HOOKS, 7 EXPORTS, 8 RESOURCES) plus 0x100 when only the header table has the item (init did not declare it);
+# tag 1 with hash 0: a difference without a single item (a full collection). dk-session `declDiagnosis` reads them: `EXPORTS 946ae751 not declared`.
 [[log.kind]]
 id = 5
 name = "MOD_LOAD"

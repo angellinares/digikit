@@ -114,6 +114,11 @@ export async function bindServiceSymbols(
   }
 }
 
+/** True when the last boot of the session had the service (`bindServiceSymbols` bound its symbols): false for a boot without the service file, which has none of its cells. */
+export function hasServiceSymbols(runtime: WithSession): boolean {
+  return bound.has(runtime.session);
+}
+
 /** The name lookup of the last boot of the session (`bindServiceSymbols`), or the image's plan alone when no service was found. Symbols of the fx service: `DKRT_FXP`,
  * `DKRT_FXS`, `DKRT_FXP_TAB`, `DKRT_FXP_COUNT`, `DKRT_FXP_SEND_ROW`, ... (the old `fxp_*` names map to them). */
 export function symbolsOf(runtime: WithSession, plan: RuntimePlan): (name: string) => number {

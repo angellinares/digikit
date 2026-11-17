@@ -49,7 +49,7 @@ async function expectLfoShapes({ session, dk }: PatchedSession): Promise<void> {
   expect(await dk.verifyFile(SERVICE_PATH, service), 'fresh card read matches the packed service file').toBe(true);
 
   // one fixture: loaded, no machine type, a record block in the arena
-  await installModule(dk, A, moduleArtifact(device, A));
+  await installModule(dk, A, moduleArtifact(device, A), { device });
   const loaded = await dk.modules();
   expect(
     loaded.map((m) => [m.name, m.types]),

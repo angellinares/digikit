@@ -1,4 +1,12 @@
-import { asciiOf, fmtVersion, hasCap, type DkLogEvent, type DkSession } from '@digi/dk-session';
+import {
+  asciiOf,
+  declDiagnosis,
+  fmtVersion,
+  hasCap,
+  PROVIDER_IDX,
+  type DkLogEvent,
+  type DkSession,
+} from '@digi/dk-session';
 import { LOAD_STATUS, LOG_KIND } from '@digi/dk-session/gen_proto';
 import { emulatorClock, pollUntil, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
@@ -110,17 +118,7 @@ export async function logEvents({ session, dk }: PatchedSession, plan: RuntimePl
 
 const E_MISSING = -73;
 /** `PROVIDER_IDX` of loader/mod.rs: the index of a MOD_LOAD event of a provider file (`services/<name>.dks`), which is no selection index. */
-const PROVIDER_INDEX = 0xffff_fffe;
-
-const E_DECL_KIND = -79;
-/** The tags of `Declare` (abi/service.rs) that a header table carries, as the header table's items are named. */
-const DECL_TAGS: Readonly<Record<number, string>> = {
-  4: 'KINDS',
-  5: 'SLOTS',
-  6: 'HOOKS',
-  7: 'EXPORTS',
-  8: 'RESOURCES',
-};
+const PROVIDER_INDEX = PROVIDER_IDX;
 
 /**
  * One provider MOD_LOAD event as text: `provider fx.d res -7 E_IMPORT`; the name is the first four characters of the file name. An E_DECL_KIND refusal names the first
@@ -130,12 +128,8 @@ const DECL_TAGS: Readonly<Record<number, string>> = {
 export function providerFailureLine(args: readonly number[]): string {
   const res = args[1]! | 0;
   let line = `provider ${asciiOf(args[2]!)} res ${res} ${LOAD_STATUS.find(([code]) => code === res)?.[1] ?? '?'}`;
-  const tag = (args[4] ?? 0) & 0xff;
-  if (res === E_DECL_KIND && tag !== 0) {
-    const item = `${DECL_TAGS[tag] ?? `tag ${tag}`} ${(args[3]! >>> 0).toString(16).padStart(8, '0')}`;
-    line += ` (${item} ${(args[4]! & 0x100) !== 0 ? 'not declared' : 'not in the header'})`;
-  }
-  return line;
+  const why = declDiagnosis(args);
+  return why ? `${line} (${why})` : line;
 }
 
 /**

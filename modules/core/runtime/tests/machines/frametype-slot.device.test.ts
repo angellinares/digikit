@@ -42,7 +42,7 @@ runtimeTests(
     await installModules(dk, [
       { id: ID, artifact: moduleArtifact(device, ID) },
       { id: DEBUG_MODULE, artifact: moduleArtifact(device, DEBUG_MODULE) },
-    ]);
+    ], { device, session });
     expect(await dk.loadFailures(), 'the service and the machine loaded').toEqual([]);
     expect(
       (await dk.modules()).map((m) => m.name),

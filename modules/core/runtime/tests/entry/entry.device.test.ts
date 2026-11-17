@@ -27,7 +27,9 @@ const DEVICE_ID = { dt2: 1, dn2: 2 } as const; // [digikit] id of devices/*.toml
 async function expectEntryPoint({ session, dk }: PatchedSession): Promise<void> {
   expect(['zero', 'none'], 'the entry point needs no DSP').toContain((await session.status()).dsp);
   await expectRuntimeReady(session);
-  await installModule(dk, 'test/entry-demo', moduleArtifact(session.options.device, 'test/entry-demo'));
+  await installModule(dk, 'test/entry-demo', moduleArtifact(session.options.device, 'test/entry-demo'), {
+    device: session.options.device,
+  });
   expect(RANGES.entry_demo_test, 'reserved command range of the fixture').toEqual([0x1c, 0x1d]);
   const report = async () => {
     const reply = await dk.request(REPORT);

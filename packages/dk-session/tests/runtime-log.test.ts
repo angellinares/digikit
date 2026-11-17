@@ -5,6 +5,7 @@ import { LOG_KIND } from '../src/gen_proto.ts';
 import { decodeFault } from '../src/fault.ts';
 import {
   asciiOf,
+  declDiagnosis,
   eventLine,
   eventText,
   faultDetail,
@@ -171,4 +172,42 @@ test('only the last boot counts, and other codes keep the loader text', () => {
   expect(loadFailureText({ name: 'x.dkm', result: -7 })).toBe(
     'x not loaded: an import is unknown, or a provider the module needs is absent',
   );
+});
+
+const PROVIDER = 0xfffffffe;
+
+test('a provider MOD_LOAD event is decoded by its own layout: [index, result, name4, hash, base]', () => {
+  const ok = runtimeEvent(ev(1, 'MOD_LOAD', [PROVIDER, 1, word('fx.d'), 0x946ae751, 0x47000000])).fields;
+  expect(ok).toMatchObject({ provider: true, name: 'fx.d', result: 1, hash: '946ae751', base: '47000000' });
+  expect(ok).not.toHaveProperty('decl_item');
+  // E_DECL_KIND: the hash word is the item's first word, the base word its tag (+0x100: only the header table has it)
+  const notDeclared = runtimeEvent(ev(2, 'MOD_LOAD', [PROVIDER, 0xffffffb1, word('mach'), 0x946ae751, 7 | 0x100], 1));
+  expect(notDeclared.fields).toMatchObject({ name: 'mach', result: -79, decl_item: 'EXPORTS 946ae751 not declared' });
+  const notInHeader = runtimeEvent(ev(3, 'MOD_LOAD', [PROVIDER, 0xffffffb1, word('mach'), 6, 4]));
+  expect(notInHeader.fields.decl_item).toBe('KINDS 00000006 not in the header');
+  // a full collection has no item; another result carries no diagnosis
+  expect(declDiagnosis([PROVIDER, -79, word('mach'), 0, 1])).toBeNull();
+  expect(declDiagnosis([PROVIDER, -7, word('mach'), 6, 4])).toBeNull();
+  expect(eventText(notDeclared, new Map())).toContain('decl_item=EXPORTS 946ae751 not declared');
+});
+
+test('a module MOD_LOAD event keeps the name in three words', () => {
+  const f = runtimeEvent(ev(1, 'MOD_LOAD', [3, 0, word('usb-'), word('fast'), word('.dkm')])).fields;
+  expect(f).toMatchObject({ name: 'usb-fast.dkm', result: 0 });
+  expect(f).not.toHaveProperty('provider');
+});
+
+test('provider load failures are listed under their own names and do not hide each other or a module', () => {
+  const events = [
+    ev(1, 'BOOT_START'),
+    ev(2, 'MOD_LOAD', [PROVIDER, 0xffffffb1, word('mach'), 6, 4], 1),
+    ev(3, 'MOD_LOAD', [PROVIDER, 0xfffffff9, word('fx.d'), 0, 0], 1),
+    ev(4, 'MOD_LOAD', [PROVIDER, 1, word('lfo.'), 0, 0]),
+    ev(5, 'MOD_LOAD', [0, 0xffffffb3, word('plu'), 0, 0], 1),
+  ];
+  expect(loadFailures(events).map(({ name, result }) => ({ name, result }))).toEqual([
+    { name: 'mach', result: -79 },
+    { name: 'fx.d', result: -7 },
+    { name: 'plu', result: -77 },
+  ]);
 });

@@ -125,10 +125,17 @@ function fakeDk() {
   return { calls, dk, runtime: { session: daemon, dk } as unknown as PatchedSession };
 }
 
-/** Every read returns `text`, except dist/bytes/images.sha256, which covers the DT2 1.17 emulator set (runtime-plan.ts assertCovered). */
+/**
+ * Every read returns `text`, except dist/bytes/images.sha256, which covers the DT2 1.17 emulator set (runtime-plan.ts assertCovered), and a packed `.dkm`, a stand-in
+ * with no header table (it needs no service).
+ */
 const readFiles = (text: string) =>
   fake.read.mockImplementation((file: string) =>
-    String(file).endsWith('images.sha256') ? 'dt2-1.17 emulator image x plan y addrmap z\n' : text,
+    String(file).endsWith('images.sha256')
+      ? 'dt2-1.17 emulator image x plan y addrmap z\n'
+      : String(file).endsWith('.dkm')
+        ? Buffer.alloc(16)
+        : text,
   );
 
 beforeEach(() => {
@@ -360,7 +367,8 @@ test('negative setup installs natively on its own device-set daemon without patc
   } as PatchedSession;
   await installRemote(negative);
   expect(fake.exec).not.toHaveBeenCalled();
-  expect(fake.read).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/dt2\/remote\.dkm$/));
+  // the module is read to upload it and to find the services it needs
+  expect(fake.read).toHaveBeenCalledWith(expect.stringMatching(/dt2\/remote\.dkm$/));
   expect(calls).toEqual(['put', 'verifyFile', 'select', 'restart', 'waitForBoot', 'modules']);
   expect(dk.put.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
   expect(dk.verifyFile.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
