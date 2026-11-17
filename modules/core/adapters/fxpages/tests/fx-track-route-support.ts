@@ -113,6 +113,7 @@ export function trackRouteSuite(
             image: 'track-base',
             initial: 'sine',
             presets: { sine: sineCard },
+            requireAudible: true,
           });
           test('captures the original FX pixels and PCM', async () => {
             const { fixture, plan, profile, artifacts } = context;

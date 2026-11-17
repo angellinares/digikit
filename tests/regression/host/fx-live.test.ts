@@ -61,7 +61,8 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
   try {
     await expect(evidence(runtime, directory, 'silent', overlays, false)).resolves.toBeUndefined();
     expect(expectNoFault).toHaveBeenCalledWith('silent');
-    await expect(evidence(runtime, directory, 'default', overlays)).rejects.toThrow('input is audible');
+    await expect(evidence(runtime, directory, 'unset', overlays)).resolves.toBeUndefined();
+    await expect(evidence(runtime, directory, 'audible', overlays, true)).rejects.toThrow('input is audible');
     nonfinite = 1;
     await expect(evidence(runtime, directory, 'nonfinite', overlays, false)).rejects.toThrow();
     nonfinite = 0;
@@ -97,11 +98,11 @@ test('a case with no tap run gets guard, overlay and fault evidence and no PCM r
     expect(call).toHaveBeenCalledWith('card.overlay', expect.anything());
     expect(call).not.toHaveBeenCalledWith('pcm.tap', expect.anything());
     expect(expectNoFault).toHaveBeenCalledWith('idle');
-    await expect(evidence(runtime, directory, 'loud', overlays)).rejects.toThrow(
+    await expect(evidence(runtime, directory, 'loud', overlays, true)).rejects.toThrow(
       'the case requires audio but no PCM tap ran',
     );
     (session as unknown as { pcmTapStarted: boolean }).pcmTapStarted = true;
-    await expect(evidence(runtime, directory, 'broken', overlays)).rejects.toThrow('report failed');
+    await expect(evidence(runtime, directory, 'broken', overlays, true)).rejects.toThrow('report failed');
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

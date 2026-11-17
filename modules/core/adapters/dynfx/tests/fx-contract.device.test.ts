@@ -72,6 +72,7 @@ for (const device of DEVICES) {
         image: { name: 'fx-plain', modules: RT, inventory, symbols, policy: 'default' },
         initial: 'plain',
         presets: { plain: { selection: ['modules/m0.dkm'] } },
+        requireAudible: true,
       });
       test('loads the sine safely and renders the unhooked audible reference', async () => {
         const runtime = context.fixture.runtime;

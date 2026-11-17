@@ -17,7 +17,17 @@ import { bindServiceSymbols, rememberShipMap } from './service-symbols.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { moduleResultsNote } from './runtime-menu.ts';
 import { pollEmulated } from './waits.ts';
-import { analysisJson, bounded, evidence, options, pickSine, word, type Rt } from './fx-live.ts';
+import {
+  analysisJson,
+  audibleRequired,
+  bounded,
+  evidence,
+  options,
+  pickSine,
+  word,
+  type RequireAudible,
+  type Rt,
+} from './fx-live.ts';
 import {
   planSymbol,
   prepareRuntimePlanListedOffline,
@@ -81,7 +91,7 @@ export interface PreparedFxSessionOptions {
   };
   initial: string;
   presets: Record<string, FxCardPreset>;
-  requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
+  requireAudible?: RequireAudible;
 }
 
 /** Wait until the boot input has finished, so the run can pause. */
@@ -240,10 +250,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
   };
   const collectEvidence = async (runtime: PatchedSession, tag: string, requireAudible?: boolean) => {
     rememberEpoch((await bounded(() => runtime.session.status())).epoch);
-    const required =
-      requireAudible ??
-      (typeof config.requireAudible === 'function' ? config.requireAudible(runtime) : (config.requireAudible ?? true));
-    await evidence(runtime, artifacts, tag, overlays, required);
+    await evidence(runtime, artifacts, tag, overlays, audibleRequired(config, runtime, requireAudible));
   };
   const fixture = withReusablePatchedSession(
     {

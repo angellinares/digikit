@@ -489,9 +489,10 @@ export async function evidence(
   artifacts: string,
   tag: string,
   overlays: string[],
-  requireAudible = true,
+  requireAudible?: boolean,
 ): Promise<void> {
   const { session } = runtime;
+  await bounded(() => session.expectNoFault(tag));
   const guard = await bounded(() => session.client.guardReport());
   const file = path.join(artifacts, `${tag}.overlay.bin`);
   const overlay = await rpc(session, 'card.overlay', { path: file });
@@ -509,15 +510,25 @@ export async function evidence(
     expect(pcm.non_finite).toBe(0);
     if (requireAudible) expect(pcm.peak, 'input is audible').toBeGreaterThan(0.01);
   }
-  await bounded(() => session.expectNoFault(tag));
+}
+
+/** Audio is required only when the call (`override`) or the suite sets `requireAudible`. */
+export type RequireAudible = boolean | ((runtime: PatchedSession) => boolean);
+export function audibleRequired(
+  config: { requireAudible?: RequireAudible },
+  runtime: PatchedSession,
+  override?: boolean,
+): boolean {
+  const { requireAudible } = config;
+  return override ?? (typeof requireAudible === 'function' ? requireAudible(runtime) : (requireAudible ?? false));
 }
 
 export interface GainFxSessionOptions {
   initial?: 'dry' | 'wet';
   /** A patch set of the device file other than `emulator` (the sine and gain DKMs load as in any case). */
   patchSet?: string;
-  /** Idle cases may be silent; guard, nonfinite, fault and overlay checks always remain mandatory. */
-  requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
+  /** Idle cases may be silent; guard, nonfinite, fault and overlay checks always remain mandatory. A suite that needs sound sets `true`. */
+  requireAudible?: RequireAudible;
 }
 
 /** Fixed default-emulator sine/gain fixtures, sharing the existing owned Session lifecycle. */
@@ -536,10 +547,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
   };
   const slots = slotsFor(device);
   const collectEvidence = (runtime: PatchedSession, tag: string, requireAudible?: boolean) => {
-    const required =
-      requireAudible ??
-      (typeof config.requireAudible === 'function' ? config.requireAudible(runtime) : (config.requireAudible ?? true));
-    return evidence(runtime, artifacts, tag, overlays, required);
+    return evidence(runtime, artifacts, tag, overlays, audibleRequired(config, runtime, requireAudible));
   };
   const fixture = withReusablePatchedSession(
     {
