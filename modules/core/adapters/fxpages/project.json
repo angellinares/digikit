@@ -4,12 +4,23 @@
   "metadata": {
     "runtimeAcceptance": [
       {
-        "files": ["tests/fx-kit-persist.device.test.ts"],
-        "tags": ["A:core/fxpages", "C:state", "S:fx"],
-        "modules": ["test/dyn-fx-gain", "test/dyn-fx-gain-b", "test/sine"],
+        "files": ["tests/fx-bipolar.device.test.ts"],
+        "tags": ["A:core/fxpages", "C:state"],
+        "modules": ["test/dyn-fx-gain-bipolar", "test/sine", "core/services/machines", "core/services/fx"],
         "sources": [
           "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fxpage.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-kit-persist.device.test.ts"],
+        "tags": ["A:core/fxpages", "C:state"],
+        "modules": ["test/dyn-fx-gain", "test/dyn-fx-gain-b", "test/sine", "core/services/fx", "core/services/machines"],
+        "sources": [
+          "tools/patchkit/hook_ab.py",
           "tools/patchkit/pk_digikit_fxroute.py",
           "tools/patchkit/pk_digikit_fxroutes.py"
         ],
@@ -17,11 +28,10 @@
       },
       {
         "files": ["tests/fx-pages.device.test.ts"],
-        "tags": ["A:core/fxpages", "S:fx"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "tags": ["A:core/fxpages"],
+        "modules": ["test/dyn-fx-gain", "test/sine", "core/services/fx", "core/services/machines"],
         "sources": [
           "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fxpage.py",
           "tools/patchkit/pk_digikit_fxroute.py",
           "tools/patchkit/pk_digikit_fxroutes.py"
         ],
@@ -29,8 +39,8 @@
       },
       {
         "files": ["tests/fx-track-route-stock.device.test.ts"],
-        "tags": ["A:core/fxpages", "S:fx"],
-        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "tags": ["A:core/fxpages"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine", "core/services/fx", "core/services/machines"],
         "aliases": {
           "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
           "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
@@ -45,8 +55,8 @@
       },
       {
         "files": ["tests/fx-track-route-send.device.test.ts"],
-        "tags": ["A:core/fxpages", "S:fx"],
-        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "tags": ["A:core/fxpages"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine", "core/services/fx", "core/services/machines"],
         "aliases": {
           "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
           "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
@@ -61,8 +71,8 @@
       },
       {
         "files": ["tests/fx-track-route-kit.device.test.ts"],
-        "tags": ["A:core/fxpages", "C:state", "S:fx"],
-        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "tags": ["A:core/fxpages", "C:state"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine", "core/services/fx", "core/services/machines"],
         "aliases": {
           "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
           "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
@@ -77,8 +87,8 @@
       },
       {
         "files": ["tests/fx-track-route-limit.device.test.ts"],
-        "tags": ["A:core/fxpages", "S:fx"],
-        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "tags": ["A:core/fxpages"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine", "core/services/fx", "core/services/machines"],
         "aliases": {
           "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
           "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
@@ -93,8 +103,8 @@
       },
       {
         "files": ["tests/fx-track-route-lock.device.test.ts"],
-        "tags": ["A:core/fxpages", "S:fx"],
-        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "tags": ["A:core/fxpages"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine", "core/services/fx", "core/services/machines"],
         "aliases": {
           "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
           "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"

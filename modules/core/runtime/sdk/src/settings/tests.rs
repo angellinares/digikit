@@ -552,7 +552,7 @@ fn both_copies_damaged_is_an_empty_record() {
     }
     let (r, a) = load_now();
     let r = r.unwrap();
-    assert_eq!((r.copy, r.damaged), (NONE, 2));
+    assert_eq!((r.copy, r.damaged, r.seq), (NONE, 2, 0));
     assert_eq!(entries(&a).len(), 0);
 }
 

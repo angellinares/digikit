@@ -24,6 +24,8 @@ fn plain_values_and_pointers_come_back_as_through_the_real_core() {
         assert_eq!(ic.dynreg(), REAL_CORE.dynreg());
         assert_eq!(ic.dsp_info(), REAL_CORE.dsp_info());
         assert_eq!(ic.fx_info(), REAL_CORE.fx_info());
+        assert_eq!(ic.info(0x1111), REAL_CORE.info(0x1111));
+        assert!(ic.info(0).is_null(), "the host image has no info table");
         assert_eq!(ic.module_name(1), REAL_CORE.module_name(1));
         assert_eq!(ic.guard_faults(0), REAL_CORE.guard_faults(0));
         assert_eq!(ic.guard_disabled(0), REAL_CORE.guard_disabled(0));

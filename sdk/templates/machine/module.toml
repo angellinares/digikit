@@ -19,7 +19,7 @@ conflicts = []
 # `patchkit pack __ID__ --device dt2|dn2 -o __NAME__.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
 # publishes the voice row and the machine row.
 # The machine is declared by builder calls in `init` (src/module.c). The id `__NAME__` is what the keys hash; the DSP symbols start with `__NAME__`
-# (`_render`, `_note_on`, `_desc`). `[uses.<device>]` is written by `mise run module:check`.
+# (`_render`, `_note_on`, `_desc`). `[uses.<device>]` (the rows and `record_bytes`, the payload of the records `init` commits) is written by `mise run module:check`.
 [[machine]]
 id = "__NAME__"
 

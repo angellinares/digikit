@@ -7,9 +7,9 @@
 import { globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { read, records, mergeTests, packDevices, isUploadable } from './module-manifests.mjs';
-import { buildObjectsTarget, packTarget, packAliasesTarget } from './module-build.mjs';
+import { buildObjectsTarget, packTarget, packAliasesTarget, bindTarget } from './module-build.mjs';
 import { deviceTargets, checkMergeTests, conformanceTarget, testOnlyNodes, regressionNode } from './device-tests.mjs';
-import { serviceLeaves } from './device-test-keys.mjs';
+import { serviceLeaves, isBindable, bindableIds } from './device-test-keys.mjs';
 import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { rigTarget } from './rig-tests.mjs';
 import { testImportInputs } from './ts-imports.mjs';
@@ -34,7 +34,10 @@ export const createNodesV2 = [
     const byId = new Map(
       files.map((f) => {
         const parsed = read(ctx.workspaceRoot, f);
-        return [parsed.module.id, { file: f, manifest: parsed.module, objects: parsed.object ?? [] }];
+        return [
+          parsed.module.id,
+          { file: f, manifest: parsed.module, objects: parsed.object ?? [], hooks: parsed.hook ?? [] },
+        ];
       }),
     );
     // id -> { category, root }, for the module tags of metadata.runtimeAcceptance (acceptance-tags.mjs).
@@ -85,7 +88,7 @@ export const createNodesV2 = [
       }
     }
     const nodes = files.map((f) => {
-      const { module: m, object: objects = [] } = read(ctx.workspaceRoot, f);
+      const { module: m, object: objects = [], hook: hooks = [] } = read(ctx.workspaceRoot, f);
       const root = dirname(f);
       const project = { name: m.id, root, tags: ['module', `type:${m.type}`] };
       if (root.startsWith('modules/') && m.category !== 'core') project.tags.push('release-module');
@@ -114,6 +117,8 @@ export const createNodesV2 = [
           coreManifests,
         );
       if (devices.length && packable.has(m.id)) targets.pack = packTarget(ctx.workspaceRoot, byId, m, devices);
+      if (devices.length && packable.has(m.id) && isBindable(m, hooks))
+        targets.bind = bindTarget(ctx.workspaceRoot, m, devices);
       const aliasesTarget = packAliasesTarget(ctx.workspaceRoot, byId, recs);
       if (aliasesTarget) targets['pack-aliases'] = aliasesTarget;
       if (shipped && hostTests.length)
@@ -136,6 +141,7 @@ export const createNodesV2 = [
             twin: true,
             moduleId: m.id,
             services: serviceLeaves(byId),
+            bindable: bindableIds(byId),
             projectDevices: devices,
             mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
             base: ctx.workspaceRoot,

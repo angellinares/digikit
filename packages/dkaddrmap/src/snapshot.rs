@@ -22,6 +22,8 @@ const INFO_BYTES: usize = 16;
 pub const SYM_STATE: &str = "DKRT_STATE";
 pub const SYM_DSP: &str = "DKRT_DSP";
 pub const SYM_INFO: &str = "dyndsp_info";
+/// The provider records (the files under `services/`): `Module` records like those of `DKRT_STATE`, without a header.
+pub const SYM_PROVIDERS: &str = "DKRT_PROVIDERS";
 
 /// What a host needs to read the load table of the image a map belongs to (key of a ship map).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -34,6 +36,9 @@ pub struct Loader {
     /// The image has the run-time DSP loader (`DKRT_DSP`, `dyndsp_info`).
     #[serde(default)]
     pub dsp: bool,
+    /// Provider record slots of `DKRT_PROVIDERS` (0: the image has none, as in older ship maps).
+    #[serde(default)]
+    pub providers: u64,
 }
 
 /// One range of memory to read: a symbol of the patch plan and the bytes from its address.
@@ -64,12 +69,32 @@ impl Loader {
                 len: INFO_BYTES as u64,
             });
         }
+        if self.providers > 0 {
+            r.push(Read {
+                symbol: SYM_PROVIDERS,
+                len: STATE_RECORD as u64 * self.providers,
+            });
+        }
         r
     }
 }
 
 fn word(b: &[u8], at: usize) -> u64 {
     u32::from_be_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]) as u64
+}
+
+/// The load of the used module record at byte `at` of `b` (no DSP base yet).
+fn record_load(b: &[u8], at: usize) -> Load {
+    let raw = &b[at + 4..at + 36];
+    let id = String::from_utf8_lossy(&raw[..raw.iter().position(|&x| x == 0).unwrap_or(32)])
+        .into_owned();
+    Load {
+        id,
+        base: word(b, at + 40),
+        size: word(b, at + 44),
+        dsp_base: None,
+        fini: Some(word(b, at + 48)).filter(|&f| f != 0),
+    }
 }
 
 /// The bytes of a hex string.
@@ -84,7 +109,8 @@ pub fn parse_hex(s: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-/// The load table of a snapshot. A module record in use becomes a [`Load`]; with the DSP loader in the snapshot, a module whose range has a
+/// The load table of a snapshot. A module record in use becomes a [`Load`], and so does a used record of `DKRT_PROVIDERS` when the snapshot has it
+/// (a provider has no DSP part); with the DSP loader in the snapshot, a module whose range has a
 /// length also gets `dsp_base`, the software PC where its DSP image starts (the slot index is the index in `DKRT_DSP`).
 pub fn decode_loads(loader: &Loader, snap: &Snapshot) -> Result<LoadTable, String> {
     let state = snap
@@ -114,16 +140,7 @@ pub fn decode_loads(loader: &Loader, snap: &Snapshot) -> Result<LoadTable, Strin
         if word(state, at) == 0 {
             continue;
         }
-        let raw = &state[at + 4..at + 36];
-        let id = String::from_utf8_lossy(&raw[..raw.iter().position(|&b| b == 0).unwrap_or(32)])
-            .into_owned();
-        let mut load = Load {
-            id,
-            base: word(state, at + 40),
-            size: word(state, at + 44),
-            dsp_base: None,
-            fini: Some(word(state, at + 48)).filter(|&f| f != 0),
-        };
+        let mut load = record_load(state, at);
         if let Some((d, area)) = dsp {
             let off = word(d, DSP_HEADER + 4 * slot);
             let len = word(d, DSP_HEADER + 4 * (slots + slot));
@@ -133,6 +150,20 @@ pub fn decode_loads(loader: &Loader, snap: &Snapshot) -> Result<LoadTable, Strin
             }
         }
         modules.push(load);
+    }
+    if let Some(p) = snap.get(SYM_PROVIDERS) {
+        if p.len() % STATE_RECORD != 0 {
+            return Err(format!(
+                "{SYM_PROVIDERS}: {} bytes are not whole records",
+                p.len()
+            ));
+        }
+        for at in (0..p.len()).step_by(STATE_RECORD) {
+            if word(p, at) == 0 {
+                continue;
+            }
+            modules.push(record_load(p, at));
+        }
     }
     Ok(LoadTable { modules })
 }

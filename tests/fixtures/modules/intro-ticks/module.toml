@@ -14,7 +14,7 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# C, packed like test/intro-reset. `frame` keeps a tick count and a hash (no runtime call); `done`, at the first UI pass, logs both.
+# C, packed like test/dyn-crash. `frame` keeps a tick count and a hash (no runtime call); `done`, at the first UI pass, logs both.
 [[object]]
 path = "build/intro-ticks.dko.json"
 sources = ["src/c/intro_ticks.c"]

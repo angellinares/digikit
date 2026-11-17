@@ -198,9 +198,10 @@ mise run test:changed         # lint, format, types, host tests and Python check
 pnpm test:host                # host Vitest projects; no device
 pnpm verify:host              # host lint, format, tests and types
 mise run test                 # the gate: Nx targets of the affected projects
-mise run test:subset -- S:fx  # the device tests of record tags plus gate-smoke and gate-pins; add --run to run them (docs/TESTING.md "Named device subset")
+mise run test:subset -- S:machines  # the device tests of record tags plus gate-smoke and gate-pins; add --run to run them (docs/TESTING.md "Named device subset")
 mise run module:check ID      # one module: conformance and its own tests
 pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig   # machine and effect conformance of every module on the SHARC-only rig (docs/TESTING.md "The Vitest kit")
+DIGI_RIG_REPORT=1 pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/machines/analog/tests/   # verdict, plot.png and wav files for the pinned cases (docs/TESTING.md "Classifying a changed pin")
 node tools/devtools/rig_profile.ts digikit/shot --device dn2 --case sample/stereo-fwd-oneshot/note60   # `wb profile report` of one case on the rig: instructions per function and loop (docs/TESTING.md "SHARC-only rig")
 ```
 
@@ -280,12 +281,13 @@ pnpm dev                                # the gallery at /patch: patch in the br
 4. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
 5. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
 
-**A service crate of the runtime** (`modules/core/services/NAME`, linked into the runtime object): `mise run module:new -- service NAME` writes the layout of
-`sdk/templates/service` (`Cargo.toml`, `src/lib.rs`, `records.rs`, `slots.rs`, `tests/records.rs`; add `src/dsp/` when the service has DSP parts) and prints the
-steps that register it (workspace member, runtime dependency, `[[service]]` row and `[records.kinds]` in `sdk/sdk.toml`, owner in `owners.toml`).
-`mise run module:check -- service/NAME` runs `patchkit service-check modules/core/services/NAME` (the layout; at most one exported symbol, `dk_module`; the record
-kinds that `Service::declare` makes equal to the `[records.kinds]` entries of the service in `sdk/sdk.toml`), then the crate's `rust-tests`. Example, run in the
-repository root:
+**A service** (`modules/core/services/NAME`): `mise run module:new -- service NAME` writes the layout of `sdk/templates/service`: the neutral crate
+(`Cargo.toml`, `src/lib.rs`, `records.rs`, `slots.rs`, `tests/records.rs`; add `src/dsp/` when the service has DSP parts) and the service file `dks/` (`module.toml` with
+id `core/services/NAME`, `src/lib.rs` with the `service!` call; add `src/hooks.rs` for hook assembler and `src/fw.rs` for firmware calls). It prints the steps that register it
+(workspace member, `[[service]]` row and `[records.kinds]` in `sdk/sdk.toml`). `mise run module:check -- service/NAME` runs `patchkit service-check modules/core/services/NAME`
+(the layout of both crates, the id and the role; the `[[hook]]` entries equal to the `service!` hooks per device; assembler only in `dks/src/hooks.rs`; firmware names only under `dks/`;
+at most one exported symbol, `dk_module`; the record kinds that `Service::declare` makes equal to the `[records.kinds]` entries of the service in `sdk/sdk.toml`), then the crate's
+`rust-tests`. Example, run in the repository root:
 
 ```text
 $ patchkit service-check modules/core/services/lfo modules/core/services/fx

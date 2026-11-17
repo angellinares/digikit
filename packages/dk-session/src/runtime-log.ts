@@ -91,6 +91,31 @@ const DIAG_DECIMAL = new Set([
 const FX_ROW_BYTES = 96;
 const NONE = 0xffffffff;
 
+/** The `index` of a MOD_LOAD event for a provider file (a service, `.dks`): the words are [PROVIDER_IDX, result, name4, hash, base] (runtime boot.rs `report_provider`). */
+export const PROVIDER_IDX = 0xfffffffe;
+const E_DECL_KIND = -79;
+/** The tags of `Declare` (runtime abi/service.rs) that a header table carries, as the header table's items are named. */
+export const DECL_TAGS: Readonly<Record<number, string>> = {
+  4: 'KINDS',
+  5: 'SLOTS',
+  6: 'HOOKS',
+  7: 'EXPORTS',
+  8: 'RESOURCES',
+};
+
+/**
+ * The declare-check diagnosis of a provider MOD_LOAD event with result E_DECL_KIND: the first item that the service's `init` and the header table
+ * do not both hold. The hash word is the item's first word and the base word its tag, plus 0x100 when only the header table has the item
+ * (loader/mod.rs `decl_diff`): `EXPORTS 946ae751 not declared`. Null for another result or when no item was found (a full collection: tag 0 or 1).
+ */
+export function declDiagnosis(args: readonly number[]): string | null {
+  const base = args[4] ?? 0;
+  const tag = base & 0xff;
+  if (signed(args[1] ?? 0) !== E_DECL_KIND || tag <= 1) return null;
+  const item = `${DECL_TAGS[tag] ?? `tag ${tag}`} ${hex8(args[3] ?? 0)}`;
+  return `${item} ${(base & 0x100) !== 0 ? 'not declared' : 'not in the header'}`;
+}
+
 const hex8 = (n: number) => (n >>> 0).toString(16).padStart(8, '0');
 const hex4 = (n: number) => (n & 0xffff).toString(16).padStart(4, '0');
 const signed = (n: number) => n | 0;
@@ -131,6 +156,18 @@ export function fieldsOf(kindId: number, a: number[]): Record<string, FieldValue
     case 'MOD_LOAD':
     case 'MOD_LIST':
       f = Object.fromEntries(Object.entries(f).filter(([k]) => !k.startsWith('name')));
+      if (name === 'MOD_LOAD' && a[0] === PROVIDER_IDX) {
+        // a provider file: the first four characters of its name, then the service hash and the base word (the declare-check diagnosis for E_DECL_KIND)
+        // the name is 4 characters packed big-endian into the one word a[2] (first character in the top byte, NUL after a shorter name; `asciiOf` unpacks it)
+        f.provider = true;
+        f.name = asciiOf(a[2]!);
+        f.result = signed(a[1]!);
+        f.hash = hex8(a[3]!);
+        f.base = hex8(a[4]!);
+        const why = declDiagnosis(a);
+        if (why) f.decl_item = why;
+        break;
+      }
       f.name = asciiOf(a[2]!, a[3]!, a[4]!);
       if (name === 'MOD_LOAD') f.result = signed(a[1]!);
       break;
@@ -298,14 +335,18 @@ export function loadFailures(events: DkLogEvent[]): LoadFailure[] {
   events.forEach((e, i) => {
     if (e.kind === LOG_KIND.BOOT_START) start = i;
   });
-  const out = new Map<number, LoadFailure>();
+  const out = new Map<string, LoadFailure>();
   for (const e of events.slice(start)) {
     if (e.kind === LOG_KIND.MOD_LOAD) {
       const result = signed(e.args[1]!);
-      if (result < 0) out.set(e.args[0]!, { name: asciiOf(e.args[2]!, e.args[3]!, e.args[4]!), result });
-      else out.delete(e.args[0]!);
+      // a provider file has no module index: it is keyed by the first four characters of its name
+      const provider = e.args[0] === PROVIDER_IDX;
+      const name = provider ? asciiOf(e.args[2]!) : asciiOf(e.args[2]!, e.args[3]!, e.args[4]!);
+      const key = provider ? `p:${name}` : String(e.args[0]!);
+      if (result < 0) out.set(key, { name, result });
+      else out.delete(key);
     } else if (e.kind === LOG_KIND.MOD_NEEDS) {
-      const f = out.get(e.args[0]!);
+      const f = out.get(String(e.args[0]!));
       if (f && f.result === E_IMPORT) f.needs = asciiOf(e.args[1]!, e.args[2]!, e.args[3]!);
     }
   }

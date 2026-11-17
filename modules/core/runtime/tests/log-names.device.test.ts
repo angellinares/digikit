@@ -27,7 +27,7 @@ runtimeTests('the workbench names addresses of the runtime and of a module throu
   await installModules(dk, [
     { id: ID, artifact },
     { id: DEBUG_MODULE, artifact: moduleArtifact(device, DEBUG_MODULE) },
-  ]);
+  ], { device });
 
   const wasm = path.join(path.dirname(new URL(import.meta.url).pathname), '../../../../apps/web/public/dkprof.wasm');
   expect(fs.existsSync(wasm), `${wasm}: run nx run dkprof:wasm`).toBe(true);

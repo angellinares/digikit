@@ -58,16 +58,21 @@ function needsDsp(what: string, dsp: DspMode): Error {
   return new Error(`${what} needs the DSP, but this session runs with dsp:'${dsp}'; pass dsp:'sharc' to this test`);
 }
 
-/** A client whose DSP-only RPCs throw when the session runs without a DSP. */
-function guardDspClient(client: Client, dsp: DspMode): Client {
-  if (dsp === 'sharc') return client;
+/**
+ * A client whose DSP-only RPCs throw when the session runs without a DSP, and which tells `onTapStart` when a
+ * `pcm.tap start` succeeded (the one place that knows whether a case ran a PCM tap).
+ */
+function guardDspClient(client: Client, dsp: DspMode, onTapStart: () => void): Client {
   return new Proxy(client, {
     get(target, prop) {
       const value = Reflect.get(target, prop, target);
       if (prop !== 'call') return typeof value === 'function' ? value.bind(target) : value;
-      return (method: string, ...rest: unknown[]) => {
-        if (DSP_ONLY_RPC.test(method)) return Promise.reject(needsDsp(method, dsp));
-        return (target.call as (...a: unknown[]) => unknown)(method, ...rest);
+      return async (method: string, ...rest: unknown[]) => {
+        if (dsp !== 'sharc' && DSP_ONLY_RPC.test(method)) throw needsDsp(method, dsp);
+        const result = await (target.call as (...a: unknown[]) => Promise<unknown>)(method, ...rest);
+        const params = rest[0] as { action?: string } | undefined;
+        if (method === 'pcm.tap' && params?.action === 'start') onTapStart();
+        return result;
       };
     },
   }) as Client;
@@ -213,6 +218,7 @@ export class Session {
   #card: string | undefined;
   #preparedImage: PreparedRuntimeImage | undefined;
   #guarded: Client | undefined;
+  #pcmTapStarted = false;
   #closing: Promise<void> | undefined;
   #reloading = false;
   #preserveDiagnostics = false;
@@ -230,7 +236,14 @@ export class Session {
   }
 
   get client(): Client {
-    return (this.#guarded ??= guardDspClient(this.#daemon.client, this.dsp));
+    return (this.#guarded ??= guardDspClient(this.#daemon.client, this.dsp, () => {
+      this.#pcmTapStarted = true;
+    }));
+  }
+
+  /** True when a `pcm.tap start` succeeded since the last runtime baseline reload (a reload resets the tap). */
+  get pcmTapStarted(): boolean {
+    return this.#pcmTapStarted;
   }
 
   /** Throws unless the session has a DSP: for helpers that capture or read audio, PCM, spectra or DSP state. */
@@ -409,6 +422,7 @@ export class Session {
     if (!this.options.runtime?.reuse) throw new Error('runtime baseline reload requires runtime.reuse');
     if (this.#closing || this.#reloading) throw new Error('runtime session is closed or already reloading');
     this.#reloading = true;
+    this.#pcmTapStarted = false;
     const reloadStart = performance.now();
     let loadMs = 0;
     let phase = 'validate.card';

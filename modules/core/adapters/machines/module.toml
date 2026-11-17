@@ -47,6 +47,10 @@ region = "cf.expansion"
 # table, never "the k-th selected machine". A number nobody selected is a gap row: a clone of type 0 that the machine
 # list does not show (position 0xffffffff) and nobody can pick; a stored project that names it plays as type 0.
 index_table = "types.toml"
+# A machine is a run-time module: machines.dks (R12-6) acts on its rows, and nothing loads that file for a patched-in row. patchkit refuses an [[entry]] of this registry.
+refuse_entries = "a machine is a run-time module (builder calls in init, packed as a .dkm); machines.dks needs a module that names the service"
+# core/dynreg may still reserve the rows that run-time machines fill.
+refuse_entries_except = ["core/dynreg"]
 
 [registry.gap]
 clone_of = 0
@@ -276,6 +280,19 @@ region = "cf.expansion"
 devices = ["dn2"]
 from = { anchor = "cf.machine.fn.type_reader", len = 48 }
 
+# ---- the service file's half of the image (docs/plans/runtime-and-services.md section 13.2) ------------------------------
+# The table `machines_info` (src/cf/*/machines.s) is what `machines.dks` (modules/core/services/machines/dks) reads of the image through the core (`dkc_info`): the registry's
+# rows and counts, the firmware functions and exits its hooks need, the adapter's native page functions. The pointer slot `frametype` is the interrupt site of the Digitone II's
+# frame builder (an image stub loads it; the service file fills it when it is loaded, and without the file the site is stock).
+
+[[info]]
+name = "machines_info"
+symbol = "machines_info"
+
+[[slot]]
+name = "frametype"
+devices = ["dn2"]
+
 # ---- code -----------------------------------------------------------------------------------------------------------
 
 [[object]]
@@ -293,21 +310,12 @@ _mf_list_stock = "mf_list_stock"
 _mf_t_dispatch = "hook.cf.machine.fn.dispatch.tail"
 _mf_t_list = "hook.cf.machine.fn.list.entry.tail"
 _mf_t_rank = "hook.cf.machine.site.list_rank_insert.tail"
-_mf_t_typearg = "hook.cf.machine.site.param_code.args.tail"
 _mf_x_typearg = "cf.machine.site.param_code.exit"
-_mf_t_clone5 = "hook.cf.machine.site.clone.5.tail"
-_mf_c0 = "cf.machine.site.clone.0"
-_mf_c0a = "cf.machine.site.clone.0.alt"
-_mf_c1 = "cf.machine.site.clone.1"
-_mf_c1a = "cf.machine.site.clone.1.alt"
-_mf_c2 = "cf.machine.site.clone.2"
-_mf_c2a = "cf.machine.site.clone.2.alt"
-_mf_c3 = "cf.machine.site.clone.3"
-_mf_c3a = "cf.machine.site.clone.3.alt"
-_mf_c4 = "cf.machine.site.clone.4"
-_mf_c4a = "cf.machine.site.clone.4.alt"
-_mf_c6 = "cf.machine.site.clone.6"
-_mf_c6a = "cf.machine.site.clone.6.alt"
+_mf_c5 = "cf.machine.site.clone.5"
+_mf_c5a = "cf.machine.site.clone.5.alt"
+_mf_k_keydown = "cf.input.fn.key_down"
+_mf_k_setvalue = "cf.param.fn.set_value"
+_mf_k_viewtrack = "cf.page.fn.view_track"
 _mf_sp = "cf.machine.site.srcpage"
 _mf_spa = "cf.machine.site.srcpage.alt"
 _mf_spt = "cf.machine.fn.current_track_type"
@@ -326,10 +334,11 @@ _mf_rows = "machines.rows"
 _mf_list_stock = "mf_list_stock"
 _mf_t_dispatch = "hook.cf.machine.fn.dispatch.tail"
 _mf_t_list = "hook.cf.machine.fn.list.entry.tail"
-_mf_t_group = "hook.cf.machine.site.group.tail"
-_mf_t_typemap0 = "hook.cf.machine.fn.type_page.count.tail"
-_mf_t_typemap1 = "hook.cf.machine.site.type_page.desc.tail"
-_mf_t_typemap2 = "hook.cf.machine.site.param_code.map.tail"
+_mf_g = "cf.machine.site.group"
+_mf_ga = "cf.machine.site.group.alt"
+_mf_k_keydown = "cf.input.fn.key_down"
+_mf_k_setvalue = "cf.param.fn.set_value"
+_mf_k_viewtrack = "cf.page.fn.view_track"
 _mf_ft = "cf.machine.site.frametype"
 _mf_rd = "cf.machine.site.type_reader.load"
 _mf_ow = "cf.machine.site.owner_type_load"
@@ -433,14 +442,7 @@ value = "0x65"
 width = 1
 devices = ["dt2"]
 
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.group"
-to = "mf_group"
-devices = ["dn2"]
-
 # names: three accessors (long, short, header hint), each bounded by `moveq #last,D1`, each reading a column of the table
-
 [[op]]
 op = "write"
 anchor = "cf.machine.fn.name.long"
@@ -615,68 +617,10 @@ value = "mf_pertype"
 width = 4
 devices = ["dt2"]
 
-# clone tests (Digitakt II): `type == MANUAL SLICE` also holds for an added clone of it
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.0"
-to = "mf_clone0"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.1"
-to = "mf_clone1"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.2"
-to = "mf_clone2"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.3"
-to = "mf_clone3"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.4"
-to = "mf_clone4"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.5"
-to = "mf_clone5"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.6"
-to = "mf_clone6"
-devices = ["dt2"]
-
 # type argument of the parameter mapping (Digitakt II)
 
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.param_code.args"
-to = "mf_typearg"
-devices = ["dt2"]
-
 # SRC page (Digitakt II): an added type has one page (the page vector is cut to it, page 0), see mf_srcpage in src/cf/dt2/machines.s
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.srcpage"
-to = "mf_srcpage"
-devices = ["dt2"]
-
 # DSP (Digitakt II): the selector table moves to mf_selector; the literal that loads its address follows
-
 [[op]]
 op = "write"
 anchor = "dsp.machine.value.selector.table_ref"
@@ -696,39 +640,10 @@ devices = ["dt2"]
 # Digitone II: type maps, frame type, type reader (a hook that drops the load and does it itself), owner test
 
 [[op]]
-op = "hook"
-hook = "cf.machine.hook.type_page.count"
-to = "mf_typemap0"
-devices = ["dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.type_page.desc"
-to = "mf_typemap1"
-devices = ["dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.param_code.map"
-to = "mf_typemap2"
-devices = ["dn2"]
-
-[[op]]
-op = "hook"
+op = "stub"
 hook = "cf.machine.hook.frametype"
-to = "mf_frametype"
-devices = ["dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.type_reader.load"
-to = "mf_reader"
-devices = ["dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.owner_type_load"
-to = "mf_owner"
+slot = "frametype"
+scratch = "a1"
 devices = ["dn2"]
 
 [[op]]
@@ -752,24 +667,3 @@ sources = ["src/cf/native-page-dn2.c"]
 place = "cf.expansion"
 devices = ["dn2"]
 
-[[object]]
-path = "build/native-page-hooks.dko.json"
-sources = ["src/cf/native-page-hooks.s"]
-place = "cf.expansion"
-[object.externs]
-mf_native_draw_next = "hook.cf.page.fn.source_draw.tail"
-mf_native_code_next = "hook.cf.page.fn.source_code.tail"
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.source_draw"
-to = "mf_native_draw_hook"
-[[claim]]
-resource = "cf.page.fn.source_draw"
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.source_code"
-to = "mf_native_code_hook"
-[[claim]]
-resource = "cf.page.fn.source_code"

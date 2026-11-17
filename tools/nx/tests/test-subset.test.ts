@@ -12,7 +12,7 @@ const projects = [
     'core/a',
     ['test-device', 'test-device--x', 'test-device--x--dt2', 'test-device--x--dn2', 'test-device--y--dn2'],
     [
-      { files: ['tests/x.device.test.ts'], tags: ['S:fx', 'C:loading'] },
+      { files: ['tests/x.device.test.ts'], tags: ['S:machines', 'C:loading'] },
       { files: ['tests/y.device.test.ts'], tags: ['C:boot'] },
     ],
   ),
@@ -20,14 +20,14 @@ const projects = [
   project(
     'core/b',
     ['test-device', 'test-device--dt2', 'test-device--dn2'],
-    [{ files: ['b.device.test.ts'], tags: ['S:fx'] }],
+    [{ files: ['b.device.test.ts'], tags: ['S:machines'] }],
   ),
   project('gate-smoke', ['smoke'], []),
   project('gate-pins', ['pins'], []),
 ];
 
 it('resolves tags to the leaf targets of both devices, as a union', () => {
-  const { tests, unknown } = resolveSubset(['S:fx', 'C:boot'], projects);
+  const { tests, unknown } = resolveSubset(['S:machines', 'C:boot'], projects);
   expect(unknown).toEqual([]);
   expect(tests.map((t) => [t.project, t.targets])).toEqual([
     ['core/a', ['test-device--x--dt2', 'test-device--x--dn2']],
@@ -37,7 +37,7 @@ it('resolves tags to the leaf targets of both devices, as a union', () => {
 });
 
 it('reports a tag that no record has', () => {
-  expect(resolveSubset(['S:lfo', 'C:boot'], projects).unknown).toEqual(['S:lfo']);
+  expect(resolveSubset(['S:fx', 'C:boot'], projects).unknown).toEqual(['S:fx']);
 });
 
 it('adds gate-smoke and gate-pins, and runs one call when the cross product is exact', () => {

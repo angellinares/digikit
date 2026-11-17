@@ -1,5 +1,5 @@
 [module]
-id = "core/lfo"
+id = "core/services/lfo"
 version = "0.8.2"
 name = "lfo service"
 category = "core"
@@ -16,7 +16,7 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# Rust, built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack core/lfo`): the file is `lfo.dks`.
+# Rust, built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack core/services/lfo`): the file is `lfo.dks`.
 [[object]]
 path = "build/lfo.dko.json"
 sources = ["Cargo.toml"]

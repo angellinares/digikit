@@ -11,7 +11,7 @@ import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready
 import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 
-/** MODULES (protocol command 3): after a boot with two modules with DSP code (dyn-params and sine, then the debug module) the reply lists them with ranges
+/** MODULES (protocol command 3): after a boot with two modules with DSP code (dyn-dn2 and sine, then the debug module) the reply lists them with ranges
  * inside the arena and the DSP area, the contract bytes and version of the file and the assigned machine types; it pages by start index and is not
  * logged as an UPLOAD event. CAPACITY lists every kind with the device file's limit. */
 async function expectModulesReply(runtime: PatchedSession): Promise<void> {
@@ -19,10 +19,11 @@ async function expectModulesReply(runtime: PatchedSession): Promise<void> {
   await expectRuntimeReady(session);
   const device = session.options.device;
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'modules-capacity'), ['DKRT_STATE']);
-  const ids = ['test/dyn-params', 'test/sine', DEBUG_MODULE]; // the debug module last: it owns no machine
+  const ids = ['test/dyn-dn2', 'test/sine', DEBUG_MODULE]; // the debug module last: it owns no machine
   await installModules(
     dk,
     ids.map((id) => ({ id, artifact: moduleArtifact(device, id) })),
+    { device, session }, // the machines need machines.dks on the card
   );
   const info = await dk.info();
   expect(hasCap(info, 'MODULES') && hasCap(info, 'CAPACITY'), 'INFO sets the MODULES and CAPACITY capabilities').toBe(

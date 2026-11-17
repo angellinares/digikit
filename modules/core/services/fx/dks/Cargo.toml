@@ -1,0 +1,24 @@
+[package]
+name = "dkrt-svc-fx-dks"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The fx service as a service file (.dks): the crate dkrt-svc-fx behind the glue of dkrt-svc-rt, with the nine hooks of the effect pages"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+dkrt-sdk = { path = "../../../runtime/sdk" }
+dkrt-svc-rt = { path = "../../../runtime/svc-rt" }
+dkrt-svc-fx = { path = ".." }
+
+# This crate sits inside the repository's cargo workspace tree but is built on its own (`patchkit build`).
+[workspace]
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
+lto = false
+codegen-units = 1
+debug = false

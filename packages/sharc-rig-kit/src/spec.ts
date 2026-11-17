@@ -8,6 +8,7 @@ import path from 'node:path';
 import { parse } from 'smol-toml';
 import { ROOT } from './rig.ts';
 import { patchkit } from './toolchain.ts';
+import { galleryGaps as rigGalleryGaps, hasGallery } from './gallery-gaps.mjs';
 
 export const DEVICES = ['dt2', 'dn2'] as const;
 export type Device = (typeof DEVICES)[number];
@@ -39,7 +40,6 @@ const NEGATIVE_VARIANTS: Record<string, [string, string, string, string, string]
 for (const [id, v] of Object.entries(NEGATIVE_VARIANTS)) NEGATIVE[id] = v[4];
 
 export const FX_NEGATIVE: Record<string, string> = {
-  'test/fx-nan': 'guard stepped in',
   'test/dyn-fx-nan': 'guard stepped in',
 };
 /** Fixtures of the runtime's fault tests that the suite does not run. */
@@ -105,7 +105,7 @@ export interface FxSpec {
   sources: string[];
   process: string;
   desc: string;
-  /** "": a run-time effect (`DK_FX`), whose state the runtime reserves (the rig does the same) */
+  /** always "": the runtime reserves the state of a run-time effect (the rig does the same) */
   state: string;
   /** (min, max) of the page knob that feeds parameter word i (a run-time effect with a page) */
   knobs: [number, number][];
@@ -259,6 +259,18 @@ function deviceFile(short: string): Toml {
 }
 
 /** The spec of module MID on DEVICE, or null when the module is no machine with a DSP object for that device. */
+/**
+ * Problems of a machine module's `build/gen/gallery.json` for a device, as `device: text` lines. A device of `[targets]` or `ports` of
+ * module.toml (or of an object's `devices`) that a machine of the gallery does not list, or lists with no parameter (unless `[uses.DEVICE] param_rows = 0` declares none), has no knob slots
+ * there: the rig would run it with every parameter word at 0. `module:check` writes the gallery, so the fix is to run it again.
+ */
+export function galleryGaps(mid: string): string[] {
+  const moddir = moduleDir(mid);
+  const man = manifest(moddir);
+  if (!hasGallery(man)) return [];
+  return rigGalleryGaps(man, readGallery(moddir, mid, '`patchkit gen`'), 'build/gen/gallery.json');
+}
+
 export function machineSpec(mid: string, device: Device): MachineSpec | null {
   if (mid.split('/')[0] === 'core') return null; // the framework renders no machine of its own
   const variant = NEGATIVE_VARIANTS[mid];
@@ -323,19 +335,12 @@ function fxRecords(mid: string, man: Toml): { id: string; process: string; desc:
   });
 }
 
-/** The spec of effect module MID, or null when it has no `[[entry]] registry = "fx"` row (patched in) and no `DK_FX` record (run time) with a DSP object. */
+/** The spec of effect module MID, or null when it has no `DK_FX` record (a run-time effect) with a DSP object. */
 export function fxSpec(mid: string): FxSpec | null {
   if (mid.split('/')[0] === 'core') return null;
   const moddir = moduleDir(mid);
   const man = manifest(moddir);
   const sources = () => [...new Set(DEVICES.flatMap((d) => dspSources(man, moddir, d)))];
-  for (const e of man.entry ?? [])
-    if (e.registry === 'fx' && typeof e.pc === 'string') {
-      const s = sources();
-      return s.length
-        ? { module: mid, moddir, sources: s, process: e.pc, desc: e.desc, state: e.state, knobs: [] }
-        : null;
-    }
   for (const fx of fxRecords(mid, man))
     if (typeof fx.process === 'string' && typeof fx.desc === 'string') {
       const s = sources();

@@ -40,12 +40,13 @@ test.each([-1, 0.5, NaN])('invalid numeric sine hint %s does not press a panel k
   expect(client.inputButton).not.toHaveBeenCalled();
 });
 
-test('silent evidence preserves mandatory finite, guard and no-fault checks; default still requires sound', async () => {
+test('silent evidence preserves mandatory finite, guard and no-fault checks; the default does not require sound', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-fx-evidence-'));
   let nonfinite = 0;
   let hits = 0;
   const expectNoFault = vi.fn();
   const session = {
+    pcmTapStarted: true,
     client: {
       guardReport: vi.fn(async () => ({ total: hits, hits: [] })),
       call: vi.fn(async (method: string) =>
@@ -60,7 +61,8 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
   try {
     await expect(evidence(runtime, directory, 'silent', overlays, false)).resolves.toBeUndefined();
     expect(expectNoFault).toHaveBeenCalledWith('silent');
-    await expect(evidence(runtime, directory, 'default', overlays)).rejects.toThrow('input is audible');
+    await expect(evidence(runtime, directory, 'unset', overlays)).resolves.toBeUndefined();
+    await expect(evidence(runtime, directory, 'audible', overlays, true)).rejects.toThrow('input is audible');
     nonfinite = 1;
     await expect(evidence(runtime, directory, 'nonfinite', overlays, false)).rejects.toThrow();
     nonfinite = 0;
@@ -69,6 +71,39 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
     hits = 0;
     expectNoFault.mockRejectedValueOnce(new Error('DSP halt'));
     await expect(evidence(runtime, directory, 'fault', overlays, false)).rejects.toThrow('DSP halt');
+    expect(overlays.at(-1), 'a fault still leaves the overlay').toBe(path.join(directory, 'fault.overlay.bin'));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a case with no tap run gets guard, overlay and fault evidence and no PCM report; after a tap start a failing report fails', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-fx-evidence-'));
+  const expectNoFault = vi.fn();
+  const call = vi.fn(async (method: string) => {
+    if (method === 'pcm.tap') throw new Error('report failed');
+    return { sectors: 0 };
+  });
+  const guardReport = vi.fn(async () => ({ total: 0, hits: [] }));
+  const session = {
+    pcmTapStarted: false,
+    client: { guardReport, call },
+    status: vi.fn(async () => ({ mode: 'paused' })),
+    expectNoFault,
+  } as unknown as Session;
+  const runtime = { session } as PatchedSession;
+  const overlays: string[] = [];
+  try {
+    await expect(evidence(runtime, directory, 'idle', overlays, false)).resolves.toBeUndefined();
+    expect(guardReport).toHaveBeenCalled();
+    expect(call).toHaveBeenCalledWith('card.overlay', expect.anything());
+    expect(call).not.toHaveBeenCalledWith('pcm.tap', expect.anything());
+    expect(expectNoFault).toHaveBeenCalledWith('idle');
+    await expect(evidence(runtime, directory, 'loud', overlays, true)).rejects.toThrow(
+      'the case requires audio but no PCM tap ran',
+    );
+    (session as unknown as { pcmTapStarted: boolean }).pcmTapStarted = true;
+    await expect(evidence(runtime, directory, 'broken', overlays, true)).rejects.toThrow('report failed');
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

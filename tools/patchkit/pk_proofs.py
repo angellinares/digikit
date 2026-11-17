@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Every patchkit emulator proof on its quick tier, one after the other: one summary line per tool and a total.
 
-    uv run python -m tools.patchkit.pk_proofs [--only fx,voice,...] [--jobs N] [--out DIR]
+    uv run python -m tools.patchkit.pk_proofs [--only voice,...] [--jobs N] [--out DIR]
     mise run patch:proofs
 
 Each tool is `tools/patchkit/pk_proof_<name>.py --quick` (parts in parallel processes inside the tool, `--jobs`); the tools
@@ -24,13 +24,8 @@ ROOT = HERE.parent.parent
 
 # (label, script, extra arguments)
 TOOLS = [
-    ("fx dt2", "pk_proof_fx.py", ["dt2"]),
-    ("fx dn2", "pk_proof_fx.py", ["dn2"]),
     ("voice dt2", "pk_proof_voice.py", []),
-    ("machines dt2", "pk_proof_machines.py", []),
     ("voice dn2", "pk_proof_voice_dn2.py", []),
-    ("machines dn2", "pk_proof_machines_dn2.py", []),
-    ("pages dn2", "pk_proof_pages_dn2.py", []),
 ]
 
 

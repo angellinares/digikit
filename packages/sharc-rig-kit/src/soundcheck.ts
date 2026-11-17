@@ -7,7 +7,7 @@
  * wrote only its own memory, the output is finite); the `[[case.check]]` tables add the sound: level, pitch, decay, tones, the comparison
  * with a reference table. A check names its `kind` and may limit itself to `blocks = [first, end)` of the case.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parse } from 'smol-toml';
 import {
@@ -26,6 +26,18 @@ import {
   wordsHash,
 } from './analysis.ts';
 import { signalBlock } from './checks.ts';
+import {
+  classify,
+  fingerprint,
+  fingerprintFile,
+  readFingerprint,
+  readRef,
+  rigKey,
+  writeFingerprint,
+  writeRef,
+  cacheDir,
+} from './fingerprint.ts';
+import { plotPng, writePng, writeWav } from './plot.ts';
 import { REC, RECORDS, f2w, nw } from './context.ts';
 import { PLANE_L, PLANE_R, TOKEN, publish, writePlanes } from './samplepool.ts';
 import { P0, FxRig } from './fx.ts';
@@ -73,6 +85,9 @@ export interface RigCase {
   name: string;
   device?: string[];
   context?: 'friendly' | 'hostile';
+  /** a machine case starts with poisoned (NaN) bss and voice state; `false` zeroes them and needs `poison_reason` */
+  poison?: boolean;
+  poison_reason?: string;
   track?: number;
   /** DT2: also render the odd voice of the pair after each block (a stereo machine's right channel) */
   right?: boolean;
@@ -148,10 +163,23 @@ export interface RunOptions {
 
 const words = (params: Record<string, number>): [string, number][] => Object.entries(params);
 
-async function runMachine(module: string, device: Device, c: RigCase, dir: string, o: RunOptions): Promise<Trace> {
+async function runMachine(
+  module: string,
+  device: Device,
+  c: RigCase,
+  dir: string,
+  o: RunOptions,
+  fillSeed?: number,
+): Promise<Trace> {
   const spec = machineSpec(module, device);
   if (!spec) throw new Error(`${module} is no machine for ${device}`);
-  const rig = await MachineRig.open(spec, { recordStores: true, track: c.track ?? 0, open: o.open });
+  const rig = await MachineRig.open(spec, {
+    recordStores: true,
+    track: c.track ?? 0,
+    poison: c.poison !== false,
+    fillSeed,
+    open: o.open,
+  });
   const trace: Trace = {
     kind: 'machine',
     out: [],
@@ -298,6 +326,8 @@ async function runFx(module: string, c: RigCase, dir: string, o: RunOptions): Pr
   const observe = c.observe === 'master' ? 'master' : 'scratch';
   const desc = rig.descWords(spec.desc);
   trace.desc = desc;
+  // `state_fill`: every word of the declared state starts with this value instead of the rig's poison
+  if (typeof c.state_fill === 'number') rig.fillState(0, c.state_fill, Math.floor(desc[3]! / 4));
   const total = steps.reduce((n, st) => n + (st.blocks ?? 1), 0);
   const rng = new PyRandom(Number(c.seed ?? 0xd1617));
   let faults = 0;
@@ -358,7 +388,7 @@ function signal(t: Trace, c: Check): number[] {
 }
 
 /** The first message of a check that fails, or null. */
-export function evaluate(t: Trace, c: Check, dir: string): string | null {
+export function evaluate(t: Trace, c: Check, dir: string, key?: string): string | null {
   const x = (): number[] => signal(t, c);
   switch (c.kind) {
     case 'rms':
@@ -402,7 +432,10 @@ export function evaluate(t: Trace, c: Check, dir: string): string | null {
     }
     case 'same-as': {
       const h = wordsHash(x());
-      return h === String(c.sha256) ? null : `the words hash is ${h}, the pin is ${String(c.sha256)}`;
+      if (h === String(c.sha256)) return null;
+      const mismatch = `the words hash is ${h}, the pin is ${String(c.sha256)}`;
+      if (!key) return mismatch;
+      return `${mismatch}\n  ${classify(x(), readRef(key), readFingerprint(fingerprintFile(dir, key))).line}`;
     }
     case 'instructions': {
       const b =
@@ -543,6 +576,22 @@ export function evaluate(t: Trace, c: Check, dir: string): string | null {
   }
 }
 
+/** The second fill of a machine case: a seeded integer pattern in all module state, next to the NaN fill of the first run. */
+export const FILL_SEED = 0x5eed1234;
+
+/** The first difference between the runs of two fills, or null: the output does not depend on the initial state. */
+export function stateDependence(a: Trace, b: Trace): string | null {
+  for (const key of ['out', 'right'] as const) {
+    const x = a[key] ?? [];
+    const y = b[key] ?? [];
+    for (let k = 0; k < Math.max(x.length, y.length); k++)
+      for (let i = 0; i < Math.max(x[k]?.length ?? 0, y[k]?.length ?? 0); i++)
+        if (!Object.is(x[k]?.[i], y[k]?.[i]))
+          return `the output depends on the initial state: ${key} block ${k} sample ${i} is ${x[k]?.[i]} with NaN words and ${y[k]?.[i]} with a seeded integer fill`;
+  }
+  return null;
+}
+
 /** Run every case of a file for the devices it names (both when it names none) and check it. */
 export async function runRigFile(module: string, file: string, o: RunOptions = {}): Promise<CheckResult[]> {
   const dir = path.dirname(file);
@@ -554,10 +603,15 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
       const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, device as Device, c, dir, o);
       const at = { case: c.name, device };
       results.push({ ...at, kind: 'implicit rules', ok: t.failure === null, message: t.failure ?? '' });
+      if (!isFx && c.poison !== false) {
+        const other = await runMachine(module, device as Device, c, dir, o, FILL_SEED);
+        const why = stateDependence(t, other);
+        results.push({ ...at, kind: 'initial state', ok: why === null, message: why ?? '' });
+      }
       for (const check of c.check ?? []) {
         let message: string | null;
         try {
-          message = evaluate(t, check, dir);
+          message = evaluate(t, check, dir, rigKey(module, String(device), c.name));
         } catch (e) {
           message = (e as Error).message;
         }
@@ -566,4 +620,87 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
     }
   }
   return results;
+}
+
+/**
+ * Write the pins of a file: run every case that has a `same-as` check and put the words hash of the check's signal into its `sha256` line.
+ * A case with such a check names one device, so the n-th `sha256 = "..."` line of the file belongs to the n-th `same-as` check in file order.
+ * Returns the hashes written, as `case [device] hash`. This is the only writer of a rig reference pin: a changed pin is a re-pin and needs review.
+ */
+export async function pinRigFile(module: string, file: string, o: RunOptions = {}): Promise<string[]> {
+  const dir = path.dirname(file);
+  const hashes: (string | null)[] = [];
+  const lines: string[] = [];
+  const errors: string[] = [];
+  const isFx = fxSpec(module) !== null && !DEVICES.some((d) => machineSpec(module, d));
+  for (const c of loadRigFile(file).case) {
+    const pins = (c.check ?? []).filter((k) => k.kind === 'same-as');
+    if (pins.length === 0) continue;
+    const devices = (c.device ?? [...DEVICES]).filter((d): d is Device => (DEVICES as readonly string[]).includes(d));
+    if (devices.length !== 1) throw new Error(`${c.name}: a case with a same-as check names exactly one device`);
+    try {
+      const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, devices[0]!, c, dir, o);
+      if (t.failure !== null) throw new Error(t.failure);
+      if (!isFx && c.poison !== false) {
+        const why = stateDependence(t, await runMachine(module, devices[0]!, c, dir, o, FILL_SEED));
+        if (why !== null) throw new Error(why);
+      }
+      for (const k of pins) {
+        const x = signal(t, k);
+        const h = wordsHash(x);
+        const key = rigKey(module, devices[0]!, c.name);
+        writeFingerprint(fingerprintFile(dir, key), fingerprint(x));
+        writeRef(key, x);
+        hashes.push(h);
+        lines.push(`${c.name} [${devices[0]}] ${h}`);
+      }
+    } catch (e) {
+      // the case keeps its pin line; the failure is reported after the others are written
+      for (let q = 0; q < pins.length; q++) hashes.push(null);
+      errors.push(`${c.name} [${devices[0]}]: ${(e as Error).message}`);
+    }
+  }
+  let n = 0;
+  const text = readFileSync(file, 'utf8').replace(/^sha256 = "(.*)"$/gm, (line) => {
+    const h = hashes[n++];
+    return h === null || h === undefined ? line : `sha256 = "${h}"`;
+  });
+  if (n !== hashes.length) throw new Error(`${file} has ${n} sha256 lines for ${hashes.length} same-as checks`);
+  writeFileSync(file, text);
+  if (errors.length) throw new Error(`not pinned:\n  ${errors.join('\n  ')}\n(pinned: ${lines.length})`);
+  return lines;
+}
+
+/**
+ * The report of a file: for every case with a `same-as` check, `out/rig/<key>/out.wav`, `ref.wav` (when the cache holds the pinned output) and `plot.png`,
+ * and one verdict line (`classify`). Runs the cases; changes nothing in the repository.
+ */
+export async function reportRigFile(module: string, file: string, o: RunOptions = {}): Promise<string[]> {
+  const dir = path.dirname(file);
+  const lines: string[] = [];
+  const isFx = fxSpec(module) !== null && !DEVICES.some((d) => machineSpec(module, d));
+  for (const c of loadRigFile(file).case) {
+    const pins = (c.check ?? []).filter((k) => k.kind === 'same-as');
+    if (pins.length === 0) continue;
+    const device = (c.device ?? [...DEVICES])[0] as Device;
+    const key = rigKey(module, device, c.name);
+    try {
+      const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, device, c, dir, o);
+      const x = signal(t, pins[0]!);
+      const ref = readRef(key);
+      const same = wordsHash(x) === String(pins[0]!.sha256);
+      const v = classify(x, ref, readFingerprint(fingerprintFile(dir, key)));
+      const out = cacheDir(key);
+      writeWav(path.join(out, 'out.wav'), x);
+      if (ref) writeWav(path.join(out, 'ref.wav'), ref);
+      writePng(
+        path.join(out, 'plot.png'),
+        plotPng(`${module} ${device} ${c.name}`, `${same ? 'PIN MATCHES' : 'PIN DIFFERS'}  ${v.line}`, x, ref),
+      );
+      lines.push(`${key}: ${same ? 'pin matches' : 'PIN DIFFERS'}; ${v.line}\n  ${path.join(out, 'plot.png')}`);
+    } catch (e) {
+      lines.push(`${key}: not run: ${(e as Error).message}`);
+    }
+  }
+  return lines;
 }

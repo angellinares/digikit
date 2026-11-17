@@ -401,7 +401,7 @@ Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-p
 Built: `a1cf1df^:native/patchkit/src/machines.rs` (the generator, removed in a1cf1df; 4 unit tests, `a1cf1df^:native/patchkit/tests/machines.rs` with 6 integration tests on the
 real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (24 ColdFire anchor rules of the new kind
 `cf_func`, one DSP rule), `tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `c4d86e4e:tools/patchkit/pk_machine_rules.py`,
-`tools/patchkit/pk_proof_machines.py`, `tools/emulator/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
+`tools/emulator/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
 and `expect_dsp`; two new matrix cells.
 
 - DT2 1.17 and 1.16 (same proof, same results): XSLICE is selectable (type 7), its SRC page shows the CFADE knob, the type reaches the DSP (TX frame word,
@@ -482,8 +482,8 @@ Emulator only; nothing flashed; one agent.
   before for `core/machines` + `test/xslice` + `test/machine-clone` on 1.16 and 1.17); 31 DN2 anchors by function hash
   (`c4d86e4e:tools/patchkit/pk_machine_rules_dn2.py`, 1.11 and 1.12 resolve). The parameter-page layer needs no table growth for a clone: three
   per-type table functions get the type mapped to `clone_of` on entry, and the type reader (41 callers) returns the clone's
-  original except for the identity code. `test/dn2-clone` (type 5) passes `tools/patchkit/pk_proof_machines_dn2.py` (select, pages,
-  PCM bit-identical to FM TONE, parameters, save/load, load on stock, control, sequencer) and the harness smoke tour.
+  original except for the identity code. `test/dn2-clone` (type 5) passes the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`) and the harness smoke tour (select, pages,
+  PCM bit-identical to FM TONE, parameters, save/load, load on stock, control, sequencer).
   Manifest additions: `own_dsp` (the DSP is told the machine's own type), `devices` on `[[machine]]`; a `register` row may
   name `machines.<id>.type`.
 - **DN2 voice hook**: the Digitone II engine is a stage pipeline over 16 voice slots with a 32-float 48 kHz buffer per slot;
@@ -593,7 +593,7 @@ Content modules use `[[entry]]` only.
       generator path keeps working until 3b.3.
 - [x] 3b.2 Frameworks rewritten as modules against this spec; routines unit-tested on the ColdFire call harness with
       hand-built tables (lane b), then content modules migrated to `[[entry]]`. Done 2026-10-14 (lane `b`); results below.
-- [x] 3b.3 Integration: every proof passes on the module version (pk_proof_machines DT2 1.16/1.17, pk_proof_pluck
+- [x] 3b.3 Integration: every proof passes on the module version (the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`) on DT2, pk_proof_pluck
       DT2 1.16/1.17, DN2 machine and voice proofs, smoke matrix, wasm = CLI); then delete `machines.rs`,
       `machines/dn2.rs`, `params.rs` and the old manifest keys. Done 2026-10-14 (lane b `a1cf1df`, merged): all seven
       proofs PASS, the smoke matrix passes 13 of 13 cells (DT2 1.17 and 1.16, DN2 1.12), verify passes. patchkit

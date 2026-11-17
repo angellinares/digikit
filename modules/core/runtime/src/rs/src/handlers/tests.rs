@@ -107,6 +107,16 @@ impl<const N: u8, C: CoreApi> Service<C> for Fake<N> {
         log().push(Call::Tick { svc: N, phase });
     }
 
+    /// Service 2 lists two effects (rows 7 and 9); service 1 has none (the default).
+    unsafe fn fx_entry(_: &C, index: u32, out: &mut DkrtFx) -> i32 {
+        if N == 2 && index < 2 {
+            out.row = 7 + 2 * index;
+            OK
+        } else {
+            E_NOT_FOUND
+        }
+    }
+
     unsafe fn declare_voice(_: &C, rec: usize, ty: u32, _: [u32; 8], _: u32) -> Option<i32> {
         log().push(Call::DeclareVoice { svc: N, rec, ty });
         if ty == N as u32 {
@@ -383,5 +393,27 @@ mod table {
             assert_eq!(T.cap(3), Some((6, 1)));
             assert_eq!(T.cap(4), None);
         }
+    }
+}
+
+/// The effect list of DIGIKIT > FX ROUTES is the row method of the first service that has effects: the effects of that service in order, "no fx" past its end,
+/// and "no fx" at once when no service in the table has effects (the fx service file is not on the card).
+#[test]
+fn fx_entry_answers_from_the_service_that_has_effects_and_no_fx_without_one() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let mut out: DkrtFx = core::mem::zeroed();
+        assert_eq!(TWO.fx_entry(0, &mut out), OK);
+        assert_eq!(out.row, 7);
+        assert_eq!(TWO.fx_entry(1, &mut out), OK);
+        assert_eq!(out.row, 9);
+        assert_eq!(TWO.fx_entry(2, &mut out), E_NOT_FOUND, "past the end");
+        // a table of services without effects, and an empty table
+        static ONE_ROW: [ServiceRow; 1] = [ServiceRow::of::<Fake<1>, RealCore>("fake1", &KINDS_1)];
+        static ONE_ROW_P: dkrt_abi::service::RowPtrs<1> = dkrt_abi::service::RowPtrs::of(&ONE_ROW);
+        let one = ServiceTable::new(&ONE_ROW_P.0, &REAL_CORE);
+        assert_eq!(one.fx_entry(0, &mut out), E_NOT_FOUND);
+        let none = ServiceTable::new(&[], &REAL_CORE);
+        assert_eq!(none.fx_entry(0, &mut out), E_NOT_FOUND);
     }
 }

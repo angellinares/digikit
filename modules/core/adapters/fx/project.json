@@ -8,12 +8,14 @@
           "tests/fx-routes-panel.device.test.ts",
           "tests/fx-routes-persist.device.test.ts"
         ],
-        "tags": ["A:core/fx", "C:state", "S:fx"],
+        "tags": ["A:core/fx", "C:state"],
         "modules": [
           "test/dyn-fx-gain",
           "test/dyn-fx-gain-send",
           "test/dyn-fx-gain-sendonly",
-          "test/sine"
+          "test/sine",
+          "core/services/fx",
+          "core/services/machines"
         ],
         "aliases": {
           "test/dyn-fx-gain-send-3": "test/dyn-fx-gain-send"
@@ -27,16 +29,16 @@
       },
       {
         "files": ["tests/fx-send.device.test.ts"],
-        "tags": ["A:core/fx", "S:fx"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "tags": ["A:core/fx"],
+        "modules": ["test/dyn-fx-gain", "test/sine", "core/services/fx", "core/services/machines"],
         "sources": ["tools/patchkit/hook_ab.py", "tools/patchkit/pk_digikit_fxsend.py"],
         "plusdrive": true
       },
       {
         "files": ["tests/fx-send-dn2.device.test.ts"],
         "devices": ["dn2"],
-        "tags": ["A:core/fx", "S:fx"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "tags": ["A:core/fx"],
+        "modules": ["test/dyn-fx-gain", "test/sine", "core/services/fx", "core/services/machines"],
         "sources": ["tools/patchkit/hook_ab.py", "tools/patchkit/pk_digikit_fxsend.py"],
         "plusdrive": true
       },

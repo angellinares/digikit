@@ -32,6 +32,8 @@ fn copy_tree(from: &Path, to: &Path) {
                 .unwrap()
                 .replace("__NAME__", "sweep")
                 .replace("__CAMEL__", "Sweep")
+                .replace("__UPPER__", "SWEEP")
+                .replace("__ID__", "core/services/sweep")
                 .replace("__KEBAB__", "sweep");
             fs::write(target, text).unwrap();
         }
@@ -245,6 +247,162 @@ fn the_service_needs_its_row_in_the_manifest_with_a_type_of_its_crate() {
     ));
 }
 
+#[test]
+fn the_service_file_layout_id_and_role_are_checked() {
+    for (gone, what) in [
+        ("dks/module.toml", "dks/module.toml is missing"),
+        ("dks/Cargo.toml", "dks/Cargo.toml is missing"),
+        ("dks/src/lib.rs", "dks/src/lib.rs is missing"),
+    ] {
+        let (dir, sdk) = service("dks-file", &[]);
+        fs::remove_file(dir.join(gone)).unwrap();
+        assert!(
+            mentions(&problems(&dir, &sdk), what),
+            "{gone}: {:?}",
+            problems(&dir, &sdk)
+        );
+    }
+    let (dir, sdk) = service("dks-id", &[]);
+    let m = fs::read_to_string(dir.join("dks/module.toml")).unwrap();
+    fs::write(
+        dir.join("dks/module.toml"),
+        m.replace("core/services/sweep", "core/sweep"),
+    )
+    .unwrap();
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "the layout wants `core/services/sweep`"
+    ));
+    let (dir, sdk) = service("dks-role", &[]);
+    let m = fs::read_to_string(dir.join("dks/module.toml")).unwrap();
+    fs::write(
+        dir.join("dks/module.toml"),
+        m.replace("role = \"service\"", "role = \"tool\""),
+    )
+    .unwrap();
+    assert!(mentions(&problems(&dir, &sdk), "`role` is not \"service\""));
+    // a service whose row has no `rust` is a file: dks/ is required
+    let (dir, sdk) = service("dks-required", &[]);
+    fs::remove_dir_all(dir.join("dks")).unwrap();
+    assert_eq!(
+        problems(&dir, &sdk),
+        Vec::<String>::new(),
+        "a linked-in service has no dks/"
+    );
+    fs::write(&sdk, "[[service]]\nname = \"sweep\"\n").unwrap();
+    assert!(mentions(&problems(&dir, &sdk), "dks/ is missing"));
+}
+
+#[test]
+fn dks_lib_rs_is_the_service_call_alone() {
+    let (dir, sdk) = service("dks-lib", &[]);
+    append(&dir.join("dks/src/lib.rs"), "\nfn helper() {}\n");
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "dks/src/lib.rs is not the `service!(...)` call alone"
+    ));
+    // the extra items go to hooks.rs or fw.rs, which lib.rs declares
+    let (dir, sdk) = service("dks-lib-mod", &[]);
+    append(&dir.join("dks/src/lib.rs"), "\nmod fw;\n");
+    assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
+}
+
+#[test]
+fn service_hooks_equal_the_hook_entries_per_device() {
+    let call = |hooks: &str| {
+        format!(
+            "#![no_std]\nmod hooks;\ndkrt_svc_rt::service!(Sweep, \"sweep\", &KINDS_SWEEP, setup = hooks::setup, hooks = [{hooks}]);\n"
+        )
+    };
+    let entry =
+        |name: &str, dev: &str| format!("\n[[hook]]\nname = \"{name}\"\nentry = \"e\"\n{dev}");
+    // equal: one hook for both devices, one for dn2 only
+    let (dir, sdk) = service("hooks-equal", &[]);
+    fs::write(
+        dir.join("dks/src/lib.rs"),
+        call("(\"cf.a.hook.x\", hooks::x), (\"cf.a.hook.y\", hooks::y, dn2)"),
+    )
+    .unwrap();
+    fs::write(dir.join("dks/src/hooks.rs"), "").unwrap();
+    append(&dir.join("dks/module.toml"), &entry("cf.a.hook.x", ""));
+    append(
+        &dir.join("dks/module.toml"),
+        &entry("cf.a.hook.y", "devices = [\"dn2\"]\n"),
+    );
+    assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
+    // the call has a hook the manifest has not, and the manifest has one the call has not, each for its device
+    fs::write(
+        dir.join("dks/src/lib.rs"),
+        call("(\"cf.a.hook.x\", hooks::x), (\"cf.a.hook.y\", hooks::y, dt2)"),
+    )
+    .unwrap();
+    let found = problems(&dir, &sdk);
+    assert!(
+        mentions(&found, "service! takes the hook `cf.a.hook.y` on dt2"),
+        "{found:?}"
+    );
+    assert!(
+        mentions(
+            &found,
+            "[[hook]] `cf.a.hook.y` on dn2 is not in the service! hook list"
+        ),
+        "{found:?}"
+    );
+    // [[hook]] entries need hooks.rs
+    fs::remove_file(dir.join("dks/src/hooks.rs")).unwrap();
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "dks/src/hooks.rs is missing"
+    ));
+}
+
+#[test]
+fn assembler_and_firmware_names_stay_in_their_place() {
+    // assembler: only dks/src/hooks.rs; the neutral crate has none
+    let (dir, sdk) = service("asm", &[]);
+    fs::write(
+        dir.join("dks/src/hooks.rs"),
+        "core::arch::global_asm!(\".text\");\n",
+    )
+    .unwrap();
+    append(&dir.join("dks/src/lib.rs"), "\nmod hooks;\n");
+    assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
+    fs::write(dir.join("dks/src/fw.rs"), "core::arch::asm!(\"nop\");\n").unwrap();
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "dks/src/fw.rs: assembler is only in dks/src/hooks.rs"
+    ));
+    let (dir, sdk) = service("asm-neutral", &[]);
+    append(
+        &dir.join("src/slots.rs"),
+        "pub fn f() { unsafe { core::arch::asm!(\"nop\") } }\n",
+    );
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "src/slots.rs: assembler is only in dks/src/hooks.rs"
+    ));
+    // firmware names: allowed under dks/, refused in the neutral crate
+    let (dir, sdk) = service("fw-names", &[]);
+    append(&dir.join("dks/src/lib.rs"), "\nmod fw;\n");
+    fs::write(
+        dir.join("dks/src/fw.rs"),
+        "use dkfw::page;\nconst H: &str = \"cf.page.hook.x\";\n",
+    )
+    .unwrap();
+    assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
+    append(
+        &dir.join("src/slots.rs"),
+        "pub const A: &str = \"cf.page.fn.draw\";\n",
+    );
+    append(&dir.join("src/records.rs"), "use dkfw::page;\n");
+    let found = problems(&dir, &sdk);
+    assert!(
+        mentions(&found, "names firmware (`\"cf.page.fn.draw\"`)"),
+        "{found:?}"
+    );
+    assert!(mentions(&found, "names firmware (`dkfw`)"), "{found:?}");
+}
+
 /// The four service crates of the runtime follow the layout today.
 #[test]
 fn the_service_crates_of_the_repository_pass() {
@@ -253,4 +411,132 @@ fn the_service_crates_of_the_repository_pass() {
         let dir = repo().join("modules/core/services").join(name);
         assert_eq!(problems(&dir, &sdk), Vec::<String>::new(), "{name}");
     }
+}
+
+#[test]
+fn a_fill_names_the_devices_of_the_adapter_slot_it_fills() {
+    use patchkit::svccheck::check_with_adapters;
+    let adapters_with = |test: &str, devices: &str| {
+        let (dir, sdk) = service(test, &[]);
+        let adapters = dir.parent().unwrap().join("adapters/machines");
+        fs::create_dir_all(&adapters).unwrap();
+        fs::write(
+            adapters.join("module.toml"),
+            format!("[[slot]]\nname = \"frametype\"\n{devices}\n"),
+        )
+        .unwrap();
+        (dir, sdk, adapters.parent().unwrap().to_path_buf())
+    };
+    let fill =
+        |devices: &str| format!("\n[[fill]]\nslot = \"frametype\"\nentry = \"e\"\n{devices}");
+    // a slot on dn2 only: a fill for dn2 agrees
+    let (dir, sdk, adapters) = adapters_with("fill-ok", "devices = [\"dn2\"]");
+    append(&dir.join("dks/module.toml"), &fill("devices = [\"dn2\"]\n"));
+    assert_eq!(
+        check_with_adapters(&dir, &sdk, &adapters).unwrap(),
+        Vec::<String>::new()
+    );
+    // a fill with no devices would fill a slot that dt2 does not have
+    let (dir, sdk, adapters) = adapters_with("fill-all", "devices = [\"dn2\"]");
+    append(&dir.join("dks/module.toml"), &fill(""));
+    let found = check_with_adapters(&dir, &sdk, &adapters).unwrap();
+    assert!(
+        mentions(&found, "[[fill]] `frametype` has no `devices`"),
+        "{found:?}"
+    );
+    // a device the slot lacks
+    let (dir, sdk, adapters) = adapters_with("fill-extra", "devices = [\"dn2\"]");
+    append(
+        &dir.join("dks/module.toml"),
+        &fill("devices = [\"dn2\", \"dt2\"]\n"),
+    );
+    let found = check_with_adapters(&dir, &sdk, &adapters).unwrap();
+    assert!(
+        mentions(
+            &found,
+            "is for dt2, but the image adapter has the slot only on dn2"
+        ),
+        "{found:?}"
+    );
+    // a slot on every device takes a fill without devices
+    let (dir, sdk, adapters) = adapters_with("fill-slot-all", "");
+    append(&dir.join("dks/module.toml"), &fill(""));
+    assert_eq!(
+        check_with_adapters(&dir, &sdk, &adapters).unwrap(),
+        Vec::<String>::new()
+    );
+    // a fill that names no slot of any adapter is a typo
+    let (dir, sdk, adapters) = adapters_with("fill-typo", "devices = [\"dn2\"]");
+    append(
+        &dir.join("dks/module.toml"),
+        "\n[[fill]]\nslot = \"frametpye\"\nentry = \"e\"\ndevices = [\"dn2\"]\n",
+    );
+    let found = check_with_adapters(&dir, &sdk, &adapters).unwrap();
+    assert!(
+        mentions(
+            &found,
+            "`frametpye` names a slot that no image adapter declares"
+        ),
+        "{found:?}"
+    );
+}
+
+/// The service with two adapter folders, each declaring `[[slot]] frametype` with the given `devices` lines.
+fn two_adapters(test: &str, first: &str, second: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let (dir, sdk) = service(test, &[]);
+    let adapters = dir.parent().unwrap().join("adapters");
+    for (folder, devices) in [("machines", first), ("other", second)] {
+        fs::create_dir_all(adapters.join(folder)).unwrap();
+        fs::write(
+            adapters.join(folder).join("module.toml"),
+            format!("[[slot]]\nname = \"frametype\"\n{devices}\n"),
+        )
+        .unwrap();
+    }
+    (dir, sdk, adapters)
+}
+
+#[test]
+fn a_slot_declared_twice_for_a_common_device_fails_and_on_disjoint_devices_passes() {
+    use patchkit::svccheck::check_with_adapters;
+    let twice = "the slot `frametype` is declared twice";
+    let (dir, sdk, adapters) = two_adapters(
+        "slot-twice",
+        "devices = [\"dn2\"]",
+        "devices = [\"dn2\", \"dt2\"]",
+    );
+    let found = check_with_adapters(&dir, &sdk, &adapters).unwrap();
+    assert!(mentions(&found, twice), "{found:?}");
+    // a slot with no `devices` is on every device, so any second declaration overlaps
+    let (dir, sdk, adapters) = two_adapters("slot-twice-all", "", "devices = [\"dt2\"]");
+    let found = check_with_adapters(&dir, &sdk, &adapters).unwrap();
+    assert!(mentions(&found, twice), "{found:?}");
+    // one slot per device is not a duplicate, and a fill for either device agrees
+    let (dir, sdk, adapters) = two_adapters(
+        "slot-disjoint",
+        "devices = [\"dn2\"]",
+        "devices = [\"dt2\"]",
+    );
+    append(
+        &dir.join("dks/module.toml"),
+        "\n[[fill]]\nslot = \"frametype\"\nentry = \"e\"\ndevices = [\"dn2\", \"dt2\"]\n",
+    );
+    assert_eq!(
+        check_with_adapters(&dir, &sdk, &adapters).unwrap(),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_fill_without_the_adapters_folder_is_an_error() {
+    use patchkit::svccheck::check_with_adapters;
+    let (dir, sdk) = service("no-adapters", &[]);
+    append(
+        &dir.join("dks/module.toml"),
+        "\n[[fill]]\nslot = \"frametype\"\nentry = \"e\"\n",
+    );
+    let missing = dir.parent().unwrap().join("no-such-adapters");
+    let found = check_with_adapters(&dir, &sdk, &missing).unwrap();
+    assert!(mentions(&found, "the adapters folder"), "{found:?}");
+    assert!(mentions(&found, "is missing"), "{found:?}");
 }

@@ -863,3 +863,75 @@ pub unsafe extern "C" fn endian_write(value: u32, p: *mut u32) {
         }
     }
 }
+
+/// The service objects and the runtime object are built from crates that share `dkrt-abi`: a change of a boundary file (`SVC_ABI_FILES`, the input of `SVC_ABI`) must
+/// make `patchkit build` rebuild them, or the loader refuses every service file with E_SVC_ABI. The source hash covers the sources of the path dependencies.
+#[test]
+fn the_source_hash_of_a_crate_covers_the_sources_of_its_path_dependencies() {
+    let d = build_dir("pathdep");
+    let write = |rel: &str, text: &str| {
+        std::fs::create_dir_all(d.join(rel).parent().unwrap()).unwrap();
+        std::fs::write(d.join(rel), text).unwrap();
+    };
+    write(
+        "svc/Cargo.toml",
+        "[package]\nname = \"svc\"\nversion = \"0.1.0\"\n\n[dependencies]\nabi = { path = \"../abi\" }\n",
+    );
+    write("svc/src/lib.rs", "pub fn f() {}\n");
+    write(
+        "abi/Cargo.toml",
+        "[package]\nname = \"abi\"\nversion = \"0.1.0\"\n",
+    );
+    write("abi/src/service.rs", "pub const A: u32 = 1;\n");
+    write("abi/src/gen_svc_abi.rs", "pub const FILES_HASH: u32 = 1;\n");
+    let manifest = d.join("svc/Cargo.toml");
+    let before = rust::source_sha256(&manifest).unwrap();
+    for file in ["abi/src/service.rs", "abi/src/gen_svc_abi.rs"] {
+        let old = std::fs::read_to_string(d.join(file)).unwrap();
+        write(file, &old.replace('1', "2"));
+        assert_ne!(rust::source_sha256(&manifest).unwrap(), before, "{file}");
+        write(file, &old);
+        assert_eq!(rust::source_sha256(&manifest).unwrap(), before);
+    }
+}
+
+/// The real crates: every boundary file of `dkrt-abi` is among the files that the source hash of each service object and of the runtime object reads, and the
+/// committed objects of the services are current with them.
+#[test]
+fn every_service_and_the_runtime_object_is_built_from_the_abi_boundary_files() {
+    let r = root();
+    let manifests = [
+        "modules/core/services/fx/dks/Cargo.toml",
+        "modules/core/services/machines/dks/Cargo.toml",
+        "modules/core/services/lfo/dks/Cargo.toml",
+        "modules/core/runtime/src/rs/Cargo.toml",
+    ];
+    for m in manifests {
+        let files: Vec<PathBuf> = rust::crate_files(&r.join(m))
+            .unwrap()
+            .into_iter()
+            .map(|p| std::fs::canonicalize(&p).unwrap())
+            .collect();
+        for f in patchkit::sdkgen::SVC_ABI_FILES {
+            let f = std::fs::canonicalize(r.join(f)).unwrap();
+            assert!(
+                files.contains(&f),
+                "{m}: the source hash does not read {}",
+                f.display()
+            );
+        }
+    }
+    // (the runtime module also has assembly objects, whose hash needs the toolchain: `objects-check` covers them)
+    for dir in [
+        "modules/core/services/fx/dks",
+        "modules/core/services/machines/dks",
+        "modules/core/services/lfo/dks",
+    ] {
+        for (object, current) in build::module_status(&r, &r.join(dir)).unwrap() {
+            assert!(
+                current,
+                "{dir}/{object} is older than its sources: patchkit build {dir}"
+            );
+        }
+    }
+}

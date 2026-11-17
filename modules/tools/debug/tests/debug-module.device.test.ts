@@ -30,7 +30,7 @@ async function expectWithoutDebugModule(runtime: PatchedSession): Promise<void> 
   const ring = await readSmallRing(session, plan);
   const kinds = ring.map((e) => e.kind);
   expect(kinds, 'the boot events are in the small ring').toEqual(
-    expect.arrayContaining([LOG_KIND.BOOT_START, LOG_KIND.UI_FIRST]),
+    expect.arrayContaining([LOG_KIND.BOOT_START, LOG_KIND.UI_FIRST, LOG_KIND.FW_READY]),
   );
   expect(ring.length, 'the ring holds at most 32 events').toBeLessThanOrEqual(32);
   // only error events and boot events are kept: no periodic HEALTH, DSP_DIAG or MOD_LOG
@@ -58,6 +58,7 @@ async function expectWithDebugModule(runtime: PatchedSession): Promise<void> {
   expect(first(LOG_KIND.BOOT_START), 'the boot events were handed over').toBeDefined();
   expect(log.filter((e) => e.kind === LOG_KIND.MOD_LOAD)).toHaveLength(2);
   expect(first(LOG_KIND.BOOT_START)!.seq, 'in order').toBeLessThan(first(LOG_KIND.UI_FIRST)!.seq);
+  expect(first(LOG_KIND.FW_READY)!.seq, 'FW_READY is logged with the first UI pass').toBeGreaterThan(first(LOG_KIND.UI_FIRST)!.seq);
   const seqs = log.map((e) => e.seq);
   expect(seqs, 'sequence numbers count up by one').toEqual(seqs.map((_, i) => seqs[0]! + i));
 
@@ -215,6 +216,7 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
   await installModules(
     dk,
     ['digikit/remote', DEBUG_MODULE].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
+    { device },
   );
   expect((await dk.modules()).map((m) => m.name)).toEqual(['digikit/remote', 'digikit/debug']);
   await expectPollEmulated(session, async () => (await dk.readLog()).some((e) => e.kind === LOG_KIND.UI_FIRST), (value) => expect(value).toBe(true), { emulatedMs: 60000, intervalMs: 1000 });

@@ -2,7 +2,7 @@ import { defineEquiv, DT2_TRIG, type Equiv } from '@digi/regression/runtime/equi
 
 const SCENARIOS: Equiv[] = [
   {
-    // no PCM pin: the rows equal a boot of no module and the note of test/sine is audible
+    // the one exact full-firmware audio check of the DT2 run-time machine path (onset, level, mixer): onset 194, 24000 samples (DT2 1.17, note 60, 261.67 Hz, crest 1.420, harmonics -119 dB, L = R)
     name: 'equiv-dt2-sine',
     device: 'dt2',
     modules: ['test/sine'],
@@ -10,6 +10,7 @@ const SCENARIOS: Equiv[] = [
     trigFrame: DT2_TRIG,
     voices: 1,
     ignoreRunMachines: ['Sine'],
+    pcmSha256: '891847714d9349092255cb462ece20792246a56fbf31f2bcd281aa90217da517',
   },
   {
     name: 'equiv-dn2-set',

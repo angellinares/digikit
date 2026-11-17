@@ -84,6 +84,9 @@ pub struct Loader<P: Platform, M: Images, R: Registry> {
     /// The name of the missing module of the last load that failed with E_IMPORT (`import_needs`), NUL padded; empty when none. The boot clears it before
     /// each load and takes it after.
     missing: [u8; NEEDS_LEN],
+    /// The first item that `init`'s declarations and the header table do not both hold, of the last load that failed with E_DECL_KIND: (tag of the item, its first
+    /// word), and 0x100 added to the tag when only the header has it. `(0, 0)`: none (`report_provider` logs it).
+    decl_diff: (u32, u32),
     /// The header table of the module at each selection index, kept while `assign::plan` reads each file once (`capture`); `table_len` 0: none (the file
     /// is missing, torn, of the old format or has a larger table).
     tables: [[u8; TABLE_MAX]; SEL_MAX],
@@ -204,6 +207,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             phase: Phase::Closed,
             roles: [0; records::REC_MAX],
             missing: [0; NEEDS_LEN],
+            decl_diff: (0, 0),
             tables: [[0; TABLE_MAX]; SEL_MAX],
             table_len: [0; SEL_MAX],
             planned_dsp: (0, 0),
@@ -573,7 +577,8 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         let owner = rec as u8 + 1;
         let base = records::module(rec).base;
         // the declarations of a service module against its header table (declare-check-commit)
-        if !col::decl_matches(c, keys, base) {
+        if let Some(d) = col::decl_diff(c, keys, base) {
+            self.decl_diff = d;
             return E_DECL_KIND;
         }
         // a service file declares its row in `init` (`dk_service_declare_row`); a module declares none. `fail` takes whatever was added down again
@@ -841,6 +846,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             let j = planned.provider_order[pos] as usize;
             pos += 1;
             self.missing = [0; NEEDS_LEN];
+            self.decl_diff = (0, 0);
             let res = match planned.provider_verdicts[j] {
                 dkrt_abi::plan::Verdict::Refused(why) => why.code(),
                 dkrt_abi::plan::Verdict::Accepted => {
@@ -853,7 +859,9 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             };
             self.loaded[j] = res == OK;
             let base = if res == OK { records::module(MAX_MODULES + j).base } else { 0 };
-            crate::boot::report_provider(self.found.path(j), res, hashes[j], base);
+            // a refusal of the declare-check names the item that differs, in the words of the base (the tag) and the service hash (the item's first word)
+            let (hash, base) = if res == E_DECL_KIND && self.decl_diff.0 != 0 { (self.decl_diff.1, self.decl_diff.0) } else { (hashes[j], base) };
+            crate::boot::report_provider(self.found.path(j), res, hash, base);
         }
         crate::selection::BOOT_IDX = u32::MAX;
         self.phase = Phase::Closed;

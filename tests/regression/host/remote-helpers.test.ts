@@ -42,7 +42,7 @@ import {
   type RuntimePlan,
 } from '../runtime/runtime-plan.ts';
 import { fakeClock } from './fake-status.ts';
-import { readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
+import { readAboutRows, expectRuntimeAbout, providerFailureLine } from '../runtime/runtime-menu.ts';
 import { openRuntimeAbout } from '../runtime/flows/menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
@@ -125,10 +125,17 @@ function fakeDk() {
   return { calls, dk, runtime: { session: daemon, dk } as unknown as PatchedSession };
 }
 
-/** Every read returns `text`, except dist/bytes/images.sha256, which covers the DT2 1.17 emulator set (runtime-plan.ts assertCovered). */
+/**
+ * Every read returns `text`, except dist/bytes/images.sha256, which covers the DT2 1.17 emulator set (runtime-plan.ts assertCovered), and a packed `.dkm`, a stand-in
+ * with no header table (it needs no service).
+ */
 const readFiles = (text: string) =>
   fake.read.mockImplementation((file: string) =>
-    String(file).endsWith('images.sha256') ? 'dt2-1.17 emulator image x plan y addrmap z\n' : text,
+    String(file).endsWith('images.sha256')
+      ? 'dt2-1.17 emulator image x plan y addrmap z\n'
+      : String(file).endsWith('.dkm')
+        ? Buffer.alloc(16)
+        : text,
   );
 
 beforeEach(() => {
@@ -360,7 +367,8 @@ test('negative setup installs natively on its own device-set daemon without patc
   } as PatchedSession;
   await installRemote(negative);
   expect(fake.exec).not.toHaveBeenCalled();
-  expect(fake.read).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/dt2\/remote\.dkm$/));
+  // the module is read to upload it and to find the services it needs
+  expect(fake.read).toHaveBeenCalledWith(expect.stringMatching(/dt2\/remote\.dkm$/));
   expect(calls).toEqual(['put', 'verifyFile', 'select', 'restart', 'waitForBoot', 'modules']);
   expect(dk.put.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
   expect(dk.verifyFile.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
@@ -592,4 +600,14 @@ test('an emulated probe ends after its emulated bound, however slow the wall clo
   // a probe that answers (wall-slow, emulated-fast) is not cut: the bound is emulated time, not the reply's wall time
   const slow = await withEmulatedProbe(session, async () => 'answer', 60_000);
   expect(slow).toBe('answer');
+});
+
+test('a provider refused by the declare-check names the item that differs', () => {
+  const mach = 0x6d616368;
+  const index = 0xffff_fffe;
+  const e = (res: number, hash: number, base: number) => providerFailureLine([index, res >>> 0, mach, hash, base]);
+  expect(e(-79, 0x946ae751, 7 | 0x100)).toBe('provider mach res -79 E_DECL_KIND (EXPORTS 946ae751 not declared)');
+  expect(e(-79, 0x00000006, 4)).toBe('provider mach res -79 E_DECL_KIND (KINDS 00000006 not in the header)');
+  expect(e(-79, 0x12345678, 0)).toBe('provider mach res -79 E_DECL_KIND');
+  expect(e(-7, 0x12345678, 0)).toBe('provider mach res -7 E_IMPORT');
 });

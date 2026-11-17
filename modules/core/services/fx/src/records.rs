@@ -73,6 +73,10 @@ impl<C: CoreApi> Service<C> for Fx {
         }
     }
 
+    unsafe fn fx_entry(core: &C, index: u32, out: &mut DkrtFx) -> i32 {
+        fxsend::fx_entry(core, index, out)
+    }
+
     unsafe fn cap(core: &C, kind: u8) -> Option<(u32, u32)> {
         use dkrt_sdk::proto::*;
         if kind == CAPK_FX_SLOTS {

@@ -32,6 +32,7 @@ Principle: every item leaves its test area in pyramid shape. Host tests per laye
 | --- | --- | --- | --- |
 | Host unit tests per layer | Logic of one layer (packing, manifests, routing, tables) against fakes | Rust and TS, no emulator | Every change that reaches the layer |
 | Contract tests per interface | Same suite on the fake and the real implementation | Fake: host. Real: emulator, once per device | Fake: with the layer. Real: when the interface or its implementation changes |
+| Assembly tests | The seams between separately built real artifacts: the packed fixtures, the service files, the bound files, the runtime object and the info table of the image, through the plan, role checks and installs of the boot | Rust on the host (`FakePlatform`), no emulator, no ColdFire code | Before every device test: `test-device` depends on `core/runtime:test-assembly` |
 | Device smoke per service | Boot, load, play, edit for one service. Checks the firmware handles it (menus, parameters, save and load, upload, memory audit) | ColdFire emulator; DSP only when the test needs audio | When the service or a layer below it changes |
 | Module DSP tests | Is the machine or FX right, and does it sound right? Pitch, decay, RMS, DC, parameter response, pinned PCM hash | The module routine alone, through its contract, on the native SHARC engine | When the module or its DSP code changes |
 | Coupled device tests | Does it sound right inside the device (stock filter, envelope, FX, master, hook glue)? One per module type per device | Both CPUs | When the module, the hook glue or a layer below changes |
@@ -164,7 +165,7 @@ Runs alongside R12.
 
 **Step 2, four test-only lanes.**
 
-1. FX contract suite; freqshift drops its adapter legs (about 40 min per full tier).
+1. FX contract suite; freqshift drops its adapter legs (about 40 min per full tier). Written, not yet run: `core/dynfx` `fx-contract` (replaces `fx-chain` and `fx-reuse`), `core/fxpages` `fx-bipolar` on the new fixture `test/dyn-fx-gain-bipolar` (replaces the adapter legs of freqshift), and the `FX_SERVICE_IN_IMAGE` switch for the R12-5 case without an fx service. Old files go after the new ones pass on both devices and a review signs the ledger [ledgers/t2-fx-contract.md](ledgers/t2-fx-contract.md).
 2. Machine equiv moves to rig sound checks (about 7 min). The rig references are new pins, reviewed once. Then the analog, bd, pd and pluck PCM pins go. The dynreg DN2 pin stays.
 3. usb-fast mode matrix cut (about 5 min). The upload case stays on DN2 only.
 4. Card-safety, settings and safe-mode duplicates move to host tests (about 2 min).
@@ -221,14 +222,14 @@ export class RuntimeEvents {
   // typed waits over existing kinds (fields by name via runtimeEvent/fieldsOf):
   untilBoot(); untilUiFirst(opts?: { loaded?: number }); untilModLoad(name: string); untilModDsp(index: number);
   untilSafe(); untilSettingsWrite(); untilInputTaken(control: number, delta?: number);
-  untilFwReady();   // after gate BC
+  untilFwReady();   // FW_READY (kind 47); proof with gate BC
 }
 ```
 
 - `waitForBoot` keeps its signature (dktransfer uses it) and runs on `LogCursor`: no full-log read per round. The refused-restart check of `restarted()` stays.
 - `LogFollower` (desktop) moves to `LogCursor` in phase 4. Its "N events lost" note comes from `lost`.
 
-**FW_READY.** The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `untilFwReady()` waits for it. Its proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro. Until FW_READY exists, the dk-session probe after `restart()` (`waitRpcService`) stays as the fallback; `untilFwReady()` then replaces it.
+**FW_READY.** The runtime logs one record (`FW_READY`, kind 47, info level, kept in the small ring) on the first pass of the firmware UI loop after a boot (`safe_mode::ui_pass`, next to `UI_FIRST`; the UI loop starts only after the boot intro), when the stock MidiRpc service answers. `untilFwReady()` waits for it, and `installModules` with the debug module in the list ends its boot wait on it. Its proof rides with gate BC. Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro. Until FW_READY exists, the dk-session probe after `restart()` (`waitRpcService`) stays as the fallback; `untilFwReady()` then replaces it.
 
 **Layer 2, `@digi/test-support` (emulator-specific; no dk-session import).** New `src/emulated-clock.ts`: `freeClock(session)` (`now` = `status.elapsed`/132000; `pause` = real delay, throws when the clock and restart progress stand still for `hangMs`) and `steppedClock(session)` (`pause(ms)` = `client.step(ms*MS)` with progress). Both implement the `Clock` shape structurally. Moves here: `emulatedWatch`, `withEmulatedProbe`, `pollEmulated` (as `pollUntil(clock, read, done, opts)`), `restartProgress` use.
 
@@ -311,6 +312,28 @@ Deleted at the end: `waits.ts tap`, `fx-session.ts tap/advance` (stepped clock),
 - Correctness: removes wall-clock deciders and the boot-intro race path. High confidence.
 - Speed: menu flows and fixed settles. The new wait records measure the real gain per file. Expected low single-digit percent of device wall. The large levers (cold reloads about 42%, install restarts about 17%) are separate work.
 - Estimate: phase 0 2 h; phase 1 half a day in parallel; phase 2 half a day; phase 3 one day in parallel; phase 4 2 h.
+
+**Step 4, assembly tests (host).**
+
+Why: in one night every device round failed on wiring, and each cost an emulator window. The planner needed a service without loading its provider (`E_PLAN_KIND`), capacity limits came only from a service that was not loaded yet (`E_PLAN_FIT`), the committed service objects carried an old ABI fingerprint (`E_SVC_ABI` for every file), and the harness lacked a service file. The unit tests passed because their fakes encoded the old assumptions (a service table with a machines row).
+
+Three layers, each owns one thing:
+
+| Layer | Owns | Size |
+| --- | --- | --- |
+| Unit tests per component | Logic and edge cases of the component, against fakes | Many; unchanged |
+| Assembly tests | The seams between separately built real artifacts: per seam one case that fits and one typical refusal. No repeat of unit edge cases | Few; seconds |
+| Device tests | What only firmware or hardware shows (fixture suites) | As before |
+
+An assembly case that starts to test logic belongs in a unit test. An assertion sits at the lowest layer that can see it.
+
+What exists: `modules/core/runtime/src/rs/src/loader/tests/assembly_tests.rs`, run by the Nx target `core/runtime:test-assembly` (cached; its inputs are the runtime sources and exactly the files it reads). It reads the real outputs: `dist/modules/<device>/*.dkm|dks` (sine, dyn-dn2, dyn-fx-gain, lfo-shape, svc-test, svc-test-user and the services fx, machines, lfo), `dist/svc-bound/<device>/` for the services with hooks, `runtime.dko.json` (the ABI immediate of `abi_ok`) and `dist/bytes/images/<device>/set-<set>.info` (the info table of the patched image, written by `patchkit:device-images` from the plan of `patchkit apply`). It builds a `FakePlatform` card and runs the boot code: provider search, `plan_with` (needs, kind owners, capacity from the `cap_<kind>` entries), the role checks of a provider (ABI word, stock bytes of every hook site), the installs over `FakePlatform` and the load of a module without a DSP section. The cases per device are: each fixture loads with its provider; all services of the card load together on both images; a capacity limit under the uses refuses with the resource; a missing provider refuses with its hash; a changed ABI word is `E_SVC_ABI` and a site that is not stock is `E_HOOK_STOCK`, both before anything is written; the committed service objects and packed files carry the ABI word of the runtime object. A device without its firmware image is skipped.
+
+Not covered on the host: ColdFire code (the `init` of a service replays what its header table declares) and the DSP part of a module.
+
+The rule: every `test-device` and conformance target `dependsOn` `core/runtime:test-assembly`, so no device run starts while it fails.
+
+Also: `patchkit build` rebuilds a service object when a boundary file of `dkrt-abi` (`SVC_ABI_FILES`) changes, because the source hash covers the sources of path dependencies; `packages/patchkit/tests/build.rs` keeps that true.
 
 ## Order
 

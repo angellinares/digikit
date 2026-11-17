@@ -10,7 +10,7 @@ const rec = (files: string[], tags?: unknown) => ({ files, ...(tags === undefine
 
 it('accepts tagged records that cover every device test', () => {
   const recs = [
-    rec(['a.device.test.ts'], ['S:fx', 'A:core/fx']),
+    rec(['a.device.test.ts'], ['S:lfo', 'A:core/fx']),
     rec(['b.device.test.ts'], ['M:digikit/debug', 'C:layout']),
   ];
   expect(() => checkAcceptanceTags('p', recs, ['a.device.test.ts', 'b.device.test.ts'], modules)).not.toThrow();

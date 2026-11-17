@@ -1,4 +1,4 @@
-/* __ID__: a service module (docs/plans/sdk.md section 5).
+/* __ID__: a tool module, a run-time module without machines or effects (docs/plans/sdk.md section 5; service files are in sdk/templates/service).
  *
  * `init` runs when the runtime loads the module; `fini` when it unloads it. `dk_module` is the module's one entry point: the packer finds it by its symbol.
  *
@@ -24,4 +24,10 @@ static void fini(dk_module_ctx *ctx)
     (void)ctx;
 }
 
-const dk_module_def dk_module = {.init = init, .fini = fini};
+/* Once per pass of the UI task, after `init` succeeded: keep it short, never block. */
+static void tick(dk_module_ctx *ctx)
+{
+    (void)ctx;
+}
+
+const dk_module_def dk_module = {.init = init, .fini = fini, .tick = tick};

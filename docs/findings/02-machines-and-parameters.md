@@ -1014,13 +1014,13 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
 Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/adapters/machines`,
-`tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `c4d86e4e:tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
+`tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `c4d86e4e:tools/patchkit/pk_machine_rules.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
 `lea 0x1c(A0)` on DT2; `pea 0x14` on DN2 at `0x4004d8e0`), `FUN_400da23e` (typearg), the vector-191 type store, the 7th
 clone site (`0x4002ec18`), the DN2 site bytes and the **[C]** about the rank shim; run-time results stay **[D]**.
-Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof run
-(`tools/patchkit/pk_proof_machines.py --fw 1.16`, 34 checks) and the harness cell with the smoke tour.
+Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof
+(the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`)) and the harness cell with the smoke tour.
 
 ### What the framework does
 
@@ -1037,7 +1037,7 @@ generates, from the image being patched and from nothing stored in the repo:
 | group, rank | bound raised to `6 + N`; the sort comparator's `std::map` initialiser gets `(type, position)` pairs for the longer list | `group`, `rank` |
 | name, hint | the 12-byte display-name table copied with one row per type (long, short, hint = the clone's); three accessors repointed and their bound raised | `name.0..2` |
 | permit, pertype | the permission longs and the per-type byte table copied with the clone's row appended; 1 + 6 bounds and table pointers | `permit`, `pertype.0..5` |
-| clone | every `type == 6` test (MANUAL SLICE) also accepts added clones of type 6; the `(type & ~2) == 4` test maps added types to their `clone_of` first | `clone.0..6` |
+| clone | the `(type & ~2) == 4` test maps added types to their `clone_of` first (the `type == 6` tests for clones of MANUAL SLICE are gone: no machine clones it) | `clone.5` |
 | typearg | `FUN_400da23e` (1.17 `0x400da3a2`: parameter mapping (mirror index, type, filter) -> code, a 7 x 10 table in bss, `type < 7`): an added type answers with **its own descriptor's field** for the engine slots 25..28 and 31..34 (0 where the field is empty: no MOD destination), and as its clone for the two slots without a field (29, 30: MANUAL SLICE's `Sample Bank` and `Sample Slot` rows, owner 6, mirror 29 and 30, listed first in its MOD destination list); **[C]** the first version mapped the type to `clone_of` and so gave an added machine the clone's defaults and rows, see "core.params" | `typearg.0` |
 | persist | the sound loader's `(u8)(type + 1) < imm`: `imm = 8 + N` | `persist` |
 | DSP | the machine type -> selector table (DM `0x2567c0`, words `0 1 2 3 4 0 5`) is copied into `dsp.l2` with one word per type (the clone's, or `selector`), and the literal `I3 = 0x2567c0` of `FUN_001c24e9` is repointed | `dsp.machines.selector_table` |
@@ -1056,8 +1056,8 @@ only, `UnsupportedGuestPc`; the native runtime executes from DDR and SRAM now, f
 image"). Hardware executes from DDR (ACR0 covers it); the loader copies the code before the caches are on. Region use on
 DT2 1.17 with `core/machines` + `test/xslice` + `test/machine-clone`: `cf.flash_cave` 56 of 2,108 bytes (the loader;
 before: about 316 B of shim code for one type and about 80 B more per added type, 372 and 452 B with the loader, and the
-cave capped the number of types), `cf.expansion` 744 B (code and tables). Evidence **[D]**: `tools/patchkit/pk_proof_machines.py` on
-1.17 and on 1.16 passes 33 of 34 checks each (the one failure is below), the smoke goldens of the XSLICE and XClone cells on 1.17 and 1.16 are unchanged
+cave capped the number of types), `cf.expansion` 744 B (code and tables). Evidence **[D]**: the machine proofs (the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`)) on
+1.17 pass (one case fails, below), the smoke goldens of the XSLICE and XClone cells on 1.17 and 1.16 are unchanged
 (frame hashes equal to the cave version), `tests/patchkit/test_patchkit_expansion.py` asserts the placement.
 
 ### Corrections to the earlier XSLICE work **[C]**
@@ -1102,7 +1102,7 @@ cave capped the number of types), `cf.expansion` 744 B (code and tables). Eviden
   `DM 0x255970 + 2t` in its voice hook, and leave `clone_of` at the stock type whose descriptor and per-type rows the
   ColdFire side should copy.
 
-### Evidence (`tools/patchkit/pk_proof_machines.py`, DT2 1.17 and 1.16 with the same results, one daemon per image, health asserted after every input)
+### Evidence (the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`), DT2 1.17, health asserted after every input)
 
 | check | result |
 |---|---|
@@ -1195,7 +1195,7 @@ sites (56 + 55). Cost: 16,832 bytes of expansion for four rows (16,500 + 60 K + 
 
 ### Corrections to core.machines **[C]**
 
-1. The type-argument shim of `FUN_400da3a2` (above) now returns the machine's **own** descriptor field instead of the clone's code (and the clone's for slots 29 and 30; a first version that returned 0 there dropped `Sample Slot` and `Sample Bank` from XSLICE's MOD list, caught by `tools/patchkit/pk_proof_machines.py` part d).
+1. The type-argument shim of `FUN_400da3a2` (above) now returns the machine's **own** descriptor field instead of the clone's code (and the clone's for slots 29 and 30; a first version that returned 0 there dropped `Sample Slot` and `Sample Bank` from XSLICE's MOD list, caught by the machine proofs).
    With the old mapping a new machine got the clone's defaults when selected: selecting PLUCK gave TUNE 0x4000, PLAY 0x300 in slot 1
    (DECAY would be 0.02: a click), BRIGHT 0, COLOR 0x7800. Measured before and after (`tools/patchkit/pk_proof_pluck.py`, part a).
 2. After YES in the machine list the track's sound array reads **zero** in the engine slots until the next trig; the values (the
@@ -1258,7 +1258,7 @@ Emulator only, nothing flashed, one agent, not checked by a second one: **[D]** 
 `a1cf1df^:native/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
 per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `c4d86e4e:tools/patchkit/pk_machine_rules_dn2.py`
 (`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `tests/fixtures/modules/dn2-clone` (a clone of FM TONE as
-type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `a1cf1df^:native/patchkit/tests/machines.rs`
+type 5), proof the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`), tests in `a1cf1df^:native/patchkit/tests/machines.rs`
 (DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
 `test/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
 
@@ -1282,7 +1282,7 @@ raised to `6 + N`; the sound record's type byte is at `+0xf4`, saved by `FUN_400
 | `SoundParameterSet::vfunc_21` (`0x40036bfa`) | `type == the parameter's owner machine`: the type loaded at `0x40036c24` is mapped too |
 | the DSP | the track's type reaches the DSP as TX frame word `0x94 + 2t`, as on the Digitakt (`0x20000` for FM DRUM after a TRIG, high half = track 1); written by the vector-191 handler at `0x4002757c` (`move.b (0xd8c,A0),D0b` from the SRAM copy `0x8000487c + 0x99 t` of the sound at `+0xde`). The FM engine knows types 0..4 and treats a type above 4 like MIDI (nothing rendered), so a clone without a voice of its own is **sent as its original** (shim at that load; `own_dsp = true` in the manifest keeps the own number for a machine a registered voice routine renders) |
 
-**Evidence** (`tools/patchkit/pk_proof_machines_dn2.py`; FM CLONE = test/dn2-clone):
+**Evidence** (the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`); FM CLONE = test/dn2-clone):
 
 | check | result |
 |---|---|
@@ -1520,7 +1520,7 @@ with defaults 0x800, 0x7f00; every input asserts no fault, halt or stall):
 | defaults after selection and a note | `0x2000 0x1000 0x7000 0x4000` and `0x800 0x7f00`: the machine's, not FM TONE's |
 | save, set FM TONE, load | PAGES is the track's machine again, the values are back (the words after the smoother settled); the card's sound records hold type 5; **stock** loads the same project (no fault, track 1 is FM TONE) |
 | stock machines | FM TONE SYN (4 pages), FLTR and AMP frames of the patched image equal the stock firmware's |
-| `test/dn2-clone` (a clone without page rows) | `tools/patchkit/pk_proof_machines_dn2.py` still passes: see the results note of the plan |
+| `test/dn2-clone` (a clone without page rows) | still proven by the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`) |
 
 **Open [O].** MIDI CC / NRPN and p-lock for an own-pages machine (not tried); copy and paste of a sound between an own-pages machine
 and others (the clipboard callers get the own type; not run); the FLTR, AMP, FX and MOD pages of an own-pages machine were not compared

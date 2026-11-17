@@ -375,11 +375,11 @@ description = "Site-by-site account of a patch (disassembly before and after, al
 
 ["patch:mem"]
 run = "uv run python -m tools.patchkit.pk_mem"
-description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- core/machines test/machine-clone [--device dt2|dn2] [--firmware VER] [--json]"
+description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- core/machines core/params [--device dt2|dn2] [--firmware VER] [--json]"
 
 ["patch:test"]
 run = "uv run python -m tools.patchkit.pk_harness run"
-description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:core/fx,test/fx-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
+description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:core/fx | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
 
 ["patch:runtime-proof"]
 run = "uv run python -m tools.patchkit.pk_dkrt proof"
@@ -387,7 +387,7 @@ description = "digikit runtime in the emulator: patch core/runtime, boot with a 
 
 ["patch:proofs"]
 run = "uv run python -m tools.patchkit.pk_proofs"
-description = "Every emulator proof on its quick tier, in sequence (DT2: fx, voice, machines; DN2: fx, voice, machines, pages): mise run patch:proofs [-- --only voice,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
+description = "Every emulator proof on its quick tier, in sequence (DT2: voice, machines; DN2: voice, machines, pages): mise run patch:proofs [-- --only voice,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
 
 ["patch:port"]
 run = "uv run python -m tools.patchkit.port_resolve"

@@ -30,6 +30,11 @@ vi.mock('../runtime/runtime-plan.ts', async (original) => ({
   ...(await original<object>()),
   prepareRuntimePlanListedOffline: fake.prepare,
 }));
+// the host boot has no card and no service file: the symbol binding is not what these tests observe
+vi.mock('../runtime/service-symbols.ts', async (original) => ({
+  ...(await original<object>()),
+  bindServiceSymbols: vi.fn(async () => {}),
+}));
 vi.mock('../runtime/write-safety.ts', () => ({ runtimeWatchEnv: fake.watchEnv, runtimeSafety: fake.safety }));
 vi.mock('../runtime/fx-live.ts', async (original) => ({
   ...(await original<object>()),
@@ -154,15 +159,7 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
         : image === 'track-base'
           ? [...commonSymbols, 'dynreg_info']
           : image === 'track'
-            ? [
-                ...commonSymbols,
-                'dynreg_info',
-                'fxpages_info',
-                'fxp_send_row',
-                'fxp_send_count',
-                'fxp_nload',
-                'DKRT_FXS',
-              ]
+            ? [...commonSymbols, 'dynreg_info', 'fxpages_info']
             : [
                 ...commonSymbols,
                 'DK_FXR_PEND',
@@ -176,8 +173,6 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
                 'DK_PANEL_N',
                 'DK_ROUTE_N',
                 'DK_ROUTE_ITEM',
-                'fxp_send_count',
-                'DKRT_FXS',
                 'fxpages_info',
               ];
       expect(requestedSymbols).toEqual(expectedSymbols);
@@ -269,6 +264,9 @@ for (const { afterEpoch, loaderResult } of [
     });
     const session = {
       expectNoFault: vi.fn(),
+      get pcmTapStarted() {
+        return pcmStarted;
+      },
       options: { device: 'dt2', firmware: '1.17' },
       loadResult: { syx_sha256: plan.output!.syx_sha256 },
       preparedRuntimeImage: {

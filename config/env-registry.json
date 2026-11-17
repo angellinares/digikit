@@ -49,6 +49,10 @@
    "owner": "python:tools/patchkit",
    "purpose": "0 disables the cached ColdFire boot-state snapshots in the patchkit boot harness (flag)"
   },
+  "DIGI_CLOCK_STUCK_MS": {
+   "owner": "ts:packages/test-support",
+   "purpose": "Wall milliseconds an emulated clock may stand still in a wait before the wait fails (default 60000)"
+  },
   "DIGI_COLD_RELAX_FS": {
    "owner": "rust:packages/emulator",
    "purpose": "Set (any value) relaxes the DT2 filesystem check that the readiness wait expects on a used card"

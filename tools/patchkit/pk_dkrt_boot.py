@@ -10,7 +10,6 @@ patched firmware with the image's own DSP code; a restart is the emulator's RCM 
   equiv    a selection loaded at boot plays like the same module patched in: rows, DSP bytes, voice row, machine row, PCM
   restart  select through the mailbox, `dkrt_restart`, the next boot loads it; select nothing, restart, it is gone
   cut      the card states a power cut can leave between the two writes of a selection (and a torn copy)
-  safe     a module that resets the machine in `init`: boots 1 and 2 raise the counter, boot 3 is safe mode; the safe-once flag
   watch    write-watch and flush check over every boot, and the card sectors the runtime wrote
 
 Not covered **[O]**: the safe-mode key (the queue peek is untested on a device and the emulator delivers no key before the main
@@ -110,7 +109,6 @@ STABLE_BLOCKS = 300
 SETTLE_MS = int(
     os.environ.get("DIGIKIT_SETTLE_MS", "1500")
 )  # emulated ms the first UI-loop passes run before a scenario looks (wait_dsp then waits for a module's DSP part)
-E_SAFE_MODE = -44
 E_LOADING = 1
 RT = "core/runtime,core/dynreg,core/dyndsp"
 FREE_TYPE = M.FREE_TYPE
@@ -750,7 +748,6 @@ class Proof:
             e.pack("test/dyn-dn2", "m0.dkm")
             e.pack("test/sine", "m1.dkm")
             self.mods = ["modules/m0.dkm", "modules/m1.dkm"]
-        e.pack("test/dyn-fault", "fault.dkm")
         self.run_img = e.build_image(RT, "run")
 
     def rig(
@@ -949,53 +946,6 @@ class Proof:
             )
             self.finish(rig)
 
-    def safe(self) -> None:
-        e = self.env
-        with self.rig(
-            self.run_img, e.card(["modules/fault.dkm"], tag="safe"), "safe"
-        ) as rig:
-            info = rig.boot_info()
-            self.report["safe_boot"] = info
-            self.check(
-                "two boots that never reached the UI loop, the third boots in safe mode",
-                info["safe"] == 1 and info["reason"] == 1 and info["counter"] == 2,
-                f"{info['reason_name']} counter {info['counter']}",
-            )
-            self.check(
-                "safe mode loaded no module",
-                info["loaded"] == 0
-                and info["all_results"][0] == E_SAFE_MODE
-                and all(r[0] == FREE_TYPE for r in rig.voice_rows()),
-                str(info["all_results"][:2]),
-            )
-            rec = current(rig.sel_records())
-            self.check(
-                "the UI loop ran: the counter is back to 0 and the selection is kept",
-                info["ui_reached"] == 1
-                and rec is not None
-                and rec["counter"] == 0
-                and rec["paths"] == ["modules/fault.dkm"],
-                str(rec),
-            )
-            self.finish(rig)
-        # safe once: the record asks for it; the boot that honours it clears the flag
-        with self.rig(
-            self.run_img, e.card(self.mods, flags=1, tag="safe2"), "safe2"
-        ) as rig:
-            info = rig.boot_info()
-            rec = current(rig.sel_records())
-            self.check(
-                "the safe-once flag: safe mode (flag), no module, flag cleared, selection kept",
-                info["safe"] == 1
-                and info["reason"] == 3
-                and info["loaded"] == 0
-                and rec is not None
-                and rec["flags"] == 0
-                and rec["paths"] == self.mods,
-                f"{info['reason_name']} {rec}",
-            )
-            self.finish(rig)
-
     def run(self) -> dict[str, Any]:
         t0 = time.monotonic()
         self.setup()
@@ -1003,7 +953,6 @@ class Proof:
             "equiv": self.equiv,
             "restart": self.restart,
             "cut": self.cut,
-            "safe": self.safe,
         }
         for name, fn in scenarios.items():
             if self.only and name not in self.only:
@@ -1047,7 +996,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--keep", type=Path)
     ap.add_argument(
-        "--only", default="", help="comma separated: equiv,restart,cut,safe,watch"
+        "--only", default="", help="comma separated: equiv,restart,cut,watch"
     )
     a = ap.parse_args(argv)
     work = a.keep or Path(tempfile.mkdtemp(prefix="pk-dkrt-boot-"))

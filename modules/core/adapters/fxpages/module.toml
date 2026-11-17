@@ -19,18 +19,14 @@ ports = ["dt2-1.17", "dn2-1.12"]
 # Patch-time half of the effect pages (docs/design/digikit-registry.md "Effect pages", docs/findings/61-fx-pages.md). It adds no behaviour by itself: with no
 # effect loaded the FX view has the three stock pages, DEL, REV and CHO, drawn as before.
 #
-# - The firmware's page descriptor table (33 rows of 0x2c bytes: name and title as char pointers, nine parameter codes) lives in RAM, built at start; it has no free
-#   row and a bound of 33 in its accessor. `fxp_acc` replaces the first instructions of the accessor: the page numbers `[fx] page_first` and up (one for each
-#   effect slot, `[limits] fx_slots`) answer with a row of this module's own table (`fxp_rows`, filled by the runtime), every other number gets the stock code.
-# - The FX view builds its page list from a rodata array of three page numbers (13, 14, 15). `fxp_list` hands the builder this module's list (`fxp_list_buf`, filled by the runtime
-#   at boot, before the view is built) and its count (`fxp_count`); while the count is 0 (no runtime) the builder gets its own list.
-# - The view draws the left tab label from hard-coded strings for the three stock pages: `fxp_label` draws the name of an effect page's row there, the stock code does the rest.
-# - The view draws a filter graph over the knobs 5 and 6 of every page but CHO: `fxp_graph` leaves it out for the effect pages.
-# - 24 parameter rows (`params.fp0` ..), 8 for each effect slot: 7 knobs and the MIX of the page. The runtime writes them (template, range, names, value index).
-# - Persistence (finding 61): three hooks on the functions that move the kit's effect value array: the initialiser (`fxp_init`: each effect row gets its defaults), the loader
-#   (`fxp_load`: the stored values when the stored effect ID is the row's, else the defaults) and the saver (`fxp_save`: the values and the 3 effect IDs into the 28 spare
-#   halfwords of the kit's storage record, which stock ignores). The stock tables are not touched (the lock map shares them). The runtime fills `fxp_ids` and `fxp_defs`.
-# - `fxpages_info` is the table the runtime reads (core/runtime, optional link).
+# The image holds data only: the table `fxpages_info` (version 3: the firmware's addresses, the device numbers, the value indices and where each hook continues in the
+# stock code) and 24 parameter rows (`params.fp0` ..), 8 for each effect slot (7 knobs and the MIX of the page) and 2 for the send page. The hooks are in the service
+# file `fx.dks` (modules/core/services/fx/dks): it takes the nine firmware sites of the effect pages when it is loaded and reads this table through the core
+# (`dkc_info`). Without the file the FX view is the stock one and kits are stock bytes; the runtime refuses an effect module that needs the service.
+# - The firmware's page descriptor table (33 rows of 0x2c bytes) lives in RAM, built at start; it has no free row and a bound of 33 in its accessor. The page numbers
+#   `[fx] page_first` and up (one for each effect slot, `[limits] fx_slots`) answer with a row of the service's own table; every other number gets the stock code.
+# - The kit's effect values (finding 61): the stock tables are not touched (the lock map shares them); the spare halfwords of the kit's storage record hold the values.
+# - `fxpages_info` is the table the service reads (`CoreApi::info`).
 
 [[gen]]
 kind = "gas"
@@ -83,78 +79,11 @@ _fp_keystock = "cf.page.data.fx_key_list"
 _fp_sound = "cf.page.site.sound_load_exit"
 _fp_p_send = "params.fs0.index"
 
-[[op]]
-op = "hook"
-hook = "cf.page.hook.page_desc"
-to = "fxp_acc"
-devices = ["dt2", "dn2"]
 
-[[op]]
-op = "hook"
-hook = "cf.page.hook.tab_label_test"
-to = "fxp_label"
+# The data table of this adapter, exported to the image's info table (`dkrt_info_table`): the fx service file finds it by the hash of its name (`CoreApi::info`).
+[[info]]
+name = "fxpages_info"
 devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.filter_graph_test"
-to = "fxp_graph"
-devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.fx_view_list.load"
-to = "fxp_list"
-devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.fx_array.load"
-to = "fxp_load"
-devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.fx_array.save"
-to = "fxp_save"
-devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.fx_array.init_exit"
-to = "fxp_init"
-devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.fx_key_list.load"
-to = "fxp_keylist"
-devices = ["dt2", "dn2"]
-
-[[op]]
-op = "hook"
-hook = "cf.page.hook.sound_load_exit"
-to = "fxp_sound"
-devices = ["dt2", "dn2"]
-
-[[claim]]
-resource = "cf.page.fn.page_desc"
-[[claim]]
-resource = "cf.page.site.tab_label_test"
-[[claim]]
-resource = "cf.page.site.filter_graph_test"
-[[claim]]
-resource = "cf.page.site.fx_view_list.load"
-[[claim]]
-resource = "cf.page.site.fx_array.load"
-[[claim]]
-resource = "cf.page.site.fx_array.save"
-[[claim]]
-resource = "cf.page.site.fx_array.init_exit"
-[[claim]]
-resource = "cf.page.site.fx_key_list.load"
-[[claim]]
-resource = "cf.page.site.sound_load_exit"
 
 # ---- reserved parameter rows ---------------------------------------------------------------------------------------------------
 # 8 for each effect slot (fp0 .. fp7 are effect row 0, ...): 7 knobs and the page's level slot (MIX). The template is a placeholder (Delay "Feedback HPF"); the runtime
@@ -474,3 +403,10 @@ min = 0
 max = 0
 default = 0
 devices = ["dt2", "dn2"]
+
+# The capacity limits this adapter reserves, as `cap_<kind>` entries of the image's info table (docs/PATCHING.md): each points at the u32 word of the table that holds the limit, so the planner knows the limit before any service file is loaded.
+[[info]]
+name = "cap_send_slots"
+symbol = "fxpages_info + 156"
+devices = ["dt2", "dn2"]
+

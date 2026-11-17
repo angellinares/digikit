@@ -11,7 +11,7 @@ Rules:
   roles     Every module under modules/core has `role` in [module], and the role fits the folder: adapters/ -> adapter,
             apps/ -> app, runtime/ -> runtime, expansion/ -> installer.
   sources   Content modules (modules/machines, modules/fx, modules/tools, tests/fixtures/modules) and apps include only
-            their own files and the SDK (sdk/include, sdk/dsp/contract). Apps may also include dkrt.h (runtime) and dk_ui_core.h
+            their own files and the SDK (sdk/include, sdk/dsp/contract); a fixture may also include the source of another fixture (a variant of its base). Apps may also include dkrt.h (runtime) and dk_ui_core.h
             (core/ui). Only the runtime's platform file, the installer and adapters include the firmware bindings (dk_fw_* headers, the dkfw crate).
             C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are read.
   objects   The undefined symbols of the built objects of apps and content modules are SDK imports, dkrt_*, dk_ui_*,
@@ -31,8 +31,8 @@ Rules:
             host tests (`tests.rs` or a `tests/` folder in the service) may name core modules: they drive the walkers and the planner over the service.
   service-crates
             A service crate (modules/core/services/NAME, linked into the runtime object) depends only on dkrt-abi, dkrt-sdk and dkneeds, and on
-            dkrt-test-support as a dev-dependency; it names no firmware crate and no device id, and has no path into the runtime crate. The runtime
-            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`. Final state (R12-1): no service is a folder of the
+            dkrt-test-support as a dev-dependency; it names no firmware crate and no device id (only its `dks/` service file may name `dkfw`, in `dks/src/fw.rs`), and has no path into the runtime crate. The runtime
+            names a service crate (`dkrt_svc_*`) only in `gen_services.rs`, `handlers.rs` and the host-test files under `handlers/`. Final state (R12-1): no service is a folder of the
             runtime crate's `services/`; every service (fx, machines, samples, lfo) is a crate.
   platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and `fw.rs` at the crate's source root (the declared adapter of
             `dkrt_abi::fw::Fw`: it must contain `impl Fw for`) name the firmware crate dkfw; the rest of the core and the services use the `Platform`
@@ -75,6 +75,8 @@ FOLDER_ROLES = {
     "apps": "app",
     "runtime": "runtime",
     "expansion": "installer",
+    # a service file: modules/core/services/NAME/dks (the neutral crate above it is no module)
+    "services": "service",
 }
 # Content modules that patch the firmware themselves (they have [[op]] and anchor externs by design: patchkit's own
 # example of a hook). They are exempt from the objects and apps rules.
@@ -162,9 +164,9 @@ def check_roles(root: Path, mods: list[Module]) -> list[Violation]:
         r = rel(root, m.dir)
         parts = r.split("/")[2:]  # below modules/core
         want = FOLDER_ROLES.get(parts[0]) if parts else None
-        # the wrapper of a service crate that is also a service file: modules/core/services/NAME/dks
-        if parts[:1] == ["services"] and len(parts) == 3 and parts[2] == "dks":
-            want = "service"
+        # the `services` folder holds modules only as modules/core/services/NAME/dks (the service file of the crate NAME)
+        if parts[:1] == ["services"] and not (len(parts) == 3 and parts[2] == "dks"):
+            want = None
         where = f"{r}/module.toml:{line_of(m.text, 'category', 1)}"
         have = m.mod.get("role")
         if want is None:
@@ -257,6 +259,7 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
     runtime_inc = (root / CORE / "runtime/include").resolve()
     adapters = (root / CORE / "adapters").resolve()
     all_mod_dirs = [(m.dir.resolve(), m) for m in mods]
+    fixtures = (root / "tests/fixtures/modules").resolve()
     for m in mods:
         kind = classify(root, m)
         role = m.mod.get("role")
@@ -330,6 +333,12 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
                     foreign = next(
                         (o for d, o in all_mod_dirs if d in target.parents), None
                     )
+                    if (
+                        foreign is not None
+                        and fixtures in m.dir.resolve().parents
+                        and fixtures in foreign.dir.resolve().parents
+                    ):
+                        continue  # a fixture variant (file-write-b) includes the source of its base fixture
                     out.append(
                         Violation(
                             where,
@@ -704,9 +713,9 @@ RT_DEVICE_COMPARE = re.compile(
 )
 
 
-# The firmware hooks that the runtime module still patches in itself: the machine page hooks, which finding 128 keeps runtime-owned (with slots).
-# Every other hook (UI loop, main-OS task entry, MIDI receive) belongs to the platform adapter.
-RT_OWN_HOOKS = {"cf.page.hook.source_key", "cf.page.hook.source_turn"}
+# The firmware hooks that the runtime module patches in itself: none. Every hook (UI loop, main-OS task entry, MIDI receive) belongs to the platform adapter; the machine
+# page hooks are the machines service file's (modules/core/services/machines/dks).
+RT_OWN_HOOKS: set[str] = set()
 RT_MANIFEST = "modules/core/runtime/module.toml"
 
 
@@ -865,7 +874,11 @@ def check_service_crates(root: Path) -> list[Violation]:
                 rust_without_comments(f.read_text(encoding="utf-8")).splitlines(), 1
             ):
                 where = f"{rel(root, f)}:{n}"
-                if RS_FW.search(line):
+                # the service file (`dks/`) is where a service names firmware (`dks/src/fw.rs`); the neutral crate does not
+                if (
+                    RS_FW.search(line)
+                    and "dks" not in f.relative_to(manifest.parent).parts
+                ):
                     out.append(
                         Violation(
                             where,
@@ -926,7 +939,7 @@ def check_service_crates(root: Path) -> list[Violation]:
                 )
     for f in sorted(src.rglob("*.rs")) if src.is_dir() else []:
         r = f.relative_to(src).as_posix()
-        if r in SERVICE_RUNTIME_FILES:
+        if r in SERVICE_RUNTIME_FILES or r.startswith("handlers/"):
             continue
         for n, line in enumerate(
             rust_without_comments(f.read_text(encoding="utf-8")).splitlines(), 1

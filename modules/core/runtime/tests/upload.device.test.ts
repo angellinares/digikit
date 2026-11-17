@@ -17,6 +17,7 @@ import { expect } from 'vitest';
 import { blob, listing, pokeWord, sha, statusOf, type Files } from '@digi/regression/runtime/card-kit.ts';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { options, word, REDRAW } from '@digi/regression/runtime/fx-live.ts';
+import { wordBase } from '@digi/regression/runtime/memory.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
 import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
@@ -551,7 +552,7 @@ uploadTests(
     // the 4-byte address literal of the code anchor (not word aligned: read as bytes)
     const anchor = portFile(device, FIRMWARE[device]).anchor?.find((a) => a.name === 'cf.midi.site.tx_inflight_lit');
     if (anchor?.addr === undefined) throw new Error('no anchor cf.midi.site.tx_inflight_lit in the port file');
-    const at = anchor.addr & ~3;
+    const at = wordBase(anchor.addr);
     const literal = Buffer.alloc(8);
     literal.writeUInt32BE(await word(session, at), 0);
     literal.writeUInt32BE(await word(session, at + 4), 4);

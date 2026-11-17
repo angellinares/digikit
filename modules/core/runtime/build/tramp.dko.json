@@ -1,46 +1,17 @@
 {
  "arch": "cf",
  "format": 1,
- "relocs": [
-  {
-   "addend": 0,
-   "offset": 170,
-   "section": ".text",
-   "symbol": "dkrt_page_key",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 178,
-   "section": ".text",
-   "symbol": "dkrt_pagekey_next",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 192,
-   "section": ".text",
-   "symbol": "dkrt_page_turn",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 208,
-   "section": ".text",
-   "symbol": "dkrt_pageturn_next",
-   "type": "cf.32"
-  }
- ],
+ "relocs": [],
  "sections": [
   {
    "align": 4,
-   "hex": "206f0004222f0008200802800000000fd28020080280fffffff0204006810000000fe889670af4e841e80010538166f64e75428040c046fc27004e75202f000446c04e7546fc2700223c00030d401039ec070004080000036604538166f042b9480000004e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e71708013c0ec09000060fe2f2f00082f2f00084eb900000000508f4ef9000000002f2f00082f2f00084eb900000000508f4a00670470014e754ef900000000",
+   "hex": "206f0004222f0008200802800000000fd28020080280fffffff0204006810000000fe889670af4e841e80010538166f64e75428040c046fc27004e75202f000446c04e7546fc2700223c00030d401039ec070004080000036604538166f042b9480000004e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e71708013c0ec09000060fe",
    "kind": "text",
    "name": ".text",
-   "size": 212
+   "size": 160
   }
  ],
- "source_sha256": "c3eb3a10bea05c52515afb6821620415c791ac8272619915d46ec4f1f8855c88",
+ "source_sha256": "106fb5758392b72294657fba34f466260ddc3933e05b723b3501b09061bcf6c8",
  "symbols": [
   {
    "global": true,
@@ -62,42 +33,6 @@
   },
   {
    "global": true,
-   "name": "dkrt_page_key",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "dkrt_page_turn",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "dkrt_pagekey_hook",
-   "section": ".text",
-   "value": 160
-  },
-  {
-   "global": true,
-   "name": "dkrt_pagekey_next",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "dkrt_pageturn_hook",
-   "section": ".text",
-   "value": 182
-  },
-  {
-   "global": true,
-   "name": "dkrt_pageturn_next",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
    "name": "dkrt_soft_reset",
    "section": ".text",
    "value": 68
@@ -107,8 +42,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "73",
-  "isa_check": "b51f2e7de81bf5574a6370c6fbd096e3640d0d2d9922465a41b7c5fdcd8098dc",
+  "instructions_redecoded": "59",
+  "isa_check": "c084037f46ec553c70c9fc7a82df89dbe50f328e5e14a30dab5b7fc58c24c049",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

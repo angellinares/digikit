@@ -8,6 +8,7 @@ import type { PatchedSession } from '@digi/regression/support.ts';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installWithDebug } from '@digi/regression/runtime/install.ts';
 import { expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
+import { neededServices, servicePath } from '@digi/regression/runtime/service-files.ts';
 import { pollEmulated } from '@digi/regression/runtime/waits.ts';
 import type { RuntimeModule } from './manifests.ts';
 
@@ -23,7 +24,8 @@ export async function expectModuleLoad(
   const storePath = `modules/${module.id.split('/')[1]}.dkm`;
   // The debug module is loaded next to every module (the cell reads its LOG); for the debug module itself, once.
   const names = [...new Set([DEBUG_MODULE, module.id])];
-  const paths = [...new Set(['modules/debug.dkm', storePath])].sort();
+  // the service files the module needs (services/<name>.dks) go on the card with it
+  const paths = [...new Set(['modules/debug.dkm', storePath, ...neededServices([artifact]).map(servicePath)])].sort();
   const hash = fileHashHex(bytes);
   const artifacts = path.join(liveArtifacts(session, 'module-load'), module.id.split('/')[1]!);
   fs.mkdirSync(artifacts, { recursive: true });
@@ -47,7 +49,7 @@ export async function expectModuleLoad(
     size: bytes.length,
     hash,
   });
-  expect(entries.map((entry) => entry.path).sort(), 'the store holds the two module files (any order)').toEqual(paths);
+  expect(entries.map((entry) => entry.path).sort(), 'the store holds the module files and the service files they need (any order)').toEqual(paths);
   expect(await dk.verifyFile(storePath, bytes), 'module bytes survive reboot').toBe(true);
 
   try {

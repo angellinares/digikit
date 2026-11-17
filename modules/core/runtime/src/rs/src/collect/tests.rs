@@ -379,6 +379,23 @@ fn a_param_beyond_the_devices_knob_positions_or_outside_its_glyph_range_is_refus
 }
 
 #[test]
+fn a_machine_with_two_knob_pages_is_refused_on_either_device() {
+    // the shape of the parked fixture `test/dyn-dn2-pages` (back with run-time multi-page machines, RS-C): one machine, page A with three parameters, page B with two (the runtime has one knob page per machine)
+    let mut b = Box::new(Collect::new());
+    let m = b.add_machine(0, c(b"A\0"), c(b"A\0"));
+    for n in [3, 2] {
+        let p = b.machine_add_page(m, c(b"A\0"), c(b"S\0"));
+        for _ in 0..n {
+            b.page_add_param(p, c(b"P\0"), c(b"P\0"), 0);
+        }
+    }
+    let k = keys(&[KEY], &[], (1, 5, 2));
+    let mut plan = Plan::new();
+    assert_eq!(lower(&b, &DN2, &k, &[true; MAX_M], 0, core::ptr::null_mut(), 0, &mut plan), Err(E_FORMAT));
+    assert_eq!(lower(&b, &DT2, &k, &[true; MAX_M], 0, core::ptr::null_mut(), 0, &mut plan), Err(E_FORMAT));
+}
+
+#[test]
 fn a_dsp_section_must_match_the_keys_table() {
     let k = keys(&[KEY], &[FXID, 0x77], (1, 0, 0));
     assert_eq!(check_dsp_keys(&k, 1, |_| KEY, 2), OK);
@@ -517,6 +534,14 @@ fn what_init_declared_must_be_what_the_header_table_carries() {
         c
     };
     assert!(decl_matches(&declared(), &keys, base));
+    assert_eq!(decl_diff(&declared(), &keys, base), None);
+    // the diff names the first item that is not in both: the export the table has and `init` did not declare (the 0x100 bit), or the hook `init` declared more
+    let mut d = declared();
+    d.decl.n -= 1;
+    assert_eq!(decl_diff(&d, &keys, base), Some((Declare::EXPORT as u32 | 0x100, 0xaabb)));
+    let mut d = declared();
+    d.decl.add(Declare::HOOK, 1, base, 0);
+    assert_eq!(decl_diff(&d, &keys, base), Some((Declare::HOOK as u32, 1)));
     // another handler, another length, an item more
     let mut d = declared();
     d.decl.items[0].c = base + 0x44;

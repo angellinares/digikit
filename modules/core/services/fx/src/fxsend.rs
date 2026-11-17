@@ -32,7 +32,7 @@ const ROUTE_SEND: u8 = dkneeds::page::DK_ROUTE_SEND as u8;
 use dkneeds::{FXF_DEFAULT_SEND, FXF_NOMASTER, FXF_SEND};
 
 /// Cells of the send page the image can have at most (`[limits.max] send_slots`).
-pub const SEND_MAX: usize = 2;
+pub const SEND_MAX: usize = dkrt_sdk::proto::CAPMAX_SEND_SLOTS as usize;
 const TRACKS: usize = 16;
 /// UI-loop passes the loader counter must be still before the amounts are written back.
 const SETTLE: u32 = 4;
@@ -514,4 +514,86 @@ mod tests {
         assert_eq!(core::mem::offset_of!(SendState, allow), 40);
         assert_eq!(core::mem::offset_of!(SendState, dflt), 44);
     }
+
+    /// The four DSP amount words take the 16 track amounts as bytes: track t is byte t % 4 of word t / 4 (low byte first).
+    #[test]
+    fn send_amounts_are_packed_four_tracks_to_a_word() {
+        let mut a = [0u8; TRACKS];
+        a[0] = 1;
+        a[1] = 2;
+        a[3] = 127;
+        a[4] = 5;
+        a[15] = 9;
+        assert_eq!(words_of(&a), [0x7f00_0201, 5, 0, 9 << 24]);
+        assert_eq!(words_of(&[0; TRACKS]), [0; 4]);
+    }
+
+    /// The routes a record allows and its default, from its flags: master unless NOMASTER, send when SEND, default send only with DEFAULT_SEND.
+    #[test]
+    fn route_flags_give_the_allowed_routes_and_the_default() {
+        assert_eq!(routes_of(0), (ROUTE_MASTER, ROUTE_MASTER));
+        assert_eq!(
+            routes_of(FXF_SEND),
+            (ROUTE_MASTER | ROUTE_SEND, ROUTE_MASTER)
+        );
+        assert_eq!(
+            routes_of(FXF_NOMASTER | FXF_SEND),
+            (ROUTE_SEND, ROUTE_MASTER)
+        );
+        assert_eq!(
+            routes_of(FXF_SEND | FXF_DEFAULT_SEND),
+            (ROUTE_MASTER | ROUTE_SEND, ROUTE_SEND)
+        );
+    }
+
+    /// The settings keys are `fx/route/<module id>` and `fx/send/<module id>`; the id is copied up to its length.
+    #[test]
+    fn settings_keys_carry_the_module_id() {
+        let mut id = [0u8; 32];
+        id[..9].copy_from_slice(b"fx/gain-x");
+        let mut buf = [0u8; KEY_MAX];
+        let n = key_of(&mut buf, b"fx/send/", &id, 9);
+        assert_eq!(&buf[..n], b"fx/send/fx/gain-x");
+    }
+
+    /// The saved route is used when the effect allows it; a route it does not allow, a value that is no route and no entry give the default.
+    #[test]
+    fn the_saved_route_falls_back_to_the_default() {
+        use dkrt_test_support::FakeCore;
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let core = FakeCore::new();
+        unsafe {
+            let s = ss();
+            s.id[3][..4].copy_from_slice(b"mod0");
+            s.idlen[3] = 4;
+            s.allow[3] = ROUTE_MASTER | ROUTE_SEND;
+            s.dflt[3] = ROUTE_MASTER;
+            assert_eq!(saved_route(&core, 3), ROUTE_MASTER, "no entry: the default");
+            core.settings
+                .borrow_mut()
+                .push((b"fx/route/mod0".to_vec(), std::vec![1]));
+            assert_eq!(saved_route(&core, 3), ROUTE_SEND);
+            s.allow[3] = ROUTE_MASTER;
+            assert_eq!(
+                saved_route(&core, 3),
+                ROUTE_MASTER,
+                "the effect no longer allows send"
+            );
+            s.allow[3] = ROUTE_MASTER | ROUTE_SEND;
+            core.settings.borrow_mut()[0].1 = std::vec![7];
+            assert_eq!(saved_route(&core, 3), ROUTE_MASTER, "7 is no route");
+        }
+    }
+
+    /// `fx_entry` lists the effects that have a page in row order and answers "no fx" past the end: here no page is owned.
+    #[test]
+    fn fx_entry_without_a_page_answers_no_fx() {
+        use dkrt_test_support::FakeCore;
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let core = FakeCore::new();
+        let mut out: DkrtFx = unsafe { core::mem::zeroed() };
+        assert_eq!(unsafe { fx_entry(&core, 0, &mut out) }, E_NOT_FOUND);
+    }
+
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }

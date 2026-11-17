@@ -16,7 +16,7 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# `patchkit pack test/dyn-fx-nan --device dt2` makes the .dkm. The runtime-loaded twin of test/fx-nan, on the send route.
+# `patchkit pack test/dyn-fx-nan --device dt2` makes the .dkm. A send-route effect that writes NaN.
 # The effect is declared by builder calls in init (src/module.c). The id `nan` is what the keys hash; the DSP symbols start with `fnn`.
 [[fx]]
 id = "nan"

@@ -6,17 +6,18 @@ category = "test"
 type = "machine"
 author = "digikit"
 status = "experimental"
-summary = "A Digitone II machine added at run time: its own SYN page with four knobs, with the DSP of test/sine."
+summary = "A machine added at run time on both devices: four parameters of different ranges (the Digitone II gets its own SYN page of four knobs), with the DSP of test/sine."
 dynamic = true
-ports = ["dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
+"dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the permanent number is
-# modules/core/adapters/machines/types.toml, [dn2.dynamic] "test/dyn-dn2:dyn_pluck") with one parameter page, as digikit/pluck has
+# Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the runtime assigns the number in the dynamic range of
+# modules/core/adapters/machines/types.toml when it loads the module) with one parameter page, as digikit/pluck has
 # on the Digitone II, but loaded from the card. The declaration is builder calls in init (src/module.c).
 # The DSP is test/sine's, read from its folder; its symbols start with `sn`, so `dsp` names the prefix.
 [[machine]]
@@ -38,9 +39,11 @@ machine_rows = 1
 param_rows = 4
 page_rows = 1
 record_bytes = 540
+dsp_cost_voice = 1936
 
 [uses.dt2]
-machine_rows = 8
-param_rows = 16
+machine_rows = 1
+param_rows = 4
 page_rows = 0
-record_bytes = 0
+record_bytes = 444
+dsp_cost_voice = 1782

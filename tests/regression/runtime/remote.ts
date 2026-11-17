@@ -42,7 +42,9 @@ export async function expectRemoteEnabled(session: Session, dk: DkSession, timeo
 
 /** Install only: negative device-set cases need no offline ABOUT symbol plan. */
 export async function installRemote({ session, dk }: PatchedSession): Promise<void> {
-  await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
+  await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'), {
+    device: session.options.device,
+  });
 }
 
 /** Always release held remote inputs, including on navigation/assertion failure. */
@@ -84,20 +86,12 @@ export async function withRemoteRelease(dk: DkSession, clock: Clock, action: () 
 }
 
 /** Existing OLED renderer; persistent diagnostics survive Session's temporary-directory cleanup. */
-export async function captureRemoteOled(session: Session, name: string): Promise<void> {
+export async function captureRemoteOled(session: Session, name: string): Promise<string> {
   const dir = liveArtifacts(session, 'remote-input');
-  await exec(
-    'uv',
-    [
-      'run',
-      'python',
-      '-m',
-      'tools.control.digi_client',
-      '--run-dir',
-      session.runDir,
-      'frame',
-      path.join(dir, `${name}.png`),
-    ],
-    { cwd: root, timeout: 10_000 },
-  );
+  const png = path.join(dir, `${name}.png`);
+  await exec('uv', ['run', 'python', '-m', 'tools.control.digi_client', '--run-dir', session.runDir, 'frame', png], {
+    cwd: root,
+    timeout: 10_000,
+  });
+  return png;
 }

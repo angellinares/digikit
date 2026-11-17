@@ -57,7 +57,7 @@ async function expectStorageContract({ session, dk }: PatchedSession): Promise<v
   const device = session.options.device;
   expect(['zero', 'none'], 'the listing runs on the ColdFire; no DSP is needed').toContain((await session.status()).dsp);
   await expectRuntimeReady(session);
-  await installModule(dk, 'test/files-proof', moduleArtifact(device, 'test/files-proof'));
+  await installModule(dk, 'test/files-proof', moduleArtifact(device, 'test/files-proof'), { device });
   const profile = deviceProfile(device);
   const samplesMax = profile.digikit.sample_path_max;
   const dt2 = device === 'dt2';

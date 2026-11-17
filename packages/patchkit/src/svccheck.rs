@@ -6,6 +6,13 @@
 //! - **Layout.** `Cargo.toml` (package `dkrt-svc-NAME`), `src/lib.rs`, `src/records.rs`, `src/slots.rs` and `tests/` with at least one `.rs` file. A folder
 //!   `src/dsp/` has a `mod.rs`, and a service whose `Service` impl has `dsp_*` handlers has the folder. `lib.rs` declares `pub mod records`, `pub mod slots`
 //!   (and `pub mod dsp` with the folder). Other modules in `src/` are the service's own.
+//! - **The service file.** `dks/` holds `module.toml` (id `core/services/NAME`, `role = "service"`, `service = "NAME"`), `Cargo.toml`, `src/lib.rs` (the
+//!   `service!(...)` call and nothing else) and, when needed, `src/hooks.rs` (every hook as assembler; required when the module has `[[hook]]` entries) and
+//!   `src/fw.rs` (firmware calls). It is required when the service's `[[service]]` row has no `rust` (the service is a file), and checked whenever it exists.
+//!   The `[[hook]]` entries of `dks/module.toml` equal the hooks of the `service!` call, per device (an entry with `devices`, and a call entry `(name, entry, dt2)`).
+//!   Assembler (`asm!`, `global_asm!`, `naked`) is only in `dks/src/hooks.rs`, and firmware names (`cf.` hook and anchor names, `dkfw`) only under `dks/`.
+//! - **Fills equal the slots.** A `[[fill]]` of `dks/module.toml` names a `[[slot]]` of an image adapter (`modules/core/adapters/**/module.toml`). When the
+//!   slot must exist (a typo is an error). When the slot exists only on some devices (`devices` in its `[[slot]]`), the fill names `devices` too and only devices the slot has.
 //! - **One entry.** The crate exports at most one entry symbol, `dk_module`: the entry that carries the service's `ServiceRow` (interface B). A service
 //!   linked into the runtime exports none yet (the runtime names its row in the generated table); a second export of any other name is a second row
 //!   symbol. The state a device test reads by name (`DKRT_FXP`, `DKRT_FXS`: a `static` named `DKRT_*`) is state, not an entry, and is allowed.
@@ -21,30 +28,39 @@ use std::path::{Path, PathBuf};
 /// The exported entry of a service.
 pub const ENTRY: &str = "dk_module";
 
-/// The sources of the crate with `//` comments blanked (line structure kept), as (path relative to `dir`, text).
-fn sources(dir: &Path) -> Vec<(String, String)> {
-    fn walk(base: &Path, at: &Path, out: &mut Vec<(String, String)>) {
-        let Ok(rd) = std::fs::read_dir(at) else {
-            return;
-        };
-        let mut paths: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
-        paths.sort();
-        for p in paths {
-            if p.is_dir() {
-                walk(base, &p, out);
-            } else if p.extension().is_some_and(|e| e == "rs") {
-                let text = std::fs::read_to_string(&p).unwrap_or_default();
-                let rel = p
-                    .strip_prefix(base)
-                    .unwrap_or(&p)
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.push((rel, blank_comments(&text)));
-            }
+/// The `.rs` files under `at` with `//` comments blanked (line structure kept), as (path relative to `base`, text).
+fn walk(base: &Path, at: &Path, out: &mut Vec<(String, String)>) {
+    let Ok(rd) = std::fs::read_dir(at) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        if p.is_dir() {
+            walk(base, &p, out);
+        } else if p.extension().is_some_and(|e| e == "rs") {
+            let text = std::fs::read_to_string(&p).unwrap_or_default();
+            let rel = p
+                .strip_prefix(base)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push((rel, blank_comments(&text)));
         }
     }
+}
+
+/// The sources of the neutral crate (`src/`).
+fn sources(dir: &Path) -> Vec<(String, String)> {
     let mut out = vec![];
     walk(dir, &dir.join("src"), &mut out);
+    out
+}
+
+/// The sources of the service file crate (`dks/src/`), paths relative to `dks/`.
+fn dks_sources(dir: &Path) -> Vec<(String, String)> {
+    let mut out = vec![];
+    walk(&dir.join("dks"), &dir.join("dks/src"), &mut out);
     out
 }
 
@@ -200,8 +216,339 @@ fn manifest(sdk: &Path, name: &str) -> Result<(BTreeSet<String>, Option<Option<S
     Ok((kinds, row))
 }
 
-/// Every problem of the service crate at `dir`; empty when it is as the layout says.
+/// The hooks of the `service!` call in `dks/src/lib.rs`: (hook name, device filter: `None` for every device, or `dt2` / `dn2`).
+fn service_hooks(lib: &str) -> Option<Vec<(String, Option<String>)>> {
+    let at = lib.find("service!(")?;
+    let body = &lib[at..];
+    let open = Regex::new(r"\bhooks\s*=\s*\[").unwrap().find(body)?.end() - 1;
+    let mut depth = 0usize;
+    let mut end = body.len();
+    for (i, c) in body[open..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = open + i;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let entry =
+        Regex::new(r#"\(\s*"([^"]+)"\s*,\s*[A-Za-z_][\w:]*\s*(?:,\s*([A-Za-z0-9_]+)\s*)?\)"#)
+            .unwrap();
+    Some(
+        entry
+            .captures_iter(&body[open + 1..end])
+            .map(|c| (c[1].to_string(), c.get(2).map(|d| d.as_str().to_string())))
+            .collect(),
+    )
+}
+
+/// Does `text` (the lib.rs of `dks/src`, comments blanked) hold the `service!` call and nothing else? Attributes, `use` and `mod` lines are allowed.
+fn only_service_call(text: &str) -> bool {
+    let Some(at) = text.find("service!(") else {
+        return false;
+    };
+    let mut depth = 0usize;
+    let mut end = None;
+    for (i, c) in text[at..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(at + i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(end) = end else {
+        return false;
+    };
+    let head = &text[..at];
+    let tail = text[end..].trim_start().trim_start_matches(';');
+    // the path before `service!` (dkrt_svc_rt::) is part of the call
+    let head = head.trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == ':');
+    let allowed =
+        Regex::new(r"^\s*(?:#!?\[[^\]]*\]|(?:pub\s+)?use\s+[^;]*;|(?:pub\s+)?mod\s+\w+\s*;)\s*$")
+            .unwrap();
+    // `use`, `mod` and attributes: split at `;` and `]` boundaries into statements
+    let mut stmts: Vec<String> = vec![];
+    let mut cur = String::new();
+    for c in head.chars().chain(['\n']).chain(tail.chars()) {
+        cur.push(c);
+        if c == ';' || c == ']' {
+            stmts.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.trim().is_empty() {
+        stmts.push(cur);
+    }
+    stmts.iter().all(|s| allowed.is_match(s))
+}
+
+/// The device a `[[hook]]` entry or a `service!` entry is for; an entry for no device named is for all.
+fn hook_set(entries: &[(String, Vec<String>)], device: &str) -> BTreeSet<String> {
+    entries
+        .iter()
+        .filter(|(_, d)| d.is_empty() || d.iter().any(|x| x == device))
+        .map(|(n, _)| n.clone())
+        .collect()
+}
+
+/// The problems of the service file crate `dks/` (when it exists or the service is a file) and of the neutral crate's sources against the file rules.
+fn check_dks(dir: &Path, needs_dks: bool, neutral: &[(String, String)]) -> Vec<String> {
+    let mut out = vec![];
+    let asm = Regex::new(
+        r"\b(?:global_asm|asm|naked_asm)\s*!|#\[\s*naked\s*\]|#\[\s*unsafe\s*\(\s*naked\s*\)\s*\]",
+    )
+    .unwrap();
+    let fw = Regex::new(r#""cf\.[a-z0-9_]+(?:\.[a-z0-9_]+)+"|\bdkfw\b"#).unwrap();
+    for (path, text) in neutral {
+        if asm.is_match(text) {
+            out.push(format!(
+                "{path}: assembler is only in dks/src/hooks.rs (the neutral crate has none)"
+            ));
+        }
+        if let Some(m) = fw.find(text) {
+            out.push(format!("{path}: names firmware (`{}`): firmware names (cf.* hooks and anchors, dkfw) belong under dks/", m.as_str()));
+        }
+    }
+    let dks = dir.join("dks");
+    if !dks.is_dir() {
+        if needs_dks {
+            out.push("dks/ is missing: a service file has dks/module.toml, dks/Cargo.toml and dks/src/lib.rs".into());
+        }
+        return out;
+    }
+    for f in ["module.toml", "Cargo.toml", "src/lib.rs"] {
+        if !dks.join(f).is_file() {
+            out.push(format!("dks/{f} is missing"));
+        }
+    }
+    let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let manifest: Option<toml::Table> = std::fs::read_to_string(dks.join("module.toml"))
+        .ok()
+        .and_then(|t| t.parse().ok());
+    let mut hooks: Vec<(String, Vec<String>)> = vec![];
+    if let Some(m) = &manifest {
+        let module = m.get("module").and_then(|t| t.as_table());
+        let get = |k: &str| module.and_then(|t| t.get(k)).and_then(|v| v.as_str());
+        let want = format!("core/services/{name}");
+        if get("id") != Some(want.as_str()) {
+            out.push(format!(
+                "dks/module.toml: the id is `{}`, the layout wants `{want}`",
+                get("id").unwrap_or("")
+            ));
+        }
+        if get("role") != Some("service") {
+            out.push("dks/module.toml: `role` is not \"service\"".into());
+        }
+        for h in m
+            .get("hook")
+            .and_then(|h| h.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let Some(t) = h.as_table() else { continue };
+            let n = t
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            let d = t
+                .get("devices")
+                .and_then(|d| d.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            hooks.push((n, d));
+        }
+    } else if dks.join("module.toml").is_file() {
+        out.push("dks/module.toml does not parse".into());
+    }
+    let srcs = dks_sources(dir);
+    let get = |rel: &str| srcs.iter().find(|(p, _)| p == rel).map(|(_, t)| t.as_str());
+    if !hooks.is_empty() && get("src/hooks.rs").is_none() {
+        out.push("dks/module.toml has [[hook]] entries but dks/src/hooks.rs is missing (every hook is assembler in that file)".into());
+    }
+    for (path, text) in &srcs {
+        if path != "src/hooks.rs" && asm.is_match(text) {
+            out.push(format!("dks/{path}: assembler is only in dks/src/hooks.rs"));
+        }
+    }
+    if let Some(lib) = get("src/lib.rs") {
+        if !only_service_call(lib) {
+            out.push("dks/src/lib.rs is not the `service!(...)` call alone (attributes, `use` and `mod` lines are allowed)".into());
+        }
+        let called: Vec<(String, Vec<String>)> = service_hooks(lib)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(n, d)| (n, d.into_iter().collect()))
+            .collect();
+        for dev in ["dt2", "dn2"] {
+            let (m, c) = (hook_set(&hooks, dev), hook_set(&called, dev));
+            for n in c.difference(&m) {
+                out.push(format!("dks/src/lib.rs: service! takes the hook `{n}` on {dev}, but dks/module.toml has no [[hook]] for it"));
+            }
+            for n in m.difference(&c) {
+                out.push(format!(
+                    "dks/module.toml: [[hook]] `{n}` on {dev} is not in the service! hook list"
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// The `devices` of every `[[slot]]` of the `module.toml` files under `at` (an image adapter's pointer slots), by slot name; an empty list is every device.
+/// A slot name declared in two places for a common device (or for every device) is listed in `twice`; on disjoint devices the lists are joined.
+fn adapter_slots(
+    at: &Path,
+    out: &mut std::collections::BTreeMap<String, Vec<String>>,
+    twice: &mut Vec<String>,
+) {
+    let Ok(rd) = std::fs::read_dir(at) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        if p.is_dir() {
+            let skip = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| matches!(n, "target" | "build" | "dist" | "node_modules"));
+            if !skip {
+                adapter_slots(&p, out, twice);
+            }
+        } else if p.file_name().is_some_and(|n| n == "module.toml") {
+            let Some(t) = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|t| t.parse::<toml::Table>().ok())
+            else {
+                continue;
+            };
+            for sl in t
+                .get("slot")
+                .and_then(|s| s.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let Some(sl) = sl.as_table() else { continue };
+                let Some(name) = sl.get("name").and_then(|n| n.as_str()) else {
+                    continue;
+                };
+                let devices = strings(sl.get("devices"));
+                match out.get_mut(name) {
+                    None => {
+                        out.insert(name.to_string(), devices);
+                    }
+                    // the same name on disjoint devices is one slot per device; an empty list is every device
+                    Some(have)
+                        if have.is_empty()
+                            || devices.is_empty()
+                            || devices.iter().any(|d| have.contains(d)) =>
+                    {
+                        twice.push(name.to_string());
+                    }
+                    Some(have) => have.extend(devices),
+                }
+            }
+        }
+    }
+}
+
+/// The strings of a TOML array (none for anything else).
+fn strings(v: Option<&toml::Value>) -> Vec<String> {
+    v.and_then(|d| d.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The `[[fill]]` entries of `dks/module.toml` whose devices differ from the devices of the adapter slot they fill. A slot that exists on every device (no
+/// `devices`) takes any fill; a slot limited to some devices takes only fills that name `devices`, all of them among the slot's.
+fn fill_problems(dir: &Path, adapters: &Path) -> Vec<String> {
+    let mut out = vec![];
+    // an unparsable dks/module.toml is reported by `check_dks`
+    let Some(m) = std::fs::read_to_string(dir.join("dks/module.toml"))
+        .ok()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+    else {
+        return out;
+    };
+    // the fills cannot be compared without the adapters folder: that is an error, not a skip
+    if m.get("fill").is_some() && !adapters.is_dir() {
+        out.push(format!(
+            "the adapters folder {} is missing: the [[fill]] entries of dks/module.toml cannot be checked",
+            adapters.display()
+        ));
+        return out;
+    }
+    let mut slots = std::collections::BTreeMap::new();
+    let mut twice = vec![];
+    adapter_slots(adapters, &mut slots, &mut twice);
+    for name in twice {
+        out.push(format!(
+            "the slot `{name}` is declared twice ([[slot]] in the adapter module.toml files)"
+        ));
+    }
+    for f in m
+        .get("fill")
+        .and_then(|f| f.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let Some(t) = f.as_table() else { continue };
+        let Some(name) = t.get("slot").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        let Some(have) = slots.get(name) else {
+            out.push(format!(
+                "dks/module.toml: [[fill]] `{name}` names a slot that no image adapter declares ([[slot]] in an adapter module.toml)"
+            ));
+            continue;
+        };
+        if have.is_empty() {
+            continue;
+        }
+        let want = strings(t.get("devices"));
+        if want.is_empty() {
+            out.push(format!(
+                "dks/module.toml: [[fill]] `{name}` has no `devices`, but the image adapter has the slot only on {}",
+                have.join(", ")
+            ));
+        }
+        for d in want.iter().filter(|d| !have.contains(d)) {
+            out.push(format!(
+                "dks/module.toml: [[fill]] `{name}` is for {d}, but the image adapter has the slot only on {}",
+                have.join(", ")
+            ));
+        }
+    }
+    out
+}
+
+/// Every problem of the service crate at `dir`; empty when it is as the layout says. The image adapters are at `../../adapters` of the service folder
+/// (`modules/core/adapters`).
 pub fn check(dir: &Path, sdk: &Path) -> Result<Vec<String>> {
+    check_with_adapters(dir, sdk, &dir.join("../../adapters"))
+}
+
+/// `check` with the folder of the image adapters named (the fills of the service file are compared with the `[[slot]]` entries under it).
+pub fn check_with_adapters(dir: &Path, sdk: &Path, adapters: &Path) -> Result<Vec<String>> {
     let name = dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -292,6 +639,12 @@ pub fn check(dir: &Path, sdk: &Path) -> Result<Vec<String>> {
 
     // declarations equal the manifest
     let (kinds, row) = manifest(sdk, &name)?;
+    for p in check_dks(dir, matches!(row, Some(None)), &srcs) {
+        problem(p);
+    }
+    for p in fill_problems(dir, adapters) {
+        problem(p);
+    }
     match row {
         None => problem(format!(
             "{} has no [[service]] row named `{name}`",

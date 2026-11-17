@@ -27,7 +27,7 @@ dynamic_first = 16
 # 10 is retired (test/twin-xslice:xslice_d, removed): gap row, never reused.
 # 11 is retired (core/dsp-ddr-proof, removed): gap row, never reused.
 # 13, 14 and 15 are retired (analog, pd and bd are run-time modules now): gap rows, never reused.
-"test/machine-clone:xclone" = 8
+# 8 is retired (test/machine-clone, removed): gap row, never reused.
 "core/dynreg:dyn16" = 16
 "core/dynreg:dyn17" = 17
 "core/dynreg:dyn18" = 18
@@ -45,8 +45,7 @@ dynamic_first = 16
 [dn2.alloc]
 # 11 and 12 are retired (core/dsp-ddr-proof and core/dsp-lp0-proof, removed): gap rows, never reused.
 # 13, 14 and 15 are retired (analog, pd and bd are run-time modules now): gap rows, never reused.
-"test/dn2-clone:fmclone" = 5
-"test/dn2-pages:pages" = 6
+# 5 and 6 are retired (test/dn2-clone and test/dn2-pages, removed): gap rows, never reused.
 # 7 and 8 are retired (test/dn2-sine and test/dn2-edge, removed): a gap row, never reused (the next free number is above 10).
 # 9 and 10 are retired (test/patched-pluck and test/twin-dn2, removed): gap rows, never reused.
 "core/dynreg:dyn16" = 16

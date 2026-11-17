@@ -167,7 +167,7 @@ runtimeTests(
     const dir = liveArtifacts(session, 'stock-pool-borrow');
     const out = path.join(repoRoot(), 'out/runs/stock-pool-borrow');
     mkdirSync(out, { recursive: true });
-    await installModule(dk, 'test/stock-pool', moduleArtifact('dt2', 'test/stock-pool'));
+    await installModule(dk, 'test/stock-pool', moduleArtifact('dt2', 'test/stock-pool'), { device: 'dt2' });
     const ui = panelKeys(runtime);
     const mod = moduleApi(runtime);
     const p = await pool(runtime);

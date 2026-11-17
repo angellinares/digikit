@@ -1,5 +1,13 @@
-import { fmtVersion, hasCap, type DkLogEvent, type DkSession } from '@digi/dk-session';
-import { LOG_KIND } from '@digi/dk-session/gen_proto';
+import {
+  asciiOf,
+  declDiagnosis,
+  fmtVersion,
+  hasCap,
+  PROVIDER_IDX,
+  type DkLogEvent,
+  type DkSession,
+} from '@digi/dk-session';
+import { LOAD_STATUS, LOG_KIND } from '@digi/dk-session/gen_proto';
 import { emulatorClock, pollUntil, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
@@ -103,9 +111,63 @@ export async function ringEvents(
   return ofKind(await readSmallRing(session, plan), LOG_KIND[kind]);
 }
 
+/** Like `ringEvents`, without the events of providers (`services/*.dks`, which log with `PROVIDER_IDX` as their index): the events of modules only. */
+export async function moduleRingEvents(
+  session: Session,
+  plan: RuntimePlan,
+  kind: keyof typeof LOG_KIND,
+): Promise<DkLogEvent[]> {
+  return (await ringEvents(session, plan, kind)).filter((e) => e.args[0] !== PROVIDER_IDX);
+}
+
 /** Every event the device's log holds: over SysEx while the debug module is loaded, else the runtime's own small ring from memory. */
 export async function logEvents({ session, dk }: PatchedSession, plan: RuntimePlan): Promise<DkLogEvent[]> {
   return hasCap(await dk.info(), 'LOG') ? dk.readLog() : readSmallRing(session, plan);
+}
+
+const E_MISSING = -73;
+/** `PROVIDER_IDX` of loader/mod.rs: the index of a MOD_LOAD event of a provider file (`services/<name>.dks`), which is no selection index. */
+const PROVIDER_INDEX = PROVIDER_IDX;
+
+/**
+ * One provider MOD_LOAD event as text: `provider fx.d res -7 E_IMPORT`; the name is the first four characters of the file name. An E_DECL_KIND refusal names the first
+ * item that `init` and the header table do not both hold: the event's service hash word is the item's first word and its base word the tag, plus 0x100 when only
+ * the header table has the item (loader/mod.rs `decl_diff`): `provider mach res -79 E_DECL_KIND (EXPORTS 946ae751 not declared)`.
+ */
+export function providerFailureLine(args: readonly number[]): string {
+  const res = args[1]! | 0;
+  let line = `provider ${asciiOf(args[2]!)} res ${res} ${LOAD_STATUS.find(([code]) => code === res)?.[1] ?? '?'}`;
+  const why = declDiagnosis(args);
+  return why ? `${line} (${why})` : line;
+}
+
+/**
+ * The load results of the provider files, from the error events of the runtime's small ring (the debug module is not needed), joined by `; `, each as
+ * `providerFailureLine` gives it. Empty when no provider failed. A module refused with E_MISSING (-73)
+ * only says that its provider did not load: this says why.
+ */
+export async function providerFailures(session: Session, plan: RuntimePlan): Promise<string> {
+  const lines = ofKind(await readSmallRing(session, plan), LOG_KIND.MOD_LOAD)
+    .filter((e) => e.args[0] === PROVIDER_INDEX && (e.args[1]! | 0) < 0)
+    .map((e) => providerFailureLine(e.args));
+  return lines.join('; ');
+}
+
+/**
+ * The text to put after a failed wait on module results: the provider results when a module result is E_MISSING, else nothing. For the failure message only.
+ */
+export async function moduleResultsNote(
+  session: Session,
+  plan: RuntimePlan,
+  results: readonly number[],
+): Promise<string> {
+  if (!results.some((r) => (r | 0) === E_MISSING)) return '';
+  try {
+    const why = await providerFailures(session, plan);
+    return why ? ` [${why}]` : ' [no provider failure in the runtime ring]';
+  } catch {
+    return '';
+  }
 }
 
 /** What the boot found of a crash record (`DKRT_CRASH`, fault.rs `CrashSeen`): the words that tests look at. */

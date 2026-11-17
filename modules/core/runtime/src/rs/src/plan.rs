@@ -677,6 +677,14 @@ mod tests {
     }
 
     #[test]
+    fn a_service_a_dks_provides_is_never_the_runtimes_even_when_the_sdk_has_handles_for_it() {
+        // `fx` has handle types in the SDK but is a service file: a module's hard need of it needs the provider (E_MISSING), it is not always there
+        let consumer = Table { needs: &[Need { service: name_hash("fx"), min_version: 0, hard: true }], ..KEEP };
+        let p = run(&[Some(bytes(&consumer))]);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(name_hash("fx"))));
+    }
+
+    #[test]
     fn a_module_need_is_refused_when_nothing_provides_it_and_the_runtime_services_are_always_there() {
         let svc = name_hash("lfo_bus");
         let consumer = Table { needs: &[Need { service: svc, min_version: 0x000800, hard: true }], ..KEEP };

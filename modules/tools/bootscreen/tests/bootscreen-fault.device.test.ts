@@ -1,3 +1,4 @@
+import { be32 } from '@digi/dk-session';
 import { expect, test } from 'vitest';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 
@@ -14,8 +15,10 @@ cardRigs(
     test(
       'a fault in the intro callback halts in the stock handler',
       async () => {
-        const fault = h.mod('test/intro-fault', 'intro-fault');
-        const err = await h.boot(await h.card({ modules: [fault], selection: [fault.name] })).then(
+        const fault = h.mod('test/dyn-crash', 'intro-fault');
+        // delay 0, mode 0 (illegal instruction), place 2 (the intro frame callback); without the cfg file the boot succeeds and the assert below fails
+        const cfg = h.cfg('crash-after.bin', Buffer.concat([be32(0), Buffer.from([0, 2])]));
+        const err = await h.boot(await h.card({ modules: [fault, cfg], selection: [fault.name] })).then(
           () => undefined,
           (e: unknown) => e,
         );

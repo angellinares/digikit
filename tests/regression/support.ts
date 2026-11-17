@@ -244,6 +244,8 @@ export function withReusablePatchedSession(
   let claim: RunDirClaim | undefined;
   /** A failed file leaves a run dir that must not be reused: a snapshot of a boot that failed a check would pass the next run. */
   let failed = false;
+  /** Set when a failed test closed the session: the next test starts a new one. */
+  let needsFreshSession = false;
   const releaseClaim = () => {
     // A snapshot that a failed file's boots wrote is not reused: its state may be one that a check rejected.
     if (failed) for (const entry of session?.writtenSnapshots ?? []) fs.rmSync(entry, { recursive: true, force: true });
@@ -343,18 +345,21 @@ export function withReusablePatchedSession(
       throw aggregate(errors, 'runtime case evidence or cleanup failed; owned daemon discarded');
     }
   };
+  const startSession = async (): Promise<void> => {
+    const { runDirClaim: _claim, ...sessionOptions } = opts;
+    session = await Session.start({
+      ...sessionOptions,
+      onSession: (started) => {
+        watchdog = startNoProgressWatchdog(started);
+      },
+      ...(claim ? { runDir: claim.dir, snapshotDir: claim.snapshotDir } : {}),
+      runtime: { patchSet: opts.patchSet, reuse: true },
+    });
+  };
   beforeAll(async () => {
-    const { runDirClaim, ...sessionOptions } = opts;
-    claim = runDirClaim?.();
+    claim = opts.runDirClaim?.();
     try {
-      session = await Session.start({
-        ...sessionOptions,
-        onSession: (started) => {
-          watchdog = startNoProgressWatchdog(started);
-        },
-        ...(claim ? { runDir: claim.dir, snapshotDir: claim.snapshotDir } : {}),
-        runtime: { patchSet: opts.patchSet, reuse: true },
-      });
+      await startSession();
     } catch (error) {
       watchdog?.stop();
       failed = true;
@@ -362,23 +367,33 @@ export function withReusablePatchedSession(
       throw error;
     }
     try {
-      baseline = await lifecycle.prepareBaseline(session);
+      baseline = await lifecycle.prepareBaseline(session!);
     } catch (error) {
       watchdog?.stop();
       failed = true;
-      await session.close({ preserveDiagnostics: true });
+      await session!.close({ preserveDiagnostics: true });
       releaseClaim();
       throw error;
     }
   });
   beforeEach(async () => {
+    if (needsFreshSession) {
+      // The previous test failed: its daemon is closed. A failure stays local to that test; this one boots a new session.
+      watchdog?.stop();
+      await startSession();
+      baseline = await lifecycle.prepareBaseline(session!);
+      needsFreshSession = false;
+    }
     await loadCase(baseline!);
   });
   afterEach(async (context) => {
     await finishCurrentCase();
     if (context.task.result?.state === 'fail') {
       failed = true;
+      needsFreshSession = true;
       watchdog?.stop();
+      // Snapshots of the failed session must not be reused; releaseClaim only sees the last session.
+      for (const entry of session?.writtenSnapshots ?? []) fs.rmSync(entry, { recursive: true, force: true });
       await session?.close({ preserveDiagnostics: true });
     }
   });

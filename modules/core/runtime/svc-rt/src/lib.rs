@@ -2,7 +2,8 @@
 //!
 //! - `ImportCore`: a zero-size `CoreApi` over the `dkc_*` imports of `dkrt_abi::core_imports`. A `Service<C: CoreApi>` runs over it unchanged; the static rows
 //!   of the runtime run the same code over `RealCore`, the host tests over `FakeCore`.
-//! - `service!`: the module record `dk_module` (its `init` declares the service's record kinds and its `ServiceRow`), the data word `dk_svc_abi` the packer
+//! - `service!`: the module record `dk_module` (its `init` declares the service's record kinds, its `ServiceRow` and, with `setup =` and `hooks =`, its hook sites:
+//!   `("cf.page.hook.page_desc", hooks::fxp_acc)` for every device, `(name, entry, dt2)` or `(name, entry, dn2)` for one; see `modules/README.md` "Services"), the data word `dk_svc_abi` the packer
 //!   copies to header word 0x3c, and the panic handler (the runtime's panic: crash capture, safe mode on the next boot).
 //!
 //! `#![no_std]`. The boundary is `extern "C"` with `repr(C)` types only (`improper_ctypes` is denied).
@@ -34,6 +35,39 @@ extern "C" {
     fn dk_service_declare_kind(ctx: *mut u8, kind: u32, len: u32, handler: *const u8) -> i32;
 }
 const _: dkrt_sdk::api::DkServiceDeclareKindFn = dk_service_declare_kind;
+extern "C" {
+    /// An import of every module (`dk_service_declare_hook` of sdk.toml): one hook site this service takes (the `name_hash` of the hook's name) and the function that
+    /// runs there. The runtime compares it with the `HOOKS` of the header table at the commit and installs the site after `init`.
+    fn dk_service_declare_hook(ctx: *mut u8, site: u32, entry: *const u8) -> i32;
+    /// An import of every module (`dk_service_declare_slot` of sdk.toml): one pointer slot of an image adapter this service fills (the `name_hash` of the slot's name) and the
+    /// function whose address the installer writes in it. The runtime compares it with the `SLOTS` of the header table.
+    fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32;
+    /// An import of every module (`dk_service_declare_export` of sdk.toml): one function this service offers to other modules (the `name_hash` of its name) and its entry.
+    /// The runtime compares it with the `EXPORTS` of the header table.
+    fn dk_service_declare_export(ctx: *mut u8, name_hash: u32, entry: *const u8) -> i32;
+}
+const _: dkrt_sdk::api::DkServiceDeclareHookFn = dk_service_declare_hook;
+const _: dkrt_sdk::api::DkServiceDeclareSlotFn = dk_service_declare_slot;
+const _: dkrt_sdk::api::DkServiceDeclareExportFn = dk_service_declare_export;
+
+/// `name_hash` of a name (FNV-1a 32, as `dkneeds::keys::name_hash`): the identity of a hook site in `HOOKS`.
+pub const fn name_hash(s: &str) -> u32 {
+    let b = s.as_bytes();
+    let mut h: u32 = 0x811c_9dc5;
+    let mut i = 0;
+    while i < b.len() {
+        h ^= b[i] as u32;
+        h = h.wrapping_mul(0x0100_0193);
+        i += 1;
+    }
+    h
+}
+
+/// The `[digikit] id` of a device in the form `service!` takes for the device filter of a hook (`dt2`, `dn2`; no filter: 0, every device).
+#[doc(hidden)]
+pub const DEVICE_DT2: u32 = dkrt_abi::profiles::DT2.id;
+#[doc(hidden)]
+pub const DEVICE_DN2: u32 = dkrt_abi::profiles::DN2.id;
 
 use sys::*;
 
@@ -196,6 +230,9 @@ impl CoreApi for ImportCore {
     unsafe fn fx_info(&self) -> *const u32 {
         dkc_fx_info()
     }
+    unsafe fn info(&self, name_hash: u32) -> *const u32 {
+        dkc_info(name_hash)
+    }
     fn link_set(&self, slot: Slot, value: u32) {
         unsafe { dkc_link_set(&slot, value) }
     }
@@ -259,19 +296,129 @@ pub unsafe fn init(ctx: *mut u8, row: &'static ServiceRow, handler: *const u8) -
     dk_service_declare_row(ctx, row)
 }
 
+/// The declarations of `service!` after `init` (kinds and row): one `dk_service_declare_hook` for each `(site hash, entry, device)` that is for `device` (0: every
+/// device), one `dk_service_declare_slot` for each `(slot hash, entry, device)` of `fills` likewise, then one `dk_service_declare_export` for each `(name hash,
+/// entry)`. The first refusal is the result. `device` is the `[digikit] id` of the running device.
+///
+/// # Safety
+/// As `init`; each entry is the address of a function of the file.
+pub unsafe fn declare(
+    ctx: *mut u8,
+    row: &'static ServiceRow,
+    handler: *const u8,
+    device: fn() -> u32,
+    hooks: &[(u32, *const u8, u32)],
+    fills: &[(u32, *const u8, u32)],
+    exports: &[(u32, *const u8)],
+) -> i32 {
+    let r = init(ctx, row, handler);
+    if r != 0 {
+        return r;
+    }
+    // the device is asked for only when an entry has a filter to compare with
+    let device = if hooks.is_empty() && fills.is_empty() {
+        0
+    } else {
+        device()
+    };
+    for &(site, entry, only) in hooks {
+        if only != 0 && only != device {
+            continue;
+        }
+        let r = dk_service_declare_hook(ctx, site, entry);
+        if r != 0 {
+            return r;
+        }
+    }
+    for &(slot, entry, only) in fills {
+        if only != 0 && only != device {
+            continue;
+        }
+        let r = dk_service_declare_slot(ctx, slot, 0, entry);
+        if r != 0 {
+            return r;
+        }
+    }
+    for &(name, entry) in exports {
+        let r = dk_service_declare_export(ctx, name, entry);
+        if r != 0 {
+            return r;
+        }
+    }
+    0
+}
+
+/// The `[digikit] id` of the running device (`dkc_device_id`): what `service!` passes to `declare`.
+#[doc(hidden)]
+pub fn running_device() -> u32 {
+    ImportCore.device_id()
+}
+
+/// The device filter of one hook entry of `service!`: none (every device), `dt2` or `dn2`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! hook_device {
+    () => {
+        0
+    };
+    (dt2) => {
+        $crate::DEVICE_DT2
+    };
+    (dn2) => {
+        $crate::DEVICE_DN2
+    };
+}
+
 /// The service file's glue: `service!(Lfo, "lfo", KINDS_LFO)` for `impl<C: CoreApi> Service<C> for Lfo`, the name of its `[[service]]` and the record kinds
-/// it owns (`&'static [(u32, u32)]`, as `dkrt_sdk::records::KINDS_*`). It emits `dk_module`, `dk_svc_abi` and (outside tests) the panic handler.
+/// it owns (`&'static [(u32, u32)]`, as `dkrt_sdk::records::KINDS_*`). It emits `dk_module`, `dk_svc_abi` and (on the ColdFire) the panic handler.
+///
+/// After the kinds: `setup = f`, `hooks = [...]`, `fills = [...]` and `exports = [("dk_param_get", fw::dk_param_get), ...]` (name, function: declared with the hash of
+/// the name, as the `[[export]]` entries of `module.toml`), each optional list in this order. Every form also emits `dk_svc_declare(ctx, device)`: the declarations
+/// of `init` without `setup` (the host test of the assembly runs it and compares the result with the header table).
+///
+/// The symbols are `no_mangle` on the ColdFire only: a host test links the service crates of all three files into one binary.
 #[macro_export]
 macro_rules! service {
     ($svc:ty, $name:literal, $kinds:expr) => {
+        $crate::service!(@emit $svc, $name, $kinds, setup = None, hooks = [], fills = [], exports = []);
+    };
+    ($svc:ty, $name:literal, $kinds:expr, setup = $setup:expr, hooks = [$($hook:tt)*]) => {
+        $crate::service!(@emit $svc, $name, $kinds, setup = Some($setup), hooks = [$($hook)*], fills = [], exports = []);
+    };
+    ($svc:ty, $name:literal, $kinds:expr, setup = $setup:expr, hooks = [$($hook:tt)*], fills = [$($fill:tt)*]) => {
+        $crate::service!(@emit $svc, $name, $kinds, setup = Some($setup), hooks = [$($hook)*], fills = [$($fill)*], exports = []);
+    };
+    ($svc:ty, $name:literal, $kinds:expr, setup = $setup:expr, hooks = [$($hook:tt)*], fills = [$($fill:tt)*], exports = [$($export:tt)*]) => {
+        $crate::service!(@emit $svc, $name, $kinds, setup = Some($setup), hooks = [$($hook)*], fills = [$($fill)*], exports = [$($export)*]);
+    };
+    (@emit $svc:ty, $name:literal, $kinds:expr, setup = $setup:expr,
+     hooks = [$(($site:literal, $entry:path $(, $dev:ident)?)),* $(,)?],
+     fills = [$(($slot:literal, $fill:path $(, $fdev:ident)?)),* $(,)?],
+     exports = [$(($ename:literal, $efn:path)),* $(,)?]) => {
         static DK_SVC_ROW: $crate::dkrt_abi::service::ServiceRow =
             $crate::dkrt_abi::service::ServiceRow::of::<$svc, $crate::ImportCore>($name, $kinds);
 
-        unsafe extern "C" fn dk_svc_init(ctx: *mut u8) -> i32 {
-            $crate::init(ctx, &DK_SVC_ROW, dk_svc_init as usize as *const u8)
+        /// The declarations of `init` (without `setup`); `device` gives the `[digikit] id` of the device the entries with a filter are compared with.
+        ///
+        /// # Safety
+        /// `ctx` is the module context of a collection; the entries are addresses of the file.
+        pub unsafe fn dk_svc_declare(ctx: *mut u8, device: fn() -> u32) -> i32 {
+            $crate::declare(ctx, &DK_SVC_ROW, dk_svc_init as usize as *const u8, device, &$crate::service!(@hooks $(($site, $entry $(, $dev)?)),*), &$crate::service!(@hooks $(($slot, $fill $(, $fdev)?)),*), &$crate::service!(@exports $(($ename, $efn)),*))
         }
 
-        #[no_mangle]
+        unsafe extern "C" fn dk_svc_init(ctx: *mut u8) -> i32 {
+            let setup: Option<unsafe fn(&$crate::ImportCore) -> i32> = $setup;
+            let r = match setup {
+                Some(f) => f(&$crate::ImportCore),
+                None => 0,
+            };
+            if r != 0 {
+                return r;
+            }
+            dk_svc_declare(ctx, $crate::running_device)
+        }
+
+        #[cfg_attr(target_arch = "m68k", no_mangle)]
         pub static dk_module: $crate::ModuleDef = $crate::ModuleDef {
             init: Some(dk_svc_init),
             fini: None,
@@ -280,14 +427,24 @@ macro_rules! service {
         };
 
         /// The ABI fingerprint the packer copies to header word 0x3c (`dkrt_abi::service::SVC_ABI`).
-        #[no_mangle]
+        #[cfg_attr(target_arch = "m68k", no_mangle)]
         pub static dk_svc_abi: u32 = $crate::dkrt_abi::service::SVC_ABI;
 
-        #[cfg(not(test))]
+        #[cfg(target_arch = "m68k")]
         #[panic_handler]
         fn dk_svc_panic(_: &core::panic::PanicInfo) -> ! {
             unsafe { $crate::sys::dkc_panic() }
         }
+    };
+    (@hooks $(($site:literal, $entry:path $(, $dev:ident)?)),*) => {
+        [$((
+            $crate::name_hash($site),
+            $entry as usize as *const u8,
+            $crate::hook_device!($($dev)?),
+        )),*]
+    };
+    (@exports $(($ename:literal, $efn:path)),*) => {
+        [$(($crate::name_hash($ename), $efn as usize as *const u8)),*]
     };
 }
 

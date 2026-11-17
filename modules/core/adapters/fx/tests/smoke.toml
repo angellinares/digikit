@@ -1,4 +1,4 @@
-# Quick tests of core/fx: the master stays audible with an empty chain and with test/fx-gain (0.5) in it, nothing faults or halts.
+# Quick tests of core/fx: the master stays audible with an empty chain, nothing faults or halts.
 # Steps: tools/patchkit/pk_harness.py. Bit-exact checks (the empty chain equals stock, the effect scales the DAC and USB rings) come with the fx emulator proof (P3d-1a step 6).
 [test]
 name = "audible"

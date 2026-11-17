@@ -81,7 +81,7 @@ machine has one SRC page**, unless it has enough parameters to spill onto a seco
 | descriptor dispatch (`FUN_400c898a`, nine knob codes, names) | machine rows, `mf_dispatch` | the row | **[D]** |
 | name, short name, header hint (three accessors, 12-byte rows) | `mf_names` | row copied from `clone_of` | **[D]** |
 | permission mask, per-type byte (6 sites), persistence bound `(u8)(type+1) < 8+N` | `mf_permit`, `mf_pertype`, `cf.machines.persist` | rows to type 23, bound 8+17 | **[D]** |
-| `type == 6` tests (7 sites, MANUAL SLICE) and the `(type & ~2) == 4` test | `clone.0` to `clone.6` | pass for clones of SLICE only | **[D]** |
+| the `(type & ~2) == 4` test | `clone.5` | an added type is tested as its `clone_of` | **[D]** |
 | parameter code per (slot, type), 7 x 10 table in bss (`FUN_400da3a2`) | `mf_typearg` | the row's knob codes | **[D]** |
 | DSP type -> selector word table (DM `0x2567c0`, `FUN_001c24e9`) | `mf_selector`, copied into `dsp.l2`, literal repointed | one word per row 7 to 23, the clone's (0 for the reserved rows: the DSP renders them as SAMPLE) | **[D]** |
 | **sample view of the SRC page** (mask test on type 0 to 6) | `SourcePageView::vfunc_4` and `FUN_40017728` | **no widget; this finding** | fixed for the page by `mf_srcpage` |
@@ -96,7 +96,7 @@ was read; an empty caller list is not evidence for the functions that reach the 
 - **The type is sent as it is.** TX frame word `0x94 + 2t` = the track's type byte (`DAT_80003cd0[0x9a t]`, the SRAM copy of the sound's type), no table, no clone mapping on the
   Digitakt II (the Digitone II has the `own_dsp` shim, finding 02). A run-time pluck on track 1 therefore puts 18 in word `0x94`.
 - Also copied unchanged per track: blocks of the sound array (frame offsets `+0xda`, `+0xfa`, `+0x116`, `+0x130`, 20, 28, 26 and 10 bytes), which include the engine slots 25 to 34.
-- **The only type-dependent extra is MANUAL SLICE's slice table** (frame words `+0xee .. +0xf8`), sent for type 6 (and for clones of 6 through `clone.6`). A clone of SAMPLE, like the pluck, gets none.
+- **The only type-dependent extra is MANUAL SLICE's slice table** (frame words `+0xee .. +0xf8`), sent for type 6 (no machine clones it). A clone of SAMPLE, like the pluck, gets none.
 - Type-dependent data is selected **on the DSP**: `FUN_001c24e9` indexes the table at `0x2567c0` with the type (`DM 0x255970 + 2t` is the DSP's copy, set after the first
   frame that follows a trig) and stores the word as the per-track selector (`track_base + 0x4c`). For types 16 to 23 `core/machines` relocated that table and wrote 0 (the clone of the
   gap or reserved row), so the DSP chooses the SAMPLE path for the track; `core/dsp-voice` then looks at the type for its own dispatch. Stock words 8 and up are loader data pointers (finding 02), so a table

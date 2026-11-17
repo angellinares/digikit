@@ -7,20 +7,18 @@
     "runtimeAcceptance": [
       {
         "files": ["inferred-needs.device.test.ts"],
-        "tags": ["C:loading", "S:fx", "S:machines"],
+        "tags": ["C:loading", "S:machines"],
         "modules": [
           "digikit/debug",
-          "digikit/freqshift",
-          "digikit/pluck",
           "digikit/probe",
           "digikit/remote",
-          "fadedlimes/analog",
-          "fadedlimes/bd",
-          "fadedlimes/pd",
           "test/c-demo",
+          "test/commit-demo",
           "test/dyn-fx-gain",
-          "test/dyn-params",
-          "test/sine"
+          "test/dyn-dn2",
+          "test/sine",
+          "core/services/fx",
+          "core/services/machines"
         ],
         "plusdrive": true
       }

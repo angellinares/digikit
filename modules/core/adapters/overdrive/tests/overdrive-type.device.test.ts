@@ -32,7 +32,7 @@ async function setType(rt: Rt, profile: FxProfile, want: number): Promise<number
 }
 
 describeOn('dt2', `DT2 ${FIRMWARE.dt2} core/overdrive OVR TYPE`, () => {
-  const context = withGainFxSession('dt2', 'overdrive OVR TYPE', { initial: 'dry', patchSet: 'overdrive-tracks' });
+  const context = withGainFxSession('dt2', 'overdrive OVR TYPE', { initial: 'dry', patchSet: 'overdrive-tracks', requireAudible: true });
 
   test('a non-stock curve changes the note at a high amount, the stock value does not, and amount 0 stays dry', async () => {
     const { fixture, plan, slots, artifacts, dry, rememberEpoch } = context;

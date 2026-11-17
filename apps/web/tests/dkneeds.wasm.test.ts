@@ -12,7 +12,7 @@ import type { Needs } from '@digi/workbench-core/modules/fit.ts';
 import { py, readBytes, wasmPath, workDir } from './support/patchkit-env.ts';
 
 const patchkit = (...args: string[]) => py('tools.patchkit.patchkit', ...args);
-const MODULES = ['test/sine', 'digikit/remote', 'test/dyn-params', 'test/dyn-demo'];
+const MODULES = ['test/sine', 'digikit/remote', 'test/dyn-dn2', 'test/dyn-demo'];
 
 test.skipIf(!existsSync(wasmPath))(
   'the wasm reader and the command line give the same needs for packed modules',

@@ -51,6 +51,9 @@ pub struct Plan {
     /// P1: sections copied from the image
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sections: Vec<prim::PlanSection>,
+    /// The entries of the image's info table (`dkrt_info_table`), with the words of each data entry as the image holds them
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub info: Vec<PlanInfo>,
     /// P4: hooks
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<prim::PlanHook>,
@@ -68,6 +71,20 @@ impl Plan {
             .collect()
     }
 }
+
+/// One entry of the image's info table (`prim::build_info_table`): `kind` is `prim::INFO_KIND_SLOT` or `prim::INFO_KIND_DATA`; `words` are up to
+/// `INFO_WORDS` big endian words at `addr` of a data entry (read from the placed object that holds it; empty when no placed object does).
+#[derive(Clone, Debug, Serialize)]
+pub struct PlanInfo {
+    pub name: String,
+    pub hash: u32,
+    pub addr: u64,
+    pub kind: u32,
+    pub words: Vec<u32>,
+}
+
+/// The most words of a data entry the plan records.
+const INFO_WORDS: usize = 16;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PlanBase {
@@ -266,12 +283,18 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
             }
             None => {}
         }
-        if op.op == "hook" {
+        if matches!(op.op.as_str(), "hook" | "stub") {
             let place = hook_place(port, op);
             let runs = op.displaced.as_deref() == Some("run");
             if port.region(&place).is_none() && runs {
                 missing.push(format!("region {place}"));
             }
+        }
+    }
+    for sl in m.manifest.slot.iter().filter(|s| on(&s.devices, dev)) {
+        let place = slot_place(sl);
+        if port.region(&place).is_none() {
+            missing.push(format!("region {place}"));
         }
     }
     for s in m.manifest.section.iter().filter(|s| on(&s.devices, dev)) {
@@ -321,7 +344,11 @@ fn glob_anchors<'a>(port: &'a Port, pattern: &str) -> Vec<&'a Anchor> {
 /// A manifest `hook` op in the form the later steps read: the site anchor and offset of the declared hook,
 /// and `hook` (displaced code runs), `hook` with `displaced = drop` or `retarget` by its mode.
 fn expand_op(m: &Module, port: &Port, op: &Op) -> Result<Op> {
-    let Some(name) = op.hook.as_deref().filter(|_| op.op == "hook") else {
+    let Some(name) = op
+        .hook
+        .as_deref()
+        .filter(|_| matches!(op.op.as_str(), "hook" | "stub"))
+    else {
         return Ok(op.clone());
     };
     let h = port
@@ -330,6 +357,14 @@ fn expand_op(m: &Module, port: &Port, op: &Op) -> Result<Op> {
     let mut x = op.clone();
     x.anchor = h.site.clone();
     x.offset = h.offset;
+    if op.op == "stub" {
+        // a stub sits in front of the displaced instructions whatever the hook's mode is
+        if h.mode == "retarget" {
+            return Err(err!("{}: stub {name}: a retarget hook has no stub", m.id()));
+        }
+        x.displaced = Some("run".into());
+        return Ok(x);
+    }
     match h.mode.as_str() {
         "before" => x.displaced = Some("run".into()),
         "replace" => x.displaced = Some("drop".into()),
@@ -347,6 +382,11 @@ fn device_ops(m: &Module, port: &Port) -> Result<Vec<Op>> {
         .filter(|o| on(&o.devices, &port.port.device))
         .map(|o| expand_op(m, port, o))
         .collect()
+}
+
+/// Region of the slot words of a `[[slot]]`.
+fn slot_place(s: &crate::module::SlotDef) -> String {
+    s.place.clone().unwrap_or_else(|| "cf.expansion".into())
 }
 
 /// Region of a hook's tail: `place`, else the CPU's code region.
@@ -411,6 +451,22 @@ struct Chunk {
     what: String,
 }
 
+/// The words at `addr` in the ColdFire object of `chunks` that holds it (at most `INFO_WORDS`, to the end of the object's image); empty when none does.
+fn placed_words(chunks: &[Chunk], addr: u64) -> Vec<u32> {
+    let Some(c) = chunks
+        .iter()
+        .find(|c| c.cpu == CF && c.addr <= addr && addr < c.addr + c.image.len() as u64)
+    else {
+        return vec![];
+    };
+    let at = (addr - c.addr) as usize;
+    c.image[at..]
+        .chunks_exact(4)
+        .take(INFO_WORDS)
+        .map(|w| u32::from_be_bytes([w[0], w[1], w[2], w[3]]))
+        .collect()
+}
+
 /// An in-place change of firmware bytes.
 struct Patch {
     owner: String,
@@ -440,9 +496,14 @@ fn uses_expansion(lib: &Library, ids: &[String], dev: &str, port: &Port) -> bool
                 .registry
                 .iter()
                 .any(|r| r.region == exp && on(&r.devices, dev))
+            || mf
+                .slot
+                .iter()
+                .any(|s| slot_place(s) == exp && on(&s.devices, dev))
+            || mf.info.iter().any(|i| on(&i.devices, dev))
             || device_ops(m, port).is_ok_and(|ops| {
                 ops.iter().any(|o| {
-                    o.op == "hook"
+                    matches!(o.op.as_str(), "hook" | "stub")
                         && o.displaced.as_deref() == Some("run")
                         && hook_place(port, o) == exp
                 })
@@ -514,7 +575,14 @@ struct SecStage {
     total: usize,
 }
 
-/// A `hook` op, decoded.
+/// The `stub` fields of a hook stage.
+struct StubStage {
+    slot: String,
+    scratch: u8,
+    tail: Option<String>,
+}
+
+/// A `hook` or `stub` op, decoded.
 struct HookStage<'a> {
     module: &'a Module,
     op_idx: usize,
@@ -527,6 +595,8 @@ struct HookStage<'a> {
     cf: Option<prim::CfSite>,
     run: bool,
     tail_len: usize,
+    /// `op = "stub"`: the slot, the scratch register and the hand-written stock path
+    stub: Option<StubStage>,
     place: String,
     /// `hook.<anchor>` (with `.<offset>` when not 0)
     base_name: String,
@@ -632,12 +702,14 @@ fn stage<'a>(
     for id in order {
         let m = lib.get(id).unwrap();
         for (oi, op) in device_ops(m, port)?.into_iter().enumerate() {
-            if op.op != "hook" {
+            if !matches!(op.op.as_str(), "hook" | "stub") {
                 continue;
             }
+            let is_stub = op.op == "stub";
             let who = format!(
-                "{}: hook {}",
+                "{}: {} {}",
                 m.id(),
+                op.op,
                 op.hook.as_deref().unwrap_or(&op.anchor)
             );
             let a = port.anchor(&op.anchor).unwrap();
@@ -678,11 +750,51 @@ fn stage<'a>(
                     }
                 }
             }
+            let mut stub = None;
+            if is_stub {
+                let Some(site) = &cf else {
+                    return Err(err!("{who}: a stub is ColdFire only"));
+                };
+                let scratch = prim::parse_scratch(op.scratch.as_deref().unwrap())
+                    .map_err(|e| err!("{who}: {e}"))?;
+                let tail = op.tail.clone();
+                if tail.is_none() {
+                    prim::cf_tail(site, 0, 0).map_err(|e| {
+                        err!(
+                            "{who}: the stock path of the site cannot be re-encoded: {e}; give `tail = \"<symbol>\"` for a hand-written stock path"
+                        )
+                    })?;
+                    if let Some(d) = prim::scratch_read_by(&site.insns, scratch) {
+                        return Err(err!(
+                            "{who}: scratch {} is read by the displaced instruction at {:#x} ({}): choose another register from the hook's regs.clobbers",
+                            op.scratch.as_deref().unwrap(),
+                            d.addr,
+                            d.insn
+                        ));
+                    }
+                }
+                stub = Some(StubStage {
+                    slot: op.slot.clone().unwrap(),
+                    scratch,
+                    tail,
+                });
+            }
             let tail_len = match (&cf, run) {
                 (_, false) => 0,
-                (Some(s), true) => prim::cf_tail(s, 0, 0)
-                    .map_err(|e| err!("{who}: {e}"))?
-                    .len(),
+                (Some(s), true) => {
+                    let stock = match &stub {
+                        Some(StubStage { tail: Some(_), .. }) => prim::CF_JMP_LEN,
+                        _ => prim::cf_tail(s, 0, 0)
+                            .map_err(|e| err!("{who}: {e}"))?
+                            .len(),
+                    };
+                    stock
+                        + if stub.is_some() {
+                            prim::STUB_PREFIX_LEN
+                        } else {
+                            0
+                        }
+                }
                 (None, true) => 12,
             };
             let place = hook_place(port, &op);
@@ -703,6 +815,7 @@ fn stage<'a>(
                 cf,
                 run,
                 tail_len,
+                stub,
                 place,
                 base_name,
             });
@@ -935,6 +1048,9 @@ pub fn apply_with(
                 if op.op == "hook" {
                     add(&mut names, op.to.as_deref().unwrap())?;
                 }
+                if let Some(t) = op.tail.as_deref().filter(|_| op.op == "stub") {
+                    add(&mut names, t)?;
+                }
             }
         }
         for s in &active.sections {
@@ -988,6 +1104,75 @@ pub fn apply_with(
     let mut sec_at: Vec<(u64, &'static str)> = vec![(0, CF); active.sections.len()];
     let mut reg_at: Vec<(u64, &'static str)> = vec![(0, CF); active.regs.len()];
     let mut tail_at: Vec<Option<(u64, &'static str)>> = vec![None; stg.hooks.len()];
+    // pointer slots: per module, the declared slots active on this device and where their table is placed
+    let slot_defs: Vec<(&Module, Vec<&crate::module::SlotDef>)> = order
+        .iter()
+        .map(|id| lib.get(id).unwrap())
+        .map(|m| {
+            (
+                m,
+                m.manifest
+                    .slot
+                    .iter()
+                    .filter(|s| on(&s.devices, &dev))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .filter(|(_, v)| !v.is_empty())
+        .collect();
+    // the slot words of one module are one chunk in the region of its first slot: a slot with another `place` would be put in the wrong region
+    for (m, defs) in &slot_defs {
+        if let Some(d) = defs.iter().find(|d| slot_place(d) != slot_place(defs[0])) {
+            return Err(err!(
+                "{}: slot {} has place {} but the slots of one module share the place of the first ({})",
+                m.id(),
+                d.name,
+                slot_place(d),
+                slot_place(defs[0])
+            ));
+        }
+    }
+    let mut slot_at: Vec<(u64, &'static str)> = vec![(0, CF); slot_defs.len()];
+    // the image's one info table: every slot word and every `[[info]]` of the library on this device, with one hash each
+    let info_defs: Vec<(&Module, &crate::module::InfoDef)> = order
+        .iter()
+        .map(|id| lib.get(id).unwrap())
+        .flat_map(|m| {
+            m.manifest
+                .info
+                .iter()
+                .filter(|i| on(&i.devices, &dev))
+                .map(move |i| (m, i))
+        })
+        .collect();
+    let n_info = slot_defs.iter().map(|(_, d)| d.len()).sum::<usize>() + info_defs.len();
+    if n_info > dkneeds::INFO_MAX as usize {
+        return Err(err!(
+            "{n_info} [[slot]] and [[info]] entries on {dev}, over the {} of `[limits.format] info_max`",
+            dkneeds::INFO_MAX
+        ));
+    }
+    {
+        let mut seen: Vec<(u32, String)> = vec![];
+        let names = slot_defs
+            .iter()
+            .flat_map(|(m, d)| d.iter().map(move |s| (m.id().to_string(), s.name.as_str())))
+            .chain(
+                info_defs
+                    .iter()
+                    .map(|(m, i)| (m.id().to_string(), i.name.as_str())),
+            );
+        for (owner, name) in names {
+            let h = dkneeds::keys::name_hash(name);
+            if let Some((_, other)) = seen.iter().find(|(x, _)| *x == h) {
+                return Err(err!(
+                    "two entries of the info table have the name hash {h:#010x}: {other} and {owner}: {name}"
+                ));
+            }
+            seen.push((h, format!("{owner}: {name}")));
+        }
+    }
+    let mut info_at: Option<(u64, &'static str)> = None;
 
     // Allocate every object first-fit in its region, then link with everyone's exports visible.
     let mut allocs: BTreeMap<String, Alloc> = BTreeMap::new();
@@ -1088,6 +1273,19 @@ pub fn apply_with(
                     take_region(&mut allocs, port, &r.def.region, stg.reg_size[ri], 4, &who)?;
             }
         }
+        for (si, (sm, defs)) in slot_defs.iter().enumerate() {
+            if sm.id() == id {
+                let who = format!("{id}: slots");
+                slot_at[si] = take_region(
+                    &mut allocs,
+                    port,
+                    &slot_place(defs[0]),
+                    4 * defs.len(),
+                    4,
+                    &who,
+                )?;
+            }
+        }
         for (hi, h) in stg.hooks.iter().enumerate() {
             if h.module.id() == id && h.run {
                 let who = format!("{id}: hook {} tail", h.anchor.name);
@@ -1101,6 +1299,20 @@ pub fn apply_with(
                 )?);
             }
         }
+    }
+    if n_info > 0 {
+        let region = slot_defs
+            .first()
+            .map(|(_, d)| slot_place(d[0]))
+            .unwrap_or_else(|| "cf.expansion".into());
+        info_at = Some(take_region(
+            &mut allocs,
+            port,
+            &region,
+            prim::info_table_len(n_info),
+            4,
+            "the info table",
+        )?);
     }
     let mut globals: BTreeMap<String, u64> = BTreeMap::new();
     for p in &placed {
@@ -1144,6 +1356,20 @@ pub fn apply_with(
                     (stg.reg_first[ri] + k as i64) as u64,
                 )?;
             }
+        }
+        for (si, (sm, defs)) in slot_defs.iter().enumerate() {
+            let base = slot_at[si].0;
+            for (i, d) in defs.iter().enumerate() {
+                add(sm, format!("slot.{}", d.name), base + 4 * i as u64)?;
+            }
+        }
+        if let Some((addr, _)) = info_at {
+            // the runtime links it as an optional import: 0 when no adapter declares an entry
+            let owner = slot_defs
+                .first()
+                .map(|(m, _)| *m)
+                .unwrap_or_else(|| info_defs[0].0);
+            add(owner, "dkrt_info_table".to_string(), addr)?;
         }
         for (hi, h) in stg.hooks.iter().enumerate() {
             let ret = if h.cpu == SHARC {
@@ -1217,6 +1443,7 @@ pub fn apply_with(
     // Bytes of the primitives' memory: registry tables, copied sections with appended rows, hook tails.
     let mut plan_regs: Vec<prim::PlanRegistry> = vec![];
     let mut plan_secs: Vec<prim::PlanSection> = vec![];
+    let mut info_plan: Vec<PlanInfo> = vec![];
     {
         let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
         let image_fn = |n: &str, off: i64, w: u8| image_read(&mem, port, n, off, w);
@@ -1330,6 +1557,78 @@ pub fn apply_with(
                 what: format!("section {}", s.def.name),
             });
         }
+        for (si, (sm, defs)) in slot_defs.iter().enumerate() {
+            let (addr, cpu) = slot_at[si];
+            chunks.push(Chunk {
+                owner: sm.tag(),
+                cpu,
+                region: slot_place(defs[0]),
+                addr,
+                image: pad(vec![0u8; 4 * defs.len()], cpu),
+                code: vec![],
+                bss: 0,
+                what: format!("slot words of {}", sm.id()),
+            });
+        }
+        if let Some((addr, cpu)) = info_at {
+            let mut entries: Vec<(u32, u32, u32)> = vec![];
+            let mut names: Vec<String> = vec![];
+            for (si, (_, defs)) in slot_defs.iter().enumerate() {
+                for (i, d) in defs.iter().enumerate() {
+                    entries.push((
+                        dkneeds::keys::name_hash(&d.name),
+                        (slot_at[si].0 + 4 * i as u64) as u32,
+                        prim::INFO_KIND_SLOT,
+                    ));
+                    names.push(d.name.clone());
+                }
+            }
+            for (m, inf) in &info_defs {
+                let text = inf.symbol.as_deref().unwrap_or(&inf.name);
+                let v = crate::expr::eval_str(text, &scope)
+                    .map_err(|e| err!("{}: info {}: symbol: {e}", m.id(), inf.name))?;
+                let v = u32::try_from(v).map_err(|_| {
+                    err!(
+                        "{}: info {}: address {v:#x} is not 32 bits",
+                        m.id(),
+                        inf.name
+                    )
+                })?;
+                entries.push((dkneeds::keys::name_hash(&inf.name), v, prim::INFO_KIND_DATA));
+                names.push(inf.name.clone());
+            }
+            for ((hash, addr, kind), name) in entries.iter().zip(&names) {
+                let words = if *kind == prim::INFO_KIND_DATA {
+                    placed_words(&chunks, *addr as u64)
+                } else {
+                    vec![]
+                };
+                info_plan.push(PlanInfo {
+                    name: name.clone(),
+                    hash: *hash,
+                    addr: *addr as u64,
+                    kind: *kind,
+                    words,
+                });
+            }
+            let owner = slot_defs
+                .first()
+                .map(|(m, _)| m.tag())
+                .unwrap_or_else(|| info_defs[0].0.tag());
+            chunks.push(Chunk {
+                owner,
+                cpu,
+                region: slot_defs
+                    .first()
+                    .map(|(_, d)| slot_place(d[0]))
+                    .unwrap_or_else(|| "cf.expansion".into()),
+                addr,
+                image: pad(prim::build_info_table(&entries), cpu),
+                code: vec![],
+                bss: 0,
+                what: "the image's info table (dkrt_info_table)".into(),
+            });
+        }
         for (hi, h) in stg.hooks.iter().enumerate() {
             let Some((addr, cpu)) = tail_at[hi] else {
                 continue;
@@ -1342,6 +1641,29 @@ pub fn apply_with(
             );
             let ret = prim_syms[&format!("{}.return", h.base_name)];
             let bytes = match &h.cf {
+                Some(site) if h.stub.is_some() => {
+                    let st = h.stub.as_ref().unwrap();
+                    let slot_addr =
+                        *prim_syms.get(&format!("slot.{}", st.slot)).ok_or_else(|| {
+                            err!("{who}: slot {} is not declared on this device", st.slot)
+                        })?;
+                    let mut b = prim::stub_prefix(st.scratch, slot_addr as u32);
+                    match &st.tail {
+                        Some(t) => {
+                            let to = crate::expr::eval_str(t, &scope)
+                                .map_err(|e| err!("{who}: tail: {e}"))?;
+                            let to = u32::try_from(to)
+                                .map_err(|_| err!("{who}: tail {to} is not a 32-bit address"))?;
+                            b.extend_from_slice(&prim::CF_JMP_L.to_be_bytes());
+                            b.extend_from_slice(&to.to_be_bytes());
+                        }
+                        None => b.extend(
+                            prim::cf_tail(site, addr + prim::STUB_PREFIX_LEN as u64, ret)
+                                .map_err(|e| err!("{who}: {e}"))?,
+                        ),
+                    }
+                    b
+                }
                 Some(site) => prim::cf_tail(site, addr, ret).map_err(|e| err!("{who}: {e}"))?,
                 None => {
                     let mut b = h.old.clone();
@@ -1379,7 +1701,7 @@ pub fn apply_with(
         for id in &order {
             let m = lib.get(id).unwrap();
             for (oi, op) in device_ops(m, port)?.iter().enumerate() {
-                if op.op == "hook" {
+                if matches!(op.op.as_str(), "hook" | "stub") {
                     let hi = stg
                         .hooks
                         .iter()
@@ -1387,11 +1709,16 @@ pub fn apply_with(
                         .unwrap();
                     let h = &stg.hooks[hi];
                     let who = format!(
-                        "{id}: hook {}",
+                        "{id}: {} {}",
+                        op.op,
                         op.hook.as_deref().unwrap_or(&h.anchor.name)
                     );
-                    let to = crate::expr::eval_str(op.to.as_deref().unwrap(), &scope)
-                        .map_err(|e| err!("{who}: to: {e}"))?;
+                    let to = match &h.stub {
+                        // the site enters the stub, which is the start of the tail chunk
+                        Some(_) => prim_syms[&format!("{}.tail", h.base_name)] as i64,
+                        None => crate::expr::eval_str(op.to.as_deref().unwrap(), &scope)
+                            .map_err(|e| err!("{who}: to: {e}"))?,
+                    };
                     let to =
                         u64::try_from(to).map_err(|_| err!("{who}: target {to} is negative"))?;
                     let new = match &h.cf {
@@ -1405,7 +1732,7 @@ pub fn apply_with(
                         cpu: h.cpu,
                         addr: h.site,
                         old_sha256: sha256_hex(&h.old),
-                        what: format!("hook {}{:+}", h.anchor.name, op.offset),
+                        what: format!("{} {}{:+}", op.op, h.anchor.name, op.offset),
                         bytes: new,
                     });
                     plan_hooks.push(prim::PlanHook {
@@ -1421,6 +1748,7 @@ pub fn apply_with(
                         tail: prim_syms.get(&format!("{}.tail", h.base_name)).copied(),
                         ret: prim_syms[&format!("{}.return", h.base_name)],
                         displaced_insns: h.cf.iter().flat_map(prim::fmt_displaced).collect(),
+                        slot: h.stub.as_ref().map(|st| st.slot.clone()),
                     });
                     continue;
                 }
@@ -1718,6 +2046,7 @@ pub fn apply_with(
         addr_entries,
         registries: plan_regs,
         sections: plan_secs,
+        info: info_plan,
         hooks: plan_hooks,
         record: rec,
         output: None,

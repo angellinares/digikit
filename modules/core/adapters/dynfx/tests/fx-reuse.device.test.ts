@@ -22,7 +22,7 @@ import {
 
 for (const device of DEVICES) {
   describe(`${device.toUpperCase()} ${FIRMWARE[device]} reusable FX fixture`, () => {
-    const context = withGainFxSession(device, 'FX dry/gain/deselect/reset');
+    const context = withGainFxSession(device, 'FX dry/gain/deselect/reset', { requireAudible: true });
     test('reuses an owned daemon while clean reset and protocol restart preserve their distinct FX contracts', async () => {
       const { fixture, plan, dry, wet, artifacts, slots, rememberEpoch } = context;
       const initial = fixture.runtime;

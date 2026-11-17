@@ -6,7 +6,7 @@ category = "test"
 type = "raw"
 author = "digikit"
 status = "experimental"
-summary = "Test fixture: a module that raises a CPU exception (illegal instruction or division by zero) a configured number of DSP blocks into the UI loop (crash capture, finding 46)"
+summary = "Test fixture: the one fault injector. A store file sets what it does: an illegal instruction, a division by zero, a reset or a hang in the UI loop after a number of DSP blocks, a reset in init, or a fault in the boot animation callback (crash capture, safe mode)"
 requires = []
 conflicts = []
 
@@ -14,10 +14,9 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# C, packed like test/dyn-fault-late. `init` reads the store file `cfg/crash-after.bin` (4 bytes big endian: blocks after the first tick;
-# 1 byte: 0 = execute an illegal instruction, 1 = divide by zero) and `tick` raises the exception once that many
-# blocks (the runtime's `dkrt_blocks` import, 1500 per second) have passed. Before it does it logs `crash-pc` with the address of the illegal
-# instruction, so the log of the crashed boot (the tail of the crash record) names the program counter the record must show.
+# C. `init` reads the store file `cfg/crash-after.bin` (the format is in src/c/dyn_crash.c: delay, mode, place) and `tick` or the boot animation's
+# frame callback faults as it says. Modes: illegal instruction, division by zero, reset, hang in the UI task, reset in `init`. Every test that uses
+# it writes the file and asserts that the fault happened: without the file the module never faults.
 [[object]]
 path = "build/dyn-crash.dko.json"
 sources = ["src/c/dyn_crash.c"]

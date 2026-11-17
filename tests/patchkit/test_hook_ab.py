@@ -102,4 +102,32 @@ def test_default_cli_keeps_human_readable_output(tmp_path, capsys):
     )
     output = capsys.readouterr().out
     assert "max_err_ulps" in output
-    assert "PASS (gain 0.5: error within 2 ulps)" in output
+    assert "PASS (gain 0.5: error within 9.53674e-07 of the peak)" in output
+
+
+def test_error_within_the_peak_bound_passes_and_is_reported_ok():
+    base = signal(4)
+    test = base * np.float32(0.5)
+    test[5] += np.float32(0.25 * hook_ab.REL_PEAK_BOUND * 0.5)  # half the bound
+    assert hook_ab.compare(base, test, 0.5)["ok"]
+
+
+def test_a_tenth_of_a_percent_gain_error_fails():
+    base = signal(4)
+    assert not hook_ab.compare(base, base * np.float32(0.5 * 1.001), 0.5)["ok"]
+    assert not hook_ab.compare_aligned(base, signal(12, 0.5005), 0.5)["ok"]
+
+
+def test_rel_bound_option_changes_the_verdict(tmp_path):
+    base_path, test_path = tmp_path / "base.wav", tmp_path / "test.wav"
+    write_wav(base_path, signal(4))
+    write_wav(test_path, signal(4, 0.5005))
+    args = ["compare", str(base_path), str(test_path), "--gain", "0.5", "--json"]
+    assert hook_ab.main(args) == 1
+    assert hook_ab.main([*args, "--rel-bound", "0.01"]) == 0
+
+
+def test_silent_reference_passes_only_with_silent_output():
+    silent = np.zeros(8, dtype=np.float32)
+    assert hook_ab.compare(silent, silent, 0.5)["ok"]
+    assert not hook_ab.compare(silent, signal(2), 0.5)["ok"]

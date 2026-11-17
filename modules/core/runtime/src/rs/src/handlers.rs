@@ -18,9 +18,11 @@ pub type ServiceTable = dkrt_abi::service::ServiceTable;
 /// The rows whose declare check failed (`check_declarations`): bit `i` for row `i`.
 static mut FAILED: u32 = 0;
 
-/// The services in the order the core calls them: the in-crate ones (`[[service]]` of sdk/sdk.toml with `rust =`: samples, machines, fx, lfo), then the rows of
+/// The services in the order the core calls them: the in-crate ones (`[[service]]` of sdk/sdk.toml with `rust =`: samples, fx), then the rows of
 /// loaded service files (`svc_rows.rs`), with the mask of the in-crate ones that failed their declare check.
 pub fn services() -> ServiceTable {
+    #[cfg(test)]
+    crate::svc_rows::test_machines();
     crate::svc_rows::table(ServiceTable { failed: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(FAILED)) }, ..crate::gen_services::TABLE })
 }
 
@@ -40,34 +42,23 @@ pub unsafe fn check_declarations() -> u32 {
 /// The C-ABI entry points of the services that the core links into its own tables (interface A: the imports of `sdk.toml` and the events the adapters
 /// call). This is the one place where the core names a service function; the rest of the core calls `Services` or `CoreApi`.
 pub mod exports {
-    /// The effect list of DIGIKIT > FX ROUTES over the real core (the fx crate is generic over the core).
+    /// The effect list of DIGIKIT > FX ROUTES: the fx service's row method; without the service file (no fx) there is no effect.
     pub unsafe fn fx_entry(index: u32, out: &mut dkrt_sdk::DkrtFx) -> i32 {
-        dkrt_svc_fx::fxsend::fx_entry(&crate::core_api::REAL_CORE, index, out)
+        super::services().fx_entry(index, out)
     }
-    /// `dk_param_get` over the real core and the real firmware page. (A host test of the runtime crate has no firmware: it never reaches it.)
-    #[cfg(not(test))]
-    pub unsafe fn param_get(track: u32, word: u32) -> i32 {
-        dkrt_svc_machines::slots::param_get(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word)
-    }
-    /// `dk_param_set`, as `param_get`.
-    #[cfg(not(test))]
-    pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
-        dkrt_svc_machines::slots::param_set(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word, raw)
-    }
+    /// Host tests only: the page set of the machines service, and its row as a loaded service file has it (`svc_rows::test_machines`).
     #[cfg(test)]
-    pub unsafe fn param_get(_: u32, _: u32) -> i32 {
-        panic!("firmware parameter access requires a dkrt_abi::fw::Fw host fixture")
-    }
+    pub(crate) use dkrt_svc_machines::nativepage::PageSet;
     #[cfg(test)]
-    pub unsafe fn param_set(_: u32, _: u32, _: i32) -> i32 {
-        panic!("firmware parameter access requires a dkrt_abi::fw::Fw host fixture")
+    pub(crate) fn machines_row() -> &'static dkrt_abi::service::ServiceRow {
+        static ROW: dkrt_abi::service::ServiceRow =
+            dkrt_abi::service::ServiceRow::of::<dkrt_svc_machines::records::Machines, crate::core_api::RealCore>("machines", &dkrt_sdk::records::KINDS_MACHINES);
+        &ROW
     }
     /// The machine type numbers of the machine rows module `owner` filled (`module_cmds`: the module list); returns how many.
     pub fn machine_types_of(owner: u8, out: &mut [u8; 8]) -> usize {
-        dkrt_svc_machines::records::types_of(&crate::core_api::REAL_CORE, owner, out)
+        unsafe { super::services().machine_types_of(owner, out) }
     }
-    #[cfg(test)]
-    pub(crate) use dkrt_svc_machines::nativepage::PageSet;
     /// The shapes of the lfo service, for the runtime's own tests of the record path.
     #[cfg(test)]
     pub(crate) use dkrt_svc_lfo::records::{owner_of, shape, used, Lfo, MAX_SHAPES, SAMPLES};
@@ -144,21 +135,6 @@ pub mod exports {
     }
 }
 
-/// Hook at the entry of the machine page's key handler (`dkrt_pagekey_hook`, src/cf/tramp.s; stack: view, event): the machines service sees the key.
-#[cfg(not(test))]
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
-    dkrt_svc_machines::slots::page_key(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, view, ev)
-}
-
-/// Hook at the entry of the machine page's turn handler (`dkrt_pageturn_hook`): the machines service sees the turn; the result is nonzero when a
-/// native page consumed it.
-#[cfg(not(test))]
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) -> u32 {
-    dkrt_svc_machines::slots::page_turn(&crate::core_api::REAL_CORE, view, ev)
-}
-
 /// The length of a record of `kind`; `E_FORMAT`-worthy kinds are `None`. For the builder lowering (`collect`).
 pub fn len(kind: u32) -> Option<u32> {
     services().len(kind)
@@ -168,3 +144,7 @@ pub fn len(kind: u32) -> Option<u32> {
 pub(crate) mod tests;
 #[cfg(test)]
 mod lfo_tests;
+#[cfg(test)]
+pub(crate) mod fx_fixture;
+#[cfg(test)]
+pub(crate) mod dks_decls;

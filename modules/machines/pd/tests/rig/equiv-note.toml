@@ -1,0 +1,48 @@
+# pd (fadedlimes/pd): the note pin on the SHARC-only rig. It replaces the PCM pin of tests/equiv.device.test.ts (that file's note, retired after the R12-6 gate and review).
+# Each case plays note 60, velocity 100, every parameter at its manifest default, for 375 blocks (0.25 s, as long as the device pin) in a friendly context,
+# and runs twice with all module state filled differently (NaN words, then a seeded integer pattern) and fails when the outputs differ (the output does not depend on the initial state), and pins the SHA-256 of the machine's float32 output words (375 blocks of 32 samples). The device pin hashed the same note through the whole firmware
+# path (track filter, mixer, output); this pin sees only the machine's own DSP. One case per device: the sha256 differs per device.
+# The pins are written by the rig, never by hand: DIGI_RIG_PIN=1 pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/machines/pd/tests/
+# A changed pin is a re-pin and needs Em's review (docs/plans/ledgers/t2-machine-rig-refs.md).
+
+[[case]]
+name = "note 60 at the default parameters is pinned: dt2"
+device = ["dt2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+blocks = 375
+
+[[case.check]]
+kind = "same-as"
+sha256 = "61967e133943c4c20194877bfeec5b561b2edd0f2fb8bed908043c6520361118"
+
+[[case.check]]
+kind = "peak"
+min = 0.01
+
+[[case.check]]
+kind = "no-clip"
+
+[[case]]
+name = "note 60 at the default parameters is pinned: dn2"
+device = ["dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+blocks = 375
+
+[[case.check]]
+kind = "same-as"
+sha256 = "d8d7e2bf3aaa872a52b31ef623d1f3b74475a99a2e4033c2a10d5cccef4928a4"
+
+[[case.check]]
+kind = "peak"
+min = 0.01
+
+[[case.check]]
+kind = "no-clip"

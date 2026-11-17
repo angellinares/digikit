@@ -6,6 +6,7 @@ import { expect, test } from 'vitest';
 import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
 import { readLoadTable, resolveAddresses } from '@digi/regression/runtime/addrmap.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
+import { moduleResultsNote } from '@digi/regression/runtime/runtime-menu.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import {
   bounded,
@@ -19,7 +20,14 @@ import {
   type Rt,
 } from '@digi/regression/runtime/fx-live.ts';
 import { FIRMWARE, FULL_TIER, describeOn } from '@digi/regression/runtime/devices.ts';
-import { decodeTables, diffTables, dynType, selectType, voiceRows } from '@digi/regression/runtime/project-kit.ts';
+import {
+  decodeTables,
+  diffTables,
+  dynType,
+  FREE_TYPE,
+  selectType,
+  voiceRows,
+} from '@digi/regression/runtime/project-kit.ts';
 
 /**
  * A run-time module set against a boot of no module (port of tools/patchkit/pk_digikit_scen.py `run_equiv`).
@@ -50,10 +58,11 @@ export interface Equiv {
   pcmSha256?: string;
 }
 
+/** A pin whose SHA-256 is not approved yet: the case fails and names the measured hash, which gate BC produces and Em approves before it replaces the placeholder. */
+export const PENDING_PCM = 'pending-approval';
 const PIN_SAMPLES = 24000; // interleaved samples a PCM pin covers from the onset (0.25 s of stereo)
 const PRESS_OFFSET = 44_000; // ColdFire instructions after the block boundary (a block is 88 000)
 const NOTE_FRAMES = 1500; // 1 s of audio, captured from the trig on
-const FREE_TYPE = 0xffff_ffff;
 const SYMBOLS = [
   'DKRT_BOOT',
   'DKRT_ASSIGN',
@@ -120,7 +129,10 @@ export function defineEquiv(scenarios: Equiv[]): void {
           const info = await bootInfo(session, run.plan);
           const n = sc.modules.length;
           expect(info.count, 'the selection loaded at boot').toBe(n);
-          expect(info.results, 'every module result is 0').toEqual(Array(n).fill(0));
+          expect(
+            info.results,
+            `every module result is 0${await moduleResultsNote(session, run.plan, info.results)}`,
+          ).toEqual(Array(n).fill(0));
           expect([info.loaded, info.safe]).toEqual([n, 0]);
           const got = await decodeTables(session, run.plan);
           const used = (await voiceRows(session, run.plan)).filter(([type]) => type !== FREE_TYPE);
@@ -160,6 +172,11 @@ export function defineEquiv(scenarios: Equiv[]): void {
             // PCM pin: the SHA-256 over PIN_SAMPLES interleaved little-endian float32 samples from the onset (first sample above 1e-6; it lies on a whole stereo frame)
             const { onset, window } = pcmWindow(runPcm, PIN_SAMPLES);
             const sha = createHash('sha256').update(window).digest('hex');
+            if (sc.pcmSha256 === PENDING_PCM) {
+              throw new Error(
+                `${sc.name}: the PCM pin is pending approval; measured onset ${onset}, SHA-256 ${sha} (gate BC; Em approves it, then it replaces PENDING_PCM)`,
+              );
+            }
             expect(
               { ok: onset >= 0 && onset % 2 === 0 && window.length / 4 === PIN_SAMPLES, sha },
               `PCM from the onset (${onset}) over ${PIN_SAMPLES} samples has the pinned SHA-256`,

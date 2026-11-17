@@ -1,0 +1,62 @@
+[module]
+id = "core/services/fx"
+version = "0.8.2"
+name = "fx service"
+category = "core"
+role = "service"
+service = "fx"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "The fx service of the runtime as a service file: effect pages, FX parameters, routes, send amounts and the kit values of run-time effects; it owns the effect record kind and takes the nine hooks of the effect pages"
+requires = ["core/fxpages"]
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The hooks it takes (the firmware sites of the effect pages, devices/fw/page.toml). They have no `handler`: each is a routine of this file that runs in place
+# of the stock instructions at the site and returns into the stock code through the table `fxpages_info` (`patchkit bind` makes the site jump straight to the
+# entry; there is no trampoline). `init` repeats the hooks with dk_service_declare_hook (`service!`).
+[[hook]]
+name = "cf.page.hook.page_desc"
+entry = "fxp_acc"
+
+[[hook]]
+name = "cf.page.hook.tab_label_test"
+entry = "fxp_label"
+
+[[hook]]
+name = "cf.page.hook.filter_graph_test"
+entry = "fxp_graph"
+
+[[hook]]
+name = "cf.page.hook.fx_view_list.load"
+entry = "fxp_list"
+
+[[hook]]
+name = "cf.page.hook.fx_array.load"
+entry = "fxp_load"
+
+[[hook]]
+name = "cf.page.hook.fx_array.save"
+entry = "fxp_save"
+
+[[hook]]
+name = "cf.page.hook.fx_array.init_exit"
+entry = "fxp_init"
+
+[[hook]]
+name = "cf.page.hook.fx_key_list.load"
+entry = "fxp_keylist"
+
+[[hook]]
+name = "cf.page.hook.sound_load_exit"
+entry = "fxp_sound"
+
+# Rust, built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack core/services/fx`): the file is `fx.dks`.
+[[object]]
+path = "build/fx.dko.json"
+sources = ["Cargo.toml"]
+place = "cf.expansion"

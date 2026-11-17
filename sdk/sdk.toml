@@ -619,6 +619,7 @@ doc = "Replace the stock boot animation. `frame(tick, arg)` returns the 1024-byt
 [[import]]
 name = "dk_param_get"
 service = "machines"
+provided = true
 since = "0.7.0"
 context = "ui"
 sig = "i32 (u32 track, u32 word)"
@@ -627,6 +628,7 @@ doc = "Raw value (unit * 256) of parameter word `word` of the calling module on 
 [[import]]
 name = "dk_param_set"
 service = "machines"
+provided = true
 since = "0.7.0"
 context = "ui"
 sig = "i32 (u32 track, u32 word, i32 raw)"
@@ -1287,6 +1289,12 @@ id = 4
 name = "BOOT_RECORD"
 args = ["seq", "copy", "boot_counter", "selected", "flags"]
 
+# a module file was loaded (the CF part; result 1: the DSP part follows) or refused (a negative result, error level): the selection index, the result and the file name
+# (12 characters in three words). A provider file (a service, `.dks`) has the index 0xfffffffe and other words: [0xfffffffe, result, name4, hash, base], the first four
+# characters of the file name, the service hash and the base address of the loaded file (0 when it did not load). For the result
+# E_DECL_KIND the last two words are the declare-check diagnosis: `hash` is the first word of the first item that the service's `init` and the header table do not both hold
+# (the item's hash or id), `base` its tag (4 KINDS, 5 SLOTS, 6 HOOKS, 7 EXPORTS, 8 RESOURCES) plus 0x100 when only the header table has the item (init did not declare it);
+# tag 1 with hash 0: a difference without a single item (a full collection). dk-session `declDiagnosis` reads them: `EXPORTS 946ae751 not declared`.
 [[log.kind]]
 id = 5
 name = "MOD_LOAD"
@@ -1525,6 +1533,13 @@ id = 46
 name = "DSP_LINK"
 args = ["what", "a", "b", "c", "d"]
 
+# the firmware is ready for a host (info level, kept in the small ring; once per boot): logged by the first pass of the firmware's UI loop, which runs only after the boot intro
+# has ended, so the stock MidiRpc service answers from here on. A host waits on it instead of probing: `blocks` is the block counter of that pass.
+[[log.kind]]
+id = 47
+name = "FW_READY"
+args = ["blocks", "-", "-", "-", "-"]
+
 [spans]             # the owners of the runtime's profiling spans that are not modules (the debug module's span table, docs/plans/profiling.md section 7.2)
 phases = ["early", "late", "last"]   # the service tick phases, owner 0x100 | p, in the order of `tick_phase` (modules/core/runtime/abi/src/service.rs)
 polls = 4                            # the poll slots, owner 0x200 | i: POLLS of modules/core/runtime/src/rs/src/state.rs. A slot holds whichever function registered with `dkrt_poll_add`, so the host names a poll by the function at that slot (address map), not from this file
@@ -1660,15 +1675,15 @@ SELECTION = { id = 2, fit = true, label = "selection paths" }   # paths of the s
 ARENA = { id = 3, fit = true, label = "CPU memory" }   # ColdFire arena bytes; used: taken (headers included); largest: the largest free block's payload
 STAGE = { id = 4, fit = true, label = "file" }   # the staging buffer: the largest .dkm file; used: 0
 DSP_AREA = { id = 5, fit = true, label = "DSP memory" }   # DSP run-time area bytes; used: taken, alignment gaps counted as free; largest: the largest free range
-MACHINE_ROWS = { id = 6, fit = true, label = "machine rows" }   # run-time machine types (registry machine rows) in use
-VOICE_ROWS = { id = 7, fit = true, label = "voice rows" }   # DSP voice rows in use
-PARAM_ROWS = { id = 8, fit = true, label = "parameter rows" }   # parameter rows core/dynreg reserves, in use
-PAGE_ROWS = { id = 9, fit = true, label = "page rows" }   # page rows core/dynreg reserves (Digitone II), in use
-FX_SLOTS = { id = 10, fit = true, label = "effect slots" }   # effects in the chain: the device's limit (`[limits] fx_slots`); used: run-time effects claimed (the effect rows of core/dynfx); largest: 0
-MAP_ENTRIES = { id = 11 }   # sticky machine-type map entries in use
+MACHINE_ROWS = { id = 6, ceiling = "machine_rows", fit = true, label = "machine rows" }   # run-time machine types (registry machine rows) in use
+VOICE_ROWS = { id = 7, ceiling = "machine_rows", fit = true, label = "voice rows" }   # DSP voice rows in use
+PARAM_ROWS = { id = 8, ceiling = "param_rows", fit = true, label = "parameter rows" }   # parameter rows core/dynreg reserves, in use
+PAGE_ROWS = { id = 9, ceiling = "page_rows", fit = true, label = "page rows" }   # page rows core/dynreg reserves (Digitone II), in use
+FX_SLOTS = { id = 10, ceiling = "fx_slots", fit = true, label = "effect slots" }   # effects in the chain: the device's limit (`[limits] fx_slots`); used: run-time effects claimed (the effect rows of core/dynfx); largest: 0
+MAP_ENTRIES = { id = 11, ceiling = "map_entries" }   # sticky machine-type map entries in use
 STORE = { id = 12 }   # the module and sample store, in KiB (a store can be 22 GiB); used: KiB taken; largest: 0 (BEGIN says E_FULL with the free bytes)
 SETTINGS = { id = 13 }   # the settings record, in bytes: limit: the area of one copy (`[settings]`); used: the record's bytes (header and entries); largest: 0
-SEND_SLOTS = { id = 14 }   # effects that run on a send bus: the device's limit (`[limits] send_slots`, 0 when the image has no send page); used: loaded effects with the send route; largest: 0
+SEND_SLOTS = { id = 14, ceiling = "send_slots" }   # effects that run on a send bus: the device's limit (`[limits] send_slots`, 0 when the image has no send page); used: loaded effects with the send route; largest: 0
 DSP_COST = { id = 15, fit = true, label = "DSP load" }   # DSP instructions per block: limit: the headroom of the device (the generated profile: the stock firmware's load and the safety margin taken out of the block); used: the load of the loaded modules, `max(per-voice machine cost) * DSP_VOICES + sum(effect costs)`; largest: the largest per-voice machine cost loaded (the state of that maximum)
 DSP_VOICES = { id = 16, fit = true, label = "DSP voices" }   # voices the machine cost counts for (the generated profile); used and largest: 0; a fit reads the limit, it is not short of it
 
@@ -1684,11 +1699,9 @@ rust = "dkrt_svc_samples::records::Samples"
 
 [[service]]
 name = "machines"
-rust = "dkrt_svc_machines::records::Machines"
 
 [[service]]
 name = "fx"
-rust = "dkrt_svc_fx::records::Fx"
 
 [[service]]
 name = "lfo"
@@ -1764,6 +1777,8 @@ table_version = 2   # the newest version of the header table a reader accepts (1
 provider_max = 6    # provider slots of the boot plan (the services that provide; separate from the module records, SEL_MAX)
 bind_max = 24       # BIND items (hook sites) of one provider file (`patchkit bind` refuses more)
 install_sites = 48  # hook sites installed at once over all providers (the installer's table: machines 21 + fx 9 and room)
+slots_max = 16      # `[[slot]]` entries of one module (patchkit refuses more)
+info_max = 64       # entries of the image's one table `dkrt_info_table`: every `[[info]]` and `[[slot]]` of all adapters (patchkit refuses more; the core reads at most this many)
 collect_bytes = 7486  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
 
 # The layout of the `.dkm` file and of its DSP section: byte offsets (big endian words), entry sizes and magics that the packer (packages/patchkit

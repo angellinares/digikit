@@ -131,6 +131,7 @@ mod tests {
                     l2_byte_base: 0x2000_0000,
                     l2_sw_base: 0xb8_0000,
                     dsp: false,
+                    providers: 0,
                 }),
                 ..Key::default()
             },

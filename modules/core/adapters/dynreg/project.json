@@ -6,13 +6,13 @@
       {
         "files": ["tests/roundtrip.device.test.ts"],
         "tags": ["A:core/dynreg", "C:state"],
-        "modules": ["test/dyn-dn2", "test/dyn-params", "test/sine"],
+        "modules": ["test/dyn-dn2", "test/sine", "core/services/machines"],
         "plusdrive": true
       },
       {
         "files": ["tests/equiv.device.test.ts"],
         "tags": ["A:core/dynreg", "C:dsp", "S:machines"],
-        "modules": ["test/dyn-dn2", "test/sine"],
+        "modules": ["test/dyn-dn2", "test/sine", "core/services/machines"],
         "plusdrive": true
       }
     ]

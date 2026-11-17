@@ -50,6 +50,10 @@ pub struct FakePlatform {
     pub exc_hook: Cell<bool>,
     /// The `*_info` tables of the adapters, by name.
     pub info: RefCell<BTreeMap<&'static str, Vec<u8>>>,
+    /// The entries of the image's info table (`Platform::info`): name hash and the words at its address. Empty: the image has no table.
+    pub info_entries: RefCell<Vec<(u32, Vec<u32>)>>,
+    /// Name hashes of `info_entries` that are `[[info]]` data tables; every other entry is a `[[slot]]` word (`Platform::info_slot`).
+    pub info_data: RefCell<Vec<u32>>,
     pub pool: Cell<bool>,
     pub staged: Cell<bool>,
     pub worker: Cell<u32>,
@@ -105,6 +109,8 @@ impl FakePlatform {
             refuse_task: Cell::new(false),
             sems: RefCell::new(Vec::new()),
             code: RefCell::new(BTreeMap::new()),
+            info_entries: RefCell::new(Vec::new()),
+            info_data: RefCell::new(Vec::new()),
             calls: RefCell::new(Vec::new()),
             storage,
         }
@@ -166,6 +172,15 @@ impl Platform for FakePlatform {
     unsafe fn write_code(&self, addr: u32, bytes: &[u8]) {
         self.calls.borrow_mut().push(Call::Write { addr, len: bytes.len() as u32 });
         self.put_code(addr, bytes);
+    }
+    unsafe fn info(&self, name_hash: u32) -> *const u32 {
+        self.info_entries.borrow().iter().find(|(h, _)| *h == name_hash).map_or(core::ptr::null(), |(_, w)| w.as_ptr())
+    }
+    unsafe fn info_slot(&self, name_hash: u32) -> *const u32 {
+        if self.info_data.borrow().contains(&name_hash) {
+            return core::ptr::null();
+        }
+        self.info(name_hash)
     }
     unsafe fn write_word(&self, addr: u32, value: u32) {
         self.calls.borrow_mut().push(Call::Word { addr, value });
@@ -323,6 +338,20 @@ unsafe fn write(p: &FakePlatform, sector: u32, sectors: u32) -> i32 {
     block_write_with(p, sector, sectors * 512, core::ptr::addr_of!(BUF) as *const u8)
 }
 
+/// The fake gives the entries of its info table by name hash, and null for a hash it has none for (the same answer as an image without the entry).
+#[test]
+fn the_fake_platform_serves_info_entries_by_name_hash() {
+    let f = FakePlatform::new(profiles::DT2);
+    unsafe {
+        assert!(f.info(0x1111).is_null());
+        f.info_entries.borrow_mut().push((0x1111, std::vec![5, 6]));
+        let p = f.info(0x1111);
+        assert!(!p.is_null());
+        assert_eq!((*p, *p.add(1)), (5, 6));
+        assert!(f.info(0x2222).is_null());
+    }
+}
+
 #[test]
 fn every_profile_is_complete_and_distinct() {
     let mut ids = std::vec::Vec::new();
@@ -411,6 +440,153 @@ fn an_unreadable_card_is_read_only() {
     }
     assert_eq!(card::state(), CARD_UNREADABLE);
     assert!(card::info().read_errors > 0);
+}
+
+/// A store header sector of the layout `L` (valid, empty store).
+fn header_sector(seq: u32) -> [u8; 512] {
+    let h = dkrt_sdk::store::Hdr { seq, ..dkrt_sdk::store::Hdr::empty(&L) };
+    let mut b = [0u8; 512];
+    unsafe { dkrt_sdk::store::encode_header(&h, b.as_mut_ptr()) };
+    b
+}
+
+/// A valid selection record sector.
+fn selection_sector(seq: u32) -> [u8; 512] {
+    let mut r = dkrt_sdk::sel::Record::empty();
+    r.seq = seq;
+    let mut b = [0u8; 512];
+    dkrt_sdk::sel::encode(&r, &mut b);
+    b
+}
+
+/// The sector as a power cut leaves it: the first half written, the rest zero.
+fn torn(mut b: [u8; 512]) -> [u8; 512] {
+    b[256..].fill(0);
+    b
+}
+
+const FOREIGN: [u8; 512] = [0x55; 512];
+
+fn check(f: &FakePlatform) {
+    unsafe { card::check_with(f) }
+}
+
+#[test]
+fn every_write_outside_the_store_is_refused_for_range_and_counted_whatever_its_size() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    card_reset();
+    let f = FakePlatform::new(profiles::DT2);
+    check(&f);
+    assert_eq!(card::state(), CARD_BLANK);
+    let bad: [(u32, u32); 8] = [
+        (L.first - 1, 512),
+        (L.first + L.sectors, 512),
+        (L.first + L.sectors - 1, 1024),
+        (L.first, 100),
+        (0, 512),
+        (L.first, 0),
+        (0xffff_ffff, 512),
+        (L.first - 1, 1024),
+    ];
+    for (sector, bytes) in bad {
+        let r = unsafe { block_write_with(&f, sector, bytes, core::ptr::addr_of!(BUF) as *const u8) };
+        assert_eq!(r, E_RANGE, "{sector} {bytes}");
+    }
+    assert_eq!((card::info().refused, card::info().refused_range), (8, 8));
+    assert_eq!((card::info().writes, card::state()), (0, CARD_BLANK));
+    assert!(f.writes.borrow().is_empty());
+}
+
+#[test]
+fn a_valid_selection_record_makes_the_area_ours_without_scanning_it() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    card_reset();
+    let f = FakePlatform::new(profiles::DT2);
+    // foreign bytes in both headers, a valid selection copy: ours (an empty selection record is what a fresh runtime card holds)
+    f.put(L.first, FOREIGN);
+    f.put(L.first + L.header_b(), FOREIGN);
+    f.put(L.sel_a(), selection_sector(1));
+    check(&f);
+    assert_eq!(card::state(), CARD_OURS);
+    assert_eq!(card::info().first_nonblank, u32::MAX, "the range was not read");
+    assert_eq!(f.reads.borrow().len(), 5, "the end of the area and the four probes, nothing else");
+    unsafe {
+        assert_eq!(write(&f, L.first + 10, 1), OK);
+    }
+    assert_eq!(card::info().claims, 0, "ours: no claim");
+}
+
+#[test]
+fn a_foreign_card_names_its_first_nonblank_sector_and_hash_and_refuses_selection_and_range() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    card_reset();
+    let f = FakePlatform::new(profiles::DT2);
+    const STRAY: u32 = 100;
+    let pattern: [u8; 512] = core::array::from_fn(|i| ((i * 7 + 3) & 0xff) as u8);
+    f.put(L.first + STRAY, pattern);
+    check(&f);
+    let c = card::info();
+    assert_eq!((card::state(), c.first_nonblank), (CARD_FOREIGN, STRAY));
+    assert_eq!(c.hash, unsafe { dkrt_sdk::store::crc32_of(pattern.as_ptr(), 512) });
+    unsafe {
+        assert_eq!(write(&f, L.sel_a(), 1), E_CARD_RO, "a selection record");
+        assert_eq!(write(&f, L.first + 5, 1), E_CARD_RO, "a probe write in the area");
+        assert_eq!(write(&f, L.first - 1, 1), E_RANGE, "outside the area");
+    }
+    assert_eq!((card::info().refused, card::info().writes), (3, 0));
+    assert!(f.writes.borrow().is_empty(), "nothing reached the card");
+}
+
+#[test]
+fn the_card_state_after_a_torn_claim_or_selection_write() {
+    // (header A, header B, selection copy A) as a cut inside one sector write leaves them; None is a sector never written
+    let (a, b) = (header_sector(1), header_sector(1));
+    let cases: [(&str, Option<[u8; 512]>, Option<[u8; 512]>, Option<[u8; 512]>, u32, u32); 4] = [
+        ("header B torn, A blank", None, Some(torn(b)), None, CARD_BLANK, u32::MAX),
+        ("header A torn, B whole", Some(torn(a)), Some(b), None, CARD_OURS, u32::MAX),
+        ("header A torn, B blank", Some(torn(a)), None, None, CARD_FOREIGN, 0),
+        ("selection copy A torn, the rest blank", None, None, Some(torn(selection_sector(1))), CARD_BLANK, u32::MAX),
+    ];
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    for (what, ha, hb, sa, state, first_nonblank) in cases {
+        card_reset();
+        let f = FakePlatform::new(profiles::DT2);
+        if let Some(x) = ha {
+            f.put(L.first, x);
+        }
+        if let Some(x) = hb {
+            f.put(L.first + L.header_b(), x);
+        }
+        if let Some(x) = sa {
+            f.put(L.sel_a(), x);
+        }
+        check(&f);
+        assert_eq!((card::state(), card::info().first_nonblank), (state, first_nonblank), "{what}");
+        assert!(f.writes.borrow().is_empty(), "{what}: the check writes nothing");
+    }
+}
+
+#[test]
+fn a_claim_cut_after_its_first_write_leaves_a_card_the_next_boot_calls_ours() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    card_reset();
+    let f = FakePlatform::new(profiles::DT2);
+    // the claim writes header B first, then A, then the data: the cut comes at header A
+    f.bad_write.borrow_mut().push(L.first);
+    unsafe {
+        assert_eq!(write(&f, L.first + 10, 1), E_CARD_RO, "the claim failed, so the data write is refused");
+    }
+    assert!(f.writes.borrow().contains(&(L.first + L.header_b(), 512)), "header B was written");
+    assert!(!f.card.borrow().contains_key(&(L.first + 10)), "the data did not reach the card");
+    // the next boot: a new check of the same card
+    f.bad_write.borrow_mut().clear();
+    card_reset();
+    check(&f);
+    assert_eq!(card::state(), CARD_OURS, "header B alone marks the card as ours");
+    unsafe {
+        assert_eq!(write(&f, L.first + 10, 1), OK);
+    }
+    assert_eq!(card::info().claims, 0, "no second claim");
 }
 
 #[test]

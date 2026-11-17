@@ -18,7 +18,7 @@ import {
 
 for (const device of DEVICES) {
   describe(`${device.toUpperCase()} ${FIRMWARE[device]} FX SEND`, () => {
-    const context = withGainFxSession(device, 'FX SEND zero/dry/other/full/half', { initial: 'wet' });
+    const context = withGainFxSession(device, 'FX SEND zero/dry/other/full/half', { initial: 'wet', requireAudible: true });
     test('isolates common send amounts and preserves the squared send gain law', async () => {
       const { fixture, plan, dry, wet, slots, artifacts, rememberEpoch } = context;
       // Legacy fx-send-{dt2,dn2}.toml list positions. This is the accepted audible-input

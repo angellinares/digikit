@@ -57,11 +57,7 @@ name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result be
 - The input must be a stock image. A patched image is refused.
 - Everything under `out/` is derived from firmware and is never committed.
 
-A machine needs its framework modules, which are added for you (`test/machine-clone` is a patched-in test machine of registry rows; content machines such as the project's PLUCK, `digikit/pluck`, are run-time modules, see below):
-
-```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules test/machine-clone -o out/patch/clone.syx
-```
+A machine is a run-time module (the project's PLUCK, `digikit/pluck`, see below): `machines.dks` on the card acts on its rows. patchkit refuses a patch-time `[[entry]]` row of the `machines` registry.
 
 ### Inspect, check, explain, verify
 
@@ -71,7 +67,7 @@ uv run python -m tools.patchkit.patchkit inspect out/patch/fx.syx               
 uv run python -m tools.patchkit.patchkit check --firmware firmware/Digitakt_II_OS1.17.syx           # which modules fit this firmware
 uv run python -m tools.patchkit.patchkit verify out/patch/fx.syx --base firmware/Digitakt_II_OS1.17.syx   # re-decode and check
 mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/fx
-mise run patch:mem -- core/machines test/machine-clone --device dt2 --firmware 1.17    # bytes used and free per region
+mise run patch:mem -- core/machines core/params --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
 - `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.12").
@@ -355,7 +351,7 @@ first `pnpm dev` in a fresh tree compiles the browser cores and takes several mi
 |---|---|---|
 | Port | Per-firmware facts: named anchors with SHA-256 of the expected bytes, free regions, container limits. Generated, keyed by the `.syx` SHA-256. | `devices/ports/dt2-1.17.toml` |
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
-| Content module | Own code and declarative registry entries. No addresses. | `test/machine-clone` |
+| Content module | Own code and declarative registry entries. No addresses. | `test/registry-demo` |
 
 Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/adapters/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
 
@@ -407,6 +403,51 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
   (`hook = "<hook name>"`, `to = "<symbol>"`). Mode `before` copies the displaced instructions to a tail
   (`hook.<site>[.<offset>].tail`; PC-relative forms are re-encoded or refused) so that the routine can run them and
   return (`.return`). Mode `replace` drops them. Mode `retarget` rewrites the target of an existing call.
+- **Pointer-slot stubs.** A `[[slot]] name = "frame_type"` reserves a 4-byte word, zero at build, in the module's
+  `cf.expansion` data (`place =` changes the region); `slot.<name>` is the address of the word. An `op = "stub"` (`hook`, `slot`, `scratch`, optional `tail`) puts a `jmp.l`
+  at the hook site that enters a generated stub in `hook.<site>[.<offset>].tail`. The stub loads the slot into `scratch`;
+  a zero slot runs the displaced instructions (re-encoded like a `before` hook) and jumps back to `.return`, so the image
+  behaves as stock; a non-zero slot is jumped to. Use it for interrupt-level sites that a service loaded later has to
+  serve (the service writes its handler address into the slot, and clears it to go back to stock). The hook's `mode` is
+  ignored; `retarget` hooks are refused. `scratch` (required) is `d0`..`d7` or `a0`..`a6`: pick a register of the hook's
+  `regs.clobbers` in `devices/fw/` (the stub also changes the condition codes, so `ccr` must be listed). patchkit refuses a
+  register that a displaced instruction reads before it writes it. The handler is entered with `scratch` holding its own
+  address. Address registers use `movea.l slot,aN; tst.l aN; beq.b +2; jmp (aN)`; data registers use `move.l slot,dN;
+  beq.b +4; move.l dN,-(sp); rts` (12 bytes each). A site whose displaced code patchkit cannot re-encode (a `(d8,PC,Xn)`
+  operand) is refused with the site named; `tail = "<symbol>"` gives a hand-written stock path (`jmp.l` there) and the
+  displaced instructions are dropped.
+- **The image's info table.** The image has one export table, `dkrt_info_table`: big endian `{magic 0x444b4954 "DKIT", count}`,
+  then per entry `{FNV-1a name hash, address, kind}` (kind 1: a `[[slot]]` word, 0: an `[[info]]` data table; 12 bytes per entry). patchkit writes it from the `[[slot]]` entries (the address of the word) and the
+  `[[info]]` entries (`name`, `symbol`: an expression that gives the address, by default the symbol `name`; `devices`) of every
+  adapter of the image, and refuses two entries with one hash (`slots_max` and `info_max` in `sdk/sdk.toml` bound the counts).
+  The runtime reads it through `Platform::info(name_hash)` (`CoreApi::info`, the core import `dkc_info`) and names no adapter
+  table: a service finds the data table of its adapter, or a slot word, by the hash of the name. A service file's `SLOTS` item fills only an entry of kind slot
+  (`Platform::info_slot`); a fill that names a data entry refuses the file (`E_FORMAT`) before anything is installed. An image without entries has no
+  table (the optional link of the runtime resolves to 0).
+- **Capacity limits in the info table.** An image adapter that reserves a capacity exports its limit as an `[[info]]` entry named
+  `cap_<kind>` (the kind name of `[capacity.kinds]` in `sdk/sdk.toml` in lower case, e.g. `cap_machine_rows`, `cap_param_rows`,
+  `cap_page_rows`, `cap_voice_rows`, `cap_fx_slots`, `cap_send_slots`). `symbol` is the address of a u32 word that holds the limit
+  (for example `dynreg_info + 32`, the word `M_DYN_N` of the table). `dkrt_capacity` reports per kind: the answer of a loaded service
+  (it wins and owns `used`), else the `cap_<kind>` entry as the limit with `used` 0, else zeros. The planner therefore knows the
+  limits before any service file is loaded. The runtime names no adapter or service: it builds the entry name from the generic
+  kind table (`CAP_INFO_HASHES`).
+- **Raw hooks and their tails.** A hook with no `handler` in `devices/fw/` is a raw hook: its entry takes the whole control
+  flow of the site (mode `replace`), so `patchkit bind` makes the entry itself the `BIND` trampoline and the runtime writes
+  `jmp entry` at the site. When the entry falls through to the displaced stock instructions, the hook declares the exit
+  `tail = true`. The asm refers to the tail by the undefined symbol `dk_tail_<8 hex digits of name_hash(hook)>`
+  (`bind::tail_import`), which `patchkit pack` keeps as an import. `bind` appends the tail, the displaced instructions of the
+  site as in the user's firmware (PC-relative forms are refused as for a `before` hook) followed by `jmp.l` to site + length,
+  turns each reference into a base-relative relocation to it and drops the import. The `BIND` item carries the stock bytes of
+  the site as for any hook, so the runtime refuses a firmware that differs with E_HOOK_STOCK before it installs anything. An
+  unbound `.dks` has no firmware bytes.
+- **Hooks per device.** One `.dks` serves both devices. `[[hook]]` in the module's `module.toml` has `devices`; the `service!`
+  call lists `(name, entry)` for every device, `(name, entry, dt2)` or `(name, entry, dn2)` for one, and declares at `init` those of
+  the running device. The packer writes the device set of each hook into the unbound file: an item of `HOOKS` is `{name hash, word}`,
+  and the top byte of the word is a device mask (bit `i` is device `i` of the device files in file-name order; 0: every device), the low
+  24 bits the handler's image offset. `bind` reads the mask from the file: it skips a hook for another device, refuses a hook for the
+  firmware's device that the port does not declare (naming it), and writes the remaining hooks into `HOOKS` of the bound file with the
+  plain offset (no mask), which is what the runtime reads. The CLI, the Nx `bind` target and the page (`pk_bind`) share this rule.
+  A reader of an unbound file masks the word with `0x00ffffff`. `patchkit service-check` compares the manifest and the call per device.
 - **Sections copied from the image.** `[[section]]` copies bytes of the user's image at patch time (a stock table),
   may append one row per registry entry, and places the result. This is how a framework extends a firmware table
   without storing it.

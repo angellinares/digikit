@@ -92,6 +92,7 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 40 | POOL_INVALID | client << 8 \| pool index (client 0xff: periodic check), reason (1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed; check result in the high 16 bits), token, drops so far (first 64, then every 64th) | |
 | 41 | INPUT_TAKEN | what (1 key, 2 turn), key code or encoder, delta taken (turn: signed; key: 1 down, 0 up). Logged by `digikit/remote` at debug level (3) when core/input handed the input to the firmware decoder | |
 | 42 | PARAM_CHANGE | track, Sound word index (a mirror index, not a code), old s16 value, new s16 value. Logged by `digikit/debug` at debug level (3) when a word of the selected track's Sound array changed; index 0xffffffff, old and new 0: the watch took its snapshot (a baseline) | |
+| 47 | FW_READY | block counter of the first UI-loop pass (info level, kept in the small ring). The UI loop starts after the boot intro, so the stock MidiRpc service answers from here on; a host waits on it (`waitFwReady`, `tests/regression/runtime/events.ts`) | |
 
 **Periodic work** (`watch::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
 (the heap walk only in every fourth, because it takes the heap's mutex: the snapshot uses `dkrt_health_light`, which skips the store figures and, when asked,

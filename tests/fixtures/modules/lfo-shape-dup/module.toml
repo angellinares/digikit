@@ -6,7 +6,7 @@ category = "test"
 type = "service"
 author = "digikit"
 status = "experimental"
-summary = "Test fixture: emits one lfo_shape record with dk_record_add (shape id 7); no firmware effect. It has the same shape id as test/lfo-shape, so only one of the two loads."
+summary = "Test fixture: the code of test/lfo-shape under another module name: emits one lfo_shape record with dk_record_add (shape id 7). It has the same shape id as test/lfo-shape, so only one of the two loads."
 dynamic = true
 ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
@@ -29,8 +29,8 @@ record_bytes = 92
 [uses.dn2]
 record_bytes = 92
 
-# C, built by `patchkit build`; the runtime loads it from the card store.
+# C, built by `patchkit build` from the source of test/lfo-shape (the same record under another module name); the runtime loads it from the card store.
 [[object]]
 path = "build/lfo-shape-dup.dko.json"
-sources = ["src/module.c"]
+sources = ["../lfo-shape/src/module.c"]
 place = "cf.expansion"

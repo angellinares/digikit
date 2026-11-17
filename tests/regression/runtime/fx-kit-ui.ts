@@ -3,7 +3,8 @@ import { REDRAW, SETTLE, bounded, rows, word, type Rt } from './fx-live.ts';
 import { openPages } from './fx-pages-ui.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword, kitMenu, kitSlotOne } from './fx-track-ui.ts';
-import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
+import { type RuntimePlan } from './runtime-plan.ts';
+import { hasServiceSymbols, symbolsOf } from './service-symbols.ts';
 
 export type FxKitObservation = [ms: number, row: number, p0: number, mix: number];
 
@@ -44,7 +45,8 @@ export async function watchFxKitRows(
 /** Shared firmware KIT menus, preserving the persistence runner's cursor resets and settling. */
 export function createFxKitUi(runtime: Rt, plan: RuntimePlan, profile: FxProfile, artifacts: string) {
   const { session } = runtime;
-  const cell = (name: string) => word(session, planSymbol(plan, name));
+  // `fxp_nload` and the other hook cells are the fx service file's (`symbolsOf`, bound after each boot by `inspectFxBoot`)
+  const cell = (name: string) => word(session, symbolsOf(runtime, plan)(name));
   const slot = async (n: number) => {
     await kitSlotOne(runtime);
     for (let i = 1; i < n; i++) await runtime.ui.tap('DOWN', { until: { ms: 80, why: REDRAW } });
@@ -71,9 +73,11 @@ export function createFxKitUi(runtime: Rt, plan: RuntimePlan, profile: FxProfile
       await slot(n);
       await shot(session, artifacts, `${tag}-load-slot`);
       const file: number[] = [];
-      const before = await cell('fxp_nload');
+      // the load cells are the fx service file's: a boot without it has none, so the file stays empty
+      const hooked = hasServiceSymbols(runtime);
+      const before = hooked ? await cell('fxp_nload') : 0;
       const seen = await watchFxKitRows(runtime, plan, profile, 'YES', 600, 2, async () => {
-        if (!file.length && (await cell('fxp_nload')) !== before) {
+        if (hooked && !file.length && (await cell('fxp_nload')) !== before) {
           const base = (await cell('fxp_load_src')) + profile.fx.store_off;
           for (let i = 0; i < profile.fx.store_halfwords; i++) file.push(await halfword(session, base + 2 * i));
         }

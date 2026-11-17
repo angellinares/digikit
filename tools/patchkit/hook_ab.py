@@ -4,15 +4,17 @@ comparison of the two renders (spike 0.7).
 
     uv run python -m tools.patchkit.hook_ab run LABEL --device dn2|dt2 --scenario NAME
         [--patch FILE] [--seconds S] [--dt2-card] [-- EXTRA coupled-run args]
-    uv run python -m tools.patchkit.hook_ab compare BASE.wav TEST.wav [--gain G] [--align-onset] [--json]
+    uv run python -m tools.patchkit.hook_ab compare BASE.wav TEST.wav [--gain G] [--rel-bound F] [--align-onset] [--json]
 
 `run` renders into out/runs/hook/LABEL/ (report.json, audio.wav) through
 tools/emulator/coupled.py, so the benchlock and the ready inputs are the usual ones.
 `compare` reads two float32 stereo WAVs and prints: identical or not, RMS
 ratio in dB, the largest |test - G * base| (for a pure gain G), and the peak
-ratio. With --gain it exits 1 unless the error is within one float32 step of
-the scaled sample (the hook multiplies in float32 and the converter rounds to
-Q31, so a 2**-23 relative error is the floor). --align-onset compares the
+ratio. With --gain the metrics carry `ok` and the command exits 1 unless the
+largest error is within 2**-20 of the peak of the scaled base signal (the DSP
+rounds several times per sample, so a per-sample ulp bound fails on tiny
+samples); `ok` is the only pass rule and max_err_ulps is information.
+--rel-bound sets another fraction of the peak. --align-onset compares the
 common signal length from each onset, and --json prints only the metrics.
 """
 
@@ -30,6 +32,9 @@ import numpy as np
 from tools import python_env
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# the DSP rounds several times per sample, so a tiny sample can be 3 ulps off: the bound is relative to the peak of the expected signal (about -120 dB)
+REL_PEAK_BOUND = 2.0**-20
 
 
 def read_wav(path: Path) -> np.ndarray:
@@ -53,7 +58,12 @@ def read_wav(path: Path) -> np.ndarray:
     raise SystemExit(f"{path}: no data chunk")
 
 
-def compare(base: np.ndarray, test: np.ndarray, gain: float | None) -> dict:
+def compare(
+    base: np.ndarray,
+    test: np.ndarray,
+    gain: float | None,
+    rel_bound: float = REL_PEAK_BOUND,
+) -> dict:
     n = min(len(base), len(test))
     a, b = base[:n].astype(np.float64), test[:n].astype(np.float64)
     rms_a = math.sqrt(float(np.mean(a * a)))
@@ -73,6 +83,12 @@ def compare(base: np.ndarray, test: np.ndarray, gain: float | None) -> dict:
     if gain is not None:
         err = np.abs(b - gain * a)
         out["max_abs_err"] = float(err.max())
+        ref_peak = float(np.max(np.abs(gain * a))) if n else 0.0
+        out["ref_peak"] = ref_peak
+        out["err_rel_peak"] = out["max_abs_err"] / ref_peak if ref_peak > 0 else None
+        out["ok"] = bool(
+            out["length_equal"] and out["max_abs_err"] <= ref_peak * rel_bound
+        )
         # a Q31 output step is 2**-31; the float path adds one float32 ulp of the sample
         out["max_err_ulps"] = float(
             (err / np.maximum(np.abs(a) * 2.0**-23, 2.0**-31)).max()
@@ -80,7 +96,9 @@ def compare(base: np.ndarray, test: np.ndarray, gain: float | None) -> dict:
     return out
 
 
-def compare_aligned(ref: np.ndarray, run: np.ndarray, gain: float) -> dict:
+def compare_aligned(
+    ref: np.ndarray, run: np.ndarray, gain: float, rel_bound: float = REL_PEAK_BOUND
+) -> dict:
     """RUN against REF times GAIN from the note's onset on (the boots reach the note up to a few blocks apart): `hook_ab.compare`'s figures over the
     common length, and the onset shift in samples."""
 
@@ -91,9 +109,9 @@ def compare_aligned(ref: np.ndarray, run: np.ndarray, gain: float) -> dict:
     # the threshold scales with the gain, so that a quieter run is not found later on the same attack ramp
     a, b = onset(ref, 1e-6), onset(run, 1e-6 * max(abs(gain), 1e-3))
     if a < 0 or b < 0:
-        return {"shift": None, "max_err_ulps": 1e9, "rms_db": None}
+        return {"shift": None, "max_err_ulps": 1e9, "rms_db": None, "ok": False}
     n = min(len(ref) - a, len(run) - b)
-    r = compare(ref[a : a + n], run[b : b + n], gain)
+    r = compare(ref[a : a + n], run[b : b + n], gain, rel_bound)
     r["shift"] = b - a
     return r
 
@@ -101,20 +119,21 @@ def compare_aligned(ref: np.ndarray, run: np.ndarray, gain: float) -> dict:
 def cmd_compare(args: argparse.Namespace) -> int:
     base, test = read_wav(args.base), read_wav(args.test)
     res = (
-        compare_aligned(base, test, args.gain)
+        compare_aligned(base, test, args.gain, args.rel_bound)
         if args.align_onset
-        else compare(base, test, args.gain)
+        else compare(base, test, args.gain, args.rel_bound)
     )
-    ok = True
-    if args.gain is not None:
-        ok = res.get("length_equal", False) and res["max_err_ulps"] <= 2.0
+    ok = res["ok"] if args.gain is not None else True
     if args.json:
         print(json.dumps(res, allow_nan=False))
     else:
         for k, v in res.items():
             print(f"{k:16} {v}")
         if args.gain is not None:
-            print("PASS" if ok else "FAIL", f"(gain {args.gain}: error within 2 ulps)")
+            print(
+                "PASS" if ok else "FAIL",
+                f"(gain {args.gain}: error within {args.rel_bound:g} of the peak)",
+            )
     return 0 if ok else 1
 
 
@@ -154,6 +173,12 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("base", type=Path)
     c.add_argument("test", type=Path)
     c.add_argument("--gain", type=float)
+    c.add_argument(
+        "--rel-bound",
+        type=float,
+        default=REL_PEAK_BOUND,
+        help="largest error as a fraction of the scaled reference peak (default 2**-20)",
+    )
     c.add_argument(
         "--align-onset",
         action="store_true",

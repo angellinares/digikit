@@ -9,6 +9,9 @@ use dkrt_abi::profiles;
 use std::collections::BTreeMap;
 use std::vec::Vec;
 
+// the seams between the real packed artifacts (`core/runtime:test-assembly`)
+mod assembly_tests;
+
 const PATH: &[u8] = b"mods/a.dkm\0";
 const IMAGE_OFF: usize = 160;
 const FIRST_ADDR: u32 = 0x0010_0000;
@@ -151,6 +154,8 @@ impl Images for FakeImages {
                     let at = (init + entry) as usize as *const u8;
                     let r = if tag == dkrt_abi::service::Declare::HOOK {
                         crate::collect::dk_service_declare_hook(ctx, word, at)
+                    } else if tag == dkrt_abi::service::Declare::SLOT {
+                        crate::collect::dk_service_declare_slot(ctx, word, 0, at)
                     } else {
                         crate::collect::dk_service_declare_export(ctx, word, at)
                     };
@@ -500,6 +505,12 @@ fn a_provider_loads_into_its_own_record_publishes_its_exports_and_installs_its_h
         let base = records::module(rec).base;
         assert_eq!((records::module(rec).used, l.roles[rec], st().loads), (1, 1, 0), "a provider is no module of the count");
         assert_eq!(st().modules[0].used, 0, "no module record is taken");
+        // the record is the host-visible DKRT_PROVIDERS slot 1: used, named, with the load base
+        let published = &*core::ptr::addr_of!(records::DKRT_PROVIDERS);
+        let name = &published[1].name;
+        assert_eq!((published[1].used, published[1].base), (1, base));
+        assert_ne!(name[0], 0, "the record carries the file's name");
+        assert_eq!(published[0].used, 0);
         // the export resolves to base + 8; the site jumps to base + 16 (4ef9 and the address, big endian)
         assert_eq!(l.exports.resolve(dkneeds::keys::name_hash("dk_svctest_ping")), Some(base + 8));
         let t = base + 16;
@@ -511,6 +522,37 @@ fn a_provider_loads_into_its_own_record_publishes_its_exports_and_installs_its_h
         assert!(l.p.calls.borrow().contains(&crate::fake_platform::Call::Mask), "the install runs under the mask");
         // the table copy stays for the record
         assert!(l.provs[1].block.is_some());
+    }
+}
+
+/// A `SLOTS` item may fill a `[[slot]]` word only: the same item naming an `[[info]]` data table refuses the file (`E_FORMAT`) and writes nothing.
+#[test]
+fn a_slot_fill_of_an_info_data_entry_is_refused_and_writes_nothing() {
+    use dkneeds::keys::{name_hash, Slot, Table};
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    static SLOTS: std::sync::OnceLock<[Slot; 1]> = std::sync::OnceLock::new();
+    unsafe {
+        let slots = SLOTS.get_or_init(|| [Slot { id: name_hash("the.entry"), flags: 0, entry: 4 }]);
+        for (data, want) in [(false, OK), (true, E_FORMAT)] {
+            let bind = svc_bind(&STOCK);
+            let table = Table { slots, ..svc_table(&bind) };
+            let mut items = vec![(dkrt_abi::service::Declare::SLOT, name_hash("the.entry"), 4)];
+            items.extend_from_slice(match svc_init() {
+                Init::Declare(i) => i,
+                _ => unreachable!(),
+            });
+            let mut l = provider_loader(service_file(&table, 0), Init::Declare(Box::leak(items.into_boxed_slice())));
+            l.p.info_entries.borrow_mut().push((name_hash("the.entry"), vec![0]));
+            if data {
+                l.p.info_data.borrow_mut().push(name_hash("the.entry"));
+            }
+            assert_eq!(l.load_provider(PATH.as_ptr(), 1), want, "data entry: {data}");
+            if data {
+                assert_eq!(site_bytes(&l, 6), STOCK, "the site is stock");
+                assert_eq!(l.installer.count(), 0, "nothing is installed");
+                assert!(!l.p.calls.borrow().iter().any(|c| matches!(c, crate::fake_platform::Call::Word { .. })), "no slot word is written");
+            }
+        }
     }
 }
 
@@ -583,7 +625,8 @@ fn the_real_registry_puts_the_row_into_the_service_table_and_takes_it_out() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         let mut r = RealRegistry;
-        let fixed = crate::gen_services::STATIC;
+        // the host tests of the runtime run with the machines row loaded (`svc_rows::test_machines`): the loaded rows start at one
+        let fixed = crate::gen_services::STATIC + 1;
         assert_eq!(services().rows.len(), fixed);
         assert_eq!(r.add(0, None), OK);
         assert_eq!(r.add(2, Some(&TEST_ROW)), OK);

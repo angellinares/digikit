@@ -31,6 +31,39 @@ pub fn text_entries(obj: &Dko, l: &Linked, module: Option<&str>) -> Vec<Entry> {
     code_entries(obj, l, module, Cpu::Cf)
 }
 
+/// The global data symbols of a ColdFire object (`data` and `bss` sections, e.g. the `DKRT_*` statics of a service file): one entry each, sized as its section. A host that
+/// reads a module's state (a test of a service file, a profiler) finds the cell by name. Only a module map has them: the ship map names code.
+pub fn data_entries(obj: &Dko, l: &Linked, module: Option<&str>) -> Vec<Entry> {
+    let kinds: BTreeMap<&str, (&str, u64)> = obj
+        .sections
+        .iter()
+        .map(|s| (s.name.as_str(), (s.kind.as_str(), s.size as u64)))
+        .collect();
+    let mut out: Vec<Entry> = obj
+        .symbols
+        .iter()
+        .filter(|s| s.global && !s.name.is_empty())
+        .filter_map(|s| {
+            let sec = s.section.as_deref()?;
+            let (kind, size) = *kinds.get(sec)?;
+            if kind != "data" && kind != "bss" {
+                return None;
+            }
+            Some(Entry {
+                cpu: Cpu::Cf,
+                addr: l.places.get(sec).copied().unwrap_or(0) + s.value,
+                size: size.saturating_sub(s.value),
+                name: readable(&s.name),
+                layer: Layer::Our,
+                module: module.map(String::from),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
+    out.dedup_by(|a, b| a.addr == b.addr && a.name == b.name);
+    out
+}
+
 /// The functions of a module's DSP object linked at `L2_BYTE_BASE` (as the packer does): `cpu: sharc` entries with short-word offsets from the
 /// start of the DSP image (symbol values and sizes are in short words).
 pub fn dsp_entries(obj: &Dko, module: &str) -> Result<Vec<Entry>> {
@@ -139,6 +172,7 @@ pub fn load_symbols(plan: &crate::apply::Plan) -> std::collections::BTreeMap<Str
         dkaddrmap::snapshot::SYM_STATE,
         dkaddrmap::snapshot::SYM_DSP,
         dkaddrmap::snapshot::SYM_INFO,
+        dkaddrmap::snapshot::SYM_PROVIDERS,
     ]
     .iter()
     .filter_map(|s| {
@@ -170,6 +204,11 @@ pub fn ship_map(plan: &crate::apply::Plan) -> AddrMap {
             l2_byte_base: crate::dsp::L2_BYTE_BASE as u64,
             l2_sw_base: crate::dsp::L2_SW_BASE as u64,
             dsp: has(dkaddrmap::snapshot::SYM_DSP) && has(dkaddrmap::snapshot::SYM_INFO),
+            providers: if has(dkaddrmap::snapshot::SYM_PROVIDERS) {
+                dkrt_sdk::PROVIDER_MAX as u64
+            } else {
+                0
+            },
         });
     let key = Key {
         loader,
@@ -199,7 +238,9 @@ pub fn module_map(
     };
     let mut entries = vec![];
     if let Some(o) = cf {
-        entries.extend(text_entries(o, &link_for_map(o, 0)?, Some(id)));
+        let linked = link_for_map(o, 0)?;
+        entries.extend(text_entries(o, &linked, Some(id)));
+        entries.extend(data_entries(o, &linked, Some(id)));
     }
     if let Some(o) = dsp {
         entries.extend(dsp_entries(o, id)?);
@@ -507,6 +548,17 @@ mod tests {
             ],
             relocs: vec![],
         }
+    }
+
+    #[test]
+    fn a_module_map_names_the_global_data_symbols_of_the_colfire_object() {
+        let map = module_map(Some(&object()), None, "test/demo", "cd").unwrap();
+        let table = map.entries.iter().find(|e| e.name == "table").unwrap();
+        assert_eq!((table.cpu, table.size), (Cpu::Cf, 8));
+        assert!(
+            map.entries.iter().all(|e| e.name != "dk_import"),
+            "an import has no address"
+        );
     }
 
     #[test]

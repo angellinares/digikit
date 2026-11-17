@@ -1,0 +1,101 @@
+[module]
+id = "core/services/machines"
+version = "0.8.2"
+name = "machines service"
+category = "core"
+role = "service"
+service = "machines"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "The machines service of the runtime as a service file: machine types, parameters, pages, page clicks and native pages; it owns their record kinds, exports dk_param_get and dk_param_set and takes the hooks of the machine framework"
+requires = ["core/machines"]
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The functions the file exports: each is an [[import]] of its service in sdk/sdk.toml.
+[[export]]
+name = "dk_param_get"
+
+[[export]]
+name = "dk_param_set"
+
+# The hooks it takes (devices/fw/machine.toml and page.toml), for each device that has them. They have no `handler`: each is a routine of this file that runs in place of the
+# stock instructions at the site and continues in the stock code through the table `machines_info` of core/machines (`patchkit bind` makes the site jump straight to the entry).
+# `init` declares the hooks of its device again with dk_service_declare_hook.
+
+[[hook]]
+name = "cf.machine.hook.clone.5"
+entry = "mf_clone5"
+devices = ["dt2"]
+
+[[hook]]
+name = "cf.machine.hook.param_code.args"
+entry = "mf_typearg"
+devices = ["dt2"]
+
+[[hook]]
+name = "cf.machine.hook.srcpage"
+entry = "mf_srcpage"
+devices = ["dt2"]
+
+[[hook]]
+name = "cf.page.hook.source_draw"
+entry = "mf_draw_hook"
+
+[[hook]]
+name = "cf.page.hook.source_code"
+entry = "mf_code_hook"
+
+[[hook]]
+name = "cf.page.hook.source_key"
+entry = "mf_key_hook"
+
+[[hook]]
+name = "cf.page.hook.source_turn"
+entry = "mf_turn_hook"
+
+[[hook]]
+name = "cf.machine.hook.group"
+entry = "mf_group"
+devices = ["dn2"]
+
+[[hook]]
+name = "cf.machine.hook.type_page.count"
+entry = "mf_typemap0"
+devices = ["dn2"]
+
+[[hook]]
+name = "cf.machine.hook.type_page.desc"
+entry = "mf_typemap1"
+devices = ["dn2"]
+
+[[hook]]
+name = "cf.machine.hook.param_code.map"
+entry = "mf_typemap2"
+devices = ["dn2"]
+
+[[hook]]
+name = "cf.machine.hook.type_reader.load"
+entry = "mf_reader"
+devices = ["dn2"]
+
+[[hook]]
+name = "cf.machine.hook.owner_type_load"
+entry = "mf_owner"
+devices = ["dn2"]
+
+# The pointer slot of the interrupt site of the Digitone II (the frame builder's machine type): the image stub loads it, and a loaded file fills it with the address of its routine.
+[[fill]]
+slot = "frametype"
+entry = "mf_frametype"
+devices = ["dn2"]
+
+# Rust and assembler (the assembler is in `src/hooks.rs`), built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack core/services/machines`): the file is `machines.dks`.
+[[object]]
+path = "build/machines.dko.json"
+sources = ["Cargo.toml"]
+place = "cf.expansion"

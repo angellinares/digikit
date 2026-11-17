@@ -4,7 +4,9 @@ import type { TestRuntime } from '../support.ts';
 import { REDRAW, SETTLE, bounded, rpc, word, type Rt } from './fx-live.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword } from './fx-track-ui.ts';
-import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
+import { wordBase } from './memory.ts';
+import { type RuntimePlan } from './runtime-plan.ts';
+import { hasServiceSymbols, symbolsOf } from './service-symbols.ts';
 
 export const bits = (value: number) => {
   const bytes = Buffer.alloc(4);
@@ -42,9 +44,12 @@ export function pageKit(rt: Rt, profile: FxProfile, row = 0) {
       for (let i = 0; i < 2; i++) {
         const at = base + i;
         const shift = 8 * (3 - (at % 4));
-        const old = await word(session, at & ~3);
+        const old = await word(session, wordBase(at));
         const byte = (value >>> (8 * (1 - i))) & 0xff;
-        await rpc(session, 'mem.cf.poke', { addr: at & ~3, value: ((old & ~(0xff << shift)) | (byte << shift)) >>> 0 });
+        await rpc(session, 'mem.cf.poke', {
+          addr: wordBase(at),
+          value: ((old & ~(0xff << shift)) | (byte << shift)) >>> 0,
+        });
       }
     },
     async setRaw(enc: string, knob: number, target: number) {
@@ -98,13 +103,14 @@ export async function stockPages(rt: Rt, artifacts: string, tag: string) {
 }
 
 export async function pageState(runtime: Pick<TestRuntime, 'session'>, plan: RuntimePlan) {
-  const base = planSymbol(plan, 'DKRT_FXP');
+  const sym = symbolsOf(runtime, plan);
+  const base = sym('DKRT_FXP');
   const words = async (offset: number, count: number) =>
     Promise.all(Array.from({ length: count }, (_, i) => word(runtime.session, base + offset + 4 * i)));
   const owner = Buffer.alloc(4);
   owner.writeUInt32BE(await word(runtime.session, base + 28));
   return {
-    count: await word(runtime.session, planSymbol(plan, 'fxp_count')),
+    count: await word(runtime.session, sym('DKRT_FXP_COUNT')),
     owner: [...owner],
     sent: await word(runtime.session, base + 16),
     errors: await word(runtime.session, base + 20),
@@ -113,7 +119,16 @@ export async function pageState(runtime: Pick<TestRuntime, 'session'>, plan: Run
   };
 }
 
-export async function expectNoPages(runtime: Pick<TestRuntime, 'session'>, plan: RuntimePlan) {
+export async function expectNoPages(
+  runtime: Pick<TestRuntime, 'session'>,
+  plan: RuntimePlan,
+  serviceExpected: boolean,
+) {
+  // a boot without an effect has no fx service file: the page state is the service's, so the service must be absent and there is no page list to read
+  if (!serviceExpected) {
+    expect(hasServiceSymbols(runtime), 'no fx service file is loaded').toBe(false);
+    return;
+  }
   const state = await pageState(runtime, plan);
   expect(state.count, 'stock page list is selected').toBe(0);
   expect(state.owner, 'no page is owned').toEqual([0, 0, 0, 0]);
@@ -128,7 +143,7 @@ export async function cstring(session: Session, address: number) {
   const bytes: number[] = [];
   for (let i = 0; i < 256; i++) {
     const at = address + i;
-    const byte = ((await word(session, at & ~3)) >>> (8 * (3 - (at % 4)))) & 0xff;
+    const byte = ((await word(session, wordBase(at))) >>> (8 * (3 - (at % 4)))) & 0xff;
     if (!byte) return Buffer.from(bytes).toString('latin1');
     bytes.push(byte);
   }

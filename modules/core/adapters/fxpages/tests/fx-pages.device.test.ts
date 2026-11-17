@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { withWaitApi, type TestRuntime } from '@digi/regression/support.ts';
-import { analysisJson, bounded, frames, rows, rpc, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
+import { bounded, compare, pcmMetrics, frames, rows, rpc, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { GAIN, SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import {
   inspectFxBoot,
@@ -27,7 +27,7 @@ import { trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
 import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
@@ -38,36 +38,12 @@ const presets = {
   effect: { selection: ['modules/m0.dkm', 'modules/m1.dkm'] },
 };
 
-interface PcmMetrics {
-  identical: boolean;
-  rms_db: number | null;
-  max_err_ulps: number;
-  shift: number | null;
-}
-
-async function metrics(base: string, sample: string, gain: number, artifacts: string, tag: string) {
-  return analysisJson<PcmMetrics>(
-    'tools.patchkit.pk_digikit_fxpage',
-    ['compare', base, sample, '--gain', String(gain)],
-    artifacts,
-    `pcm-${tag}`,
-  );
-}
-
 async function exact(base: string, sample: string, artifacts: string, tag: string) {
-  const result = await metrics(base, sample, 1, artifacts, tag);
-  expect(result.identical, `${tag}: bit-identical PCM from onset`).toBe(true);
-  expect(result.shift).not.toBeNull();
-  expect(Math.abs(result.shift!)).toBeLessThanOrEqual(128);
+  await compare(base, sample, 1, artifacts, tag, true);
 }
 
-async function scaled(base: string, sample: string, gain: number, ulps: number, artifacts: string, tag: string) {
-  const result = await metrics(base, sample, gain, artifacts, tag);
-  expect(result.rms_db, `${tag}: audible PCM`).not.toBeNull();
-  expect(result.max_err_ulps).toBeLessThanOrEqual(ulps);
-  expect(Math.abs(result.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
-  expect(result.shift).not.toBeNull();
-  expect(Math.abs(result.shift!)).toBeLessThanOrEqual(128);
+async function scaled(base: string, sample: string, gain: number, artifacts: string, tag: string) {
+  await compare(base, sample, gain, artifacts, tag);
 }
 
 for (const device of DEVICES) {
@@ -106,10 +82,6 @@ for (const device of DEVICES) {
           symbols: [
             'DKRT_BOOT',
             'fx.rows',
-            'DKRT_FXP',
-            'fxp_count',
-            'fxp_list_buf',
-            'fxp_rows',
             'params.fp0.index',
             'pf_table',
           ],
@@ -123,7 +95,8 @@ for (const device of DEVICES) {
 
       test('preserves stock pixels/audio, maps page knobs, and removes the effect through SELECT/restart', async () => {
         const { fixture, plan, profile, artifacts, slots } = context;
-        const sym = (name: string) => planSymbol(plan, name);
+        // `fxp_rows` and the other cells of the page hooks are the fx service file's (`symbolsOf`, bound after each boot by `inspectFxBoot`)
+        const sym = (name: string) => symbolsOf(fixture.runtime, plan)(name);
         const inspect = async (runtime: TestRuntime, tag: string, effect: boolean, afterEpoch?: number) => {
           const state = await inspectFxBoot(runtime, plan, effect ? [SINE, GAIN] : [SINE], artifacts, tag, undefined, {
             afterEpoch,
@@ -146,7 +119,7 @@ for (const device of DEVICES) {
 
         const stock = fixture.runtime;
         await inspect(stock, 'stock-boot', false);
-        await expectNoPages(stock, plan);
+        await expectNoPages(stock, plan, false);
         await selectSine(stock, profile);
         expect(await stockPages(stock, artifacts, 'stock'), 'stock DEL/REV/CHO pixels').toEqual(
           referenceHashes,
@@ -172,7 +145,7 @@ for (const device of DEVICES) {
           [],
         );
         const poked = await note(stock, 'stock-poked');
-        const unchanged = await metrics(control, poked, 1, artifacts, 'free-indices');
+        const unchanged = await pcmMetrics(control, poked, 1, artifacts, 'free-indices');
         expect(unchanged.rms_db).not.toBeNull();
         expect(Math.abs(unchanged.rms_db!)).toBeLessThan(0.2);
         expect(unchanged.shift).not.toBeNull();
@@ -215,7 +188,7 @@ for (const device of DEVICES) {
         expect([await kit.raw(0), await kit.raw(7)], 'live kit defaults').toEqual([0x3200, 0x7f00]);
         expect(await rowWords(effect), 'DSP row defaults').toEqual([bits(0.5), bits(1)]);
         await mainPage(effect);
-        const a = await note(effect, 'effect-a', trigger);
+        const a = await note(effect, 'effect-a');
 
         await effectPage(effect);
         const quietEffect = await kit.snapshot();
@@ -266,11 +239,11 @@ for (const device of DEVICES) {
         expect(transferred.errors).toBe(0);
         expect(transferred.sent).toBeGreaterThanOrEqual(4);
         expect([transferred.current[0], transferred.current[7]]).toEqual([transferred.dsp[0], transferred.dsp[7]]);
-        await scaled(dry, a, 0.5, 2, artifacts, 'effect-a');
-        await scaled(dry, b, gainValue, 3, artifacts, 'effect-b');
-        await scaled(dry, c, 1 + mixValue * (gainValue - 1), 4, artifacts, 'effect-c');
+        await scaled(dry, a, 0.5, artifacts, 'effect-a');
+        await scaled(dry, b, gainValue, artifacts, 'effect-b');
+        await scaled(dry, c, 1 + mixValue * (gainValue - 1), artifacts, 'effect-c');
         await exact(dry, d, artifacts, 'effect-d');
-        await scaled(dry, e, gainValue, 3, artifacts, 'effect-e');
+        await scaled(dry, e, gainValue, artifacts, 'effect-e');
 
         // Real guest SELECT/restart retains writes from the effect boot.
         await context.evidence(effect, 'effect-before-deselect');
@@ -287,7 +260,7 @@ for (const device of DEVICES) {
           await expectRuntimeUi(effect.session, plan, artifacts, { afterEpoch: Number(epoch) });
           await bounded(() => effect.session.client.guardSet(context.baseline('effect').guard));
           await inspect(reboot, 'gone-boot', false, Number(epoch));
-          await expectNoPages(reboot, plan);
+          await expectNoPages(reboot, plan, false);
           await selectSine(reboot, profile);
           expect(await stockPages(reboot, artifacts, 'gone'), 'stock pixels after effect removal').toEqual(
             referenceHashes,

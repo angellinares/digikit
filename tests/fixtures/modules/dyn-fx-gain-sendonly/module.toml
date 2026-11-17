@@ -6,7 +6,7 @@ category = "test"
 type = "fx"
 author = "digikit"
 status = "experimental"
-summary = "Test effect of the FX contract with the route fields of the manifest (route = send, routes = send only): the same gain as test/dyn-fx-gain, for the FX ROUTES scenario."
+summary = "Test effect of the FX contract with the route send only (`dk_fx_routes` in init): the same gain as test/dyn-fx-gain, for the FX ROUTES scenario."
 dynamic = true
 ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
@@ -18,10 +18,10 @@ conflicts = []
 
 # `patchkit pack test/dyn-fx-gain-sendonly --device dt2 -o fx-gain-sendonly.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
 # publishes a free effect row of core/dynfx for the effect (state reserved behind the image, p0 at its default).
-# The effect is declared by builder calls in init (src/module.c). The id `gain` is what the keys hash; the DSP symbols start with `gso`.
+# The effect is declared by builder calls in init (src/module.c). The id `gain` is what the keys hash. The DSP is the one of test/dyn-fx-gain (symbols start with `dg`); this module is a second effect identity.
 [[fx]]
 id = "gain"
-dsp = "gso"
+dsp = "dg"
 
 [[object]]
 path = "build/dyn-fx-gain-sendonly-cf.dko.json"
@@ -30,7 +30,7 @@ place = "cf.expansion"
 
 [[object]]
 path = "build/dyn-fx-gain-sendonly-dsp.dko.json"
-sources = ["src/dsp/dyn_fx_gain_sendonly.s"]
+sources = ["../dyn-fx-gain/src/dsp/dyn_fx_gain.s"]
 place = "dsp.l2"
 devices = ["dt2", "dn2"]
 

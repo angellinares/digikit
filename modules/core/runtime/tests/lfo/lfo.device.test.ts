@@ -13,7 +13,7 @@ const A = 'test/lfo-shape';
 const B = 'test/lfo-shape-dup';
 /** The lfo service is a file of the card, `services/lfo.dks` (R12-4): the runtime finds it by its name when a selected module needs the service. It has no
  * hooks, so there is nothing to `patchkit bind` against the firmware: the packed file goes on the card as it is. */
-const SERVICE = 'core/lfo';
+const SERVICE = 'core/services/lfo';
 const SERVICE_PATH = 'services/lfo.dks';
 /** Header words of a `.dks` (packages/dkneeds/src/gen_limits.rs): the sha256 and the ABI fingerprint. */
 const H_SHA = 0x10;
@@ -26,7 +26,7 @@ const code = (name: string) => LOAD_STATUS.find((s) => s[1] === name)![0];
 /** A copy of the service file whose ABI word is `word`, with its sha256 made right again, so that only the ABI word is wrong. */
 function withAbiWord(file: Buffer, word: number): Buffer {
   const f = Buffer.from(file);
-  f.writeUInt32BE(word, H_SVC_ABI);
+  f.writeUInt32BE(word >>> 0, H_SVC_ABI); // an ABI word with the top bit set is negative after `^` in JavaScript
   f.fill(0, H_SHA, H_SHA + 32);
   createHash('sha256').update(f).digest().copy(f, H_SHA);
   return f;
@@ -49,7 +49,7 @@ async function expectLfoShapes({ session, dk }: PatchedSession): Promise<void> {
   expect(await dk.verifyFile(SERVICE_PATH, service), 'fresh card read matches the packed service file').toBe(true);
 
   // one fixture: loaded, no machine type, a record block in the arena
-  await installModule(dk, A, moduleArtifact(device, A));
+  await installModule(dk, A, moduleArtifact(device, A), { device });
   const loaded = await dk.modules();
   expect(
     loaded.map((m) => [m.name, m.types]),

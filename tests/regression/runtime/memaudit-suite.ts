@@ -28,11 +28,12 @@ import {
   ARENA_HDR,
   COLLECT_BLOCK,
   DSP_GRANULE,
-  fullSet,
+  fullSetOnBoot,
   geometryOf,
   LOADED,
   packSynth,
   usageOf,
+  type SynthSpec,
   type Want,
 } from './synth.ts';
 
@@ -126,7 +127,7 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
           });
 
           test('the set loads; while the UI is driven no store lands outside the module blocks and the patch code', async (ctx) => {
-            const mods = [];
+            const mods: { name: string; file: string }[] = [];
             for (const id of spec.modules) {
               const m = o.artifact ? await o.artifact(h, id) : h.mod(id);
               if ('skip' in m) return ctx.skip(m.skip);
@@ -137,14 +138,29 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
             if (spec.full) {
               // the second daemon builds the same card: the files must outlive the first daemon's artifact directory
               const g = geometryOf(device, h.plan);
-              const fill = await fullSet(g, (await needsOf(mods.map((m) => m.file))).map(usageOf));
-              for (const [i, f] of fill.entries()) {
-                mods.push({
-                  name: `modules/full${i}.dkm`,
-                  file: await packSynth(device, f.spec, synthDir, `${i}.dkm`),
-                });
-                wants.push(f.want);
-                if (f.want === LOADED) loaded.push(f.spec.name);
+              const packFill = async (set: { spec: SynthSpec; want: Want }[], tag: string) => {
+                const out = [];
+                for (const [i, f] of set.entries())
+                  out.push({
+                    name: `modules/full${i}.dkm`,
+                    file: await packSynth(device, f.spec, synthDir, `${tag}${i}.dkm`),
+                  });
+                return out;
+              };
+              // F is sized by a boot of the set before it, so that the providers its modules need are loaded
+              const fill = await fullSetOnBoot(
+                g,
+                (await needsOf(mods.map((m) => m.file))).map(usageOf),
+                async (before) => {
+                  const probe = { modules: [...mods, ...(await packFill(before, 'probe'))] };
+                  const rt = await h.load('audit-probe', { ...probe, selection: probe.modules.map((m) => m.name) });
+                  return (await pausedProtocol(rt, async (dk) => (await dk.capacity()).ARENA!)).largest;
+                },
+              );
+              for (const [i, m] of (await packFill(fill, 'full')).entries()) {
+                mods.push(m);
+                wants.push(fill[i]!.want);
+                if (fill[i]!.want === LOADED) loaded.push(fill[i]!.spec.name);
               }
             }
             cardSpec = { modules: mods, selection: mods.map((m) => m.name) };

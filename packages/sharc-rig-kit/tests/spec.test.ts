@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { f2w } from '../src/context.ts';
-import { fxSpec, fxSpecs, frameHw, fxWord, machineSpec, machineSpecs, paramMid } from '../src/spec.ts';
+import { fxSpec, fxSpecs, frameHw, fxWord, galleryGaps, machineSpec, machineSpecs, paramMid } from '../src/spec.ts';
 import { param } from './fakes.ts';
 
 let root: string;
@@ -73,6 +73,35 @@ sources = ["src/dsp/wob.s"]
       ],
     }),
   );
+  write(
+    'gap/module.toml',
+    `[module]
+id = "zzt/gap"
+type = "machine"
+category = "machines"
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[machine]]
+id = "gap-one"
+dsp = "go"
+
+[[object]]
+path = "build/dsp.dko.json"
+sources = ["src/dsp/go.s"]
+`,
+  );
+  write(
+    'gap/build/gen/gallery.json',
+    JSON.stringify({
+      machines: [{ id: 'gap-one', devices: { dn2: { knobs: [] }, dt2: { knobs: [] } } }],
+      params: { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] },
+    }),
+  );
 });
 
 afterAll(() => {
@@ -104,6 +133,39 @@ describe('machineSpec', () => {
     expect(machineSpecs().map((s) => `${s.module}@${s.device}`)).toContain('zzt/mach@dt2');
     expect(machineSpecs(true).map((s) => s.module)).not.toContain('zzt/mach');
     expect(machineSpecs(true).map((s) => s.module)).toContain('test/dyn-guard-nan#overrun');
+  });
+});
+
+describe('galleryGaps', () => {
+  const gallery = (machines: unknown[], params: unknown) =>
+    write('gap/build/gen/gallery.json', JSON.stringify({ machines, params }));
+  const two = { dn2: { knobs: [] }, dt2: { knobs: [] } };
+  const filled = { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] };
+
+  it('names a device of [targets] that the gallery does not list', () => {
+    gallery([{ id: 'gap-one', devices: { dn2: { knobs: [] } } }], filled);
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-one is not listed in build/gen/gallery.json']);
+  });
+
+  it('names a device entry with an empty parameter list', () => {
+    gallery([{ id: 'gap-one', devices: two }], { dn2: [{ id: 'x' }], dt2: [] });
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-one has no parameter in build/gen/gallery.json']);
+  });
+
+  it('checks every machine of the gallery, not only the first', () => {
+    gallery(
+      [
+        { id: 'gap-one', devices: two },
+        { id: 'gap-two', devices: { dn2: { knobs: [] } } },
+      ],
+      filled,
+    );
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-two is not listed in build/gen/gallery.json']);
+  });
+
+  it('reports nothing for a complete gallery', () => {
+    gallery([{ id: 'gap-one', devices: two }], filled);
+    expect(galleryGaps('zzt/gap')).toEqual([]);
   });
 });
 

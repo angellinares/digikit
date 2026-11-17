@@ -248,7 +248,20 @@ fn replace_path(text: &str, p: &str, rel: &str) -> String {
     out
 }
 
-/// Copy a crate to `dest` and its path dependencies to `deps_dir/<n>-<name>`, rewriting the `path = ".."` of the copies.
+/// `text` without the bare `[workspace]` line of a manifest: a path dependency that is a workspace root of its own (a service file crate, which is also built alone)
+/// would be a second root in the staged tree.
+fn without_workspace_root(text: &str) -> String {
+    let mut out = String::new();
+    for line in text.split_inclusive('\n') {
+        if line.trim() != "[workspace]" {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+/// Copy a crate to `dest` and its path dependencies to `deps_dir/<n>-<name>`, rewriting the `path = ".."` of the copies. A dependency stages without its own
+/// `[workspace]` line.
 fn stage(
     manifest: &Path,
     dest: &Path,
@@ -271,6 +284,9 @@ fn stage(
                 let sd = deps_dir.join(format!("{}-{}", seen.len(), name));
                 seen.push((sub.clone(), sd.clone()));
                 stage(&sub, &sd, deps_dir, seen)?;
+                let dep_manifest = sd.join("Cargo.toml");
+                let t = without_workspace_root(&tc::read_text(&dep_manifest)?);
+                std::fs::write(&dep_manifest, t).map_err(|e| err!("{e}"))?;
                 sd
             }
         };
@@ -622,6 +638,16 @@ pub fn object_proto(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_staged_dependency_loses_its_workspace_root() {
+        let text =
+            "[package]\nname = \"a\"\n\n[workspace]\n\n[profile.release]\npanic = \"abort\"\n";
+        assert_eq!(
+            without_workspace_root(text),
+            "[package]\nname = \"a\"\n\n\n[profile.release]\npanic = \"abort\"\n"
+        );
+    }
 
     #[test]
     fn copy_tree_stamps_the_copy_with_the_current_time() {

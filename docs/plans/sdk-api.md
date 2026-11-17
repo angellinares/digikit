@@ -105,7 +105,7 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
 - [x] Proof: `.dkm` files of pluck, sine, dyn-dsp-hang, dyn-guard-nan (dn2) and every effect are
       byte-identical on dt2 and dn2; patched images of bd, analog, pd and patched-pluck (dt2) are
       byte-identical. Changed on purpose: patched-pluck on dn2 (no position), dyn-dn2 and twin-dn2
-      (sine DSP), dyn-params (4 params), dyn-guard-nan on dt2 (param on both devices).
+      (sine DSP), dyn-dn2 (4 params, both devices), dyn-guard-nan on dt2 (param on both devices).
 - [x] Emulator re-checks (1eb92a86 + fixes): every RECHECK value confirmed but equiv-dn2-set
       `voices = 2`; scenarios equiv-dn2-set, memaudit-dn2, equiv-mixed, roundtrip-dt2 (3) and
       roundtrip-dn2 pass; the smoke cells of patched-pluck and machine-clone pass. Found and fixed: a

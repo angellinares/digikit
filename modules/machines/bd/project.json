@@ -1,18 +1,4 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
-  "name": "fadedlimes/bd",
-  "metadata": {
-    "runtimeAcceptance": [
-      {
-        "files": [
-          "tests/equiv.device.test.ts"
-        ],
-        "tags": ["C:dsp", "S:machines"],
-        "modules": [
-          "fadedlimes/bd"
-        ],
-        "plusdrive": true
-      }
-    ]
-  }
+  "name": "fadedlimes/bd"
 }

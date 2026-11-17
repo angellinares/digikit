@@ -28,7 +28,7 @@ runtimeTests('the address map names a runtime function and a loaded module funct
   await installModules(dk, [
     { id: ID, artifact },
     { id: DEBUG_MODULE, artifact: moduleArtifact(device, DEBUG_MODULE) },
-  ]);
+  ], { device });
 
   const loads = await readLoadTable(session, plan, shipMap);
   expect(loads.map((l) => l.id)).toEqual([ID, DEBUG_MODULE]);

@@ -1,6 +1,6 @@
 """digikit/freqshift: the assertions that no SHARC-rig check (tests/rig/freqshift.toml) replaces yet: the manifest and the committed knob, and the
 60 s oscillator run (90,000 blocks, slow). Kept until T1g phase 5 ports it (docs/plans/ledgers/t1g-retirement.md "Kept until phase 5").
-The model-only tests are in test_freqshift_ref.py. The device page/knob proof is freqshift.device.test.ts. The run skips when Selache is not built."""
+The model-only tests are in test_freqshift_ref.py. The device page/knob proof is fx-bipolar.device.test.ts of core/fxpages. The run skips when Selache is not built."""
 
 import json
 import os

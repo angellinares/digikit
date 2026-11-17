@@ -237,6 +237,10 @@ export class RuntimeEvents {
   untilModDsp(index: number, opts?: WaitOpts) {
     return this.until('MOD_DSP', (e) => e.fields.index === index, { withinMs: 30_000, ...opts });
   }
+  /** The first UI-loop pass of this boot (FW_READY): the boot intro has ended and the stock MidiRpc service answers. */
+  untilFwReady(opts?: WaitOpts) {
+    return this.until('FW_READY', undefined, { withinMs: 90_000, ...opts });
+  }
   untilSafe(opts?: WaitOpts) {
     return this.until('SAFE', undefined, { withinMs: 90_000, ...opts });
   }

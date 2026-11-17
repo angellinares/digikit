@@ -140,6 +140,8 @@ pub struct FakeCore {
     pub link: RefCell<&'static mut Link<FakeLink>>,
     pub name: String,
     pub fx_table: Vec<u32>,
+    /// The info entries `CoreApi::info` hands out, by name hash: the words of each. Empty: the image has no table.
+    pub info_tables: Vec<(u32, Vec<u32>)>,
     pub device: u32,
     /// The words of `dynreg_info` the fake hands out (empty: no registry, `dynreg` is null).
     pub dynreg_table: Vec<u32>,
@@ -169,6 +171,7 @@ impl FakeCore {
             link: RefCell::new(Box::leak(Box::new(link()))),
             name: String::from("fake\0"),
             fx_table: std::vec![0; 8],
+            info_tables: Vec::new(),
             device: 0,
             dynreg_table: Vec::new(),
             native_available: true,
@@ -415,6 +418,12 @@ impl CoreApi for FakeCore {
     }
     unsafe fn fx_info(&self) -> *const u32 {
         self.fx_table.as_ptr()
+    }
+    unsafe fn info(&self, name_hash: u32) -> *const u32 {
+        self.info_tables
+            .iter()
+            .find(|(h, _)| *h == name_hash)
+            .map_or(core::ptr::null(), |(_, w)| w.as_ptr())
     }
     fn link_set(&self, slot: Slot, value: u32) {
         self.rec(Call::Set { slot, value });

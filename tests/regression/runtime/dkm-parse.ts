@@ -107,3 +107,30 @@ export function fxExpectationsWith(
     needs,
   };
 }
+
+/** The tags of the header table (packages/dkneeds/src/keys.rs); only NEEDS is read here. */
+const TAG_NEEDS = 1;
+
+/** The hash (`name_hash`, FNV-1a 32) of a service or export name. */
+export function nameHash(name: string): number {
+  let h = 0x811c9dc5;
+  for (const b of Buffer.from(name)) h = Math.imul(h ^ b, 0x01000193) >>> 0;
+  return h;
+}
+
+/** The service name hashes in the NEEDS entry of the header table of a packed `.dkm` (12 bytes an item: hash, minimum version, flags), in file order; none for a file without a header table. */
+export function neededServiceHashes(dkm: Buffer): number[] {
+  // a file with no header table (a stand-in of a host test) needs nothing
+  if (dkm.length < 0x98) return [];
+  const table = dkm.readUInt32BE(0x90);
+  if (table + 8 > dkm.length || dkm.readUInt32BE(table) !== 0x444b5442) return [];
+  let at = table + 8;
+  for (let i = dkm.readUInt16BE(table + 6); i > 0; i--) {
+    const count = dkm.readUInt16BE(at + 2);
+    const bytes = dkm.readUInt32BE(at + 4);
+    if (dkm.readUInt16BE(at) === TAG_NEEDS)
+      return Array.from({ length: count }, (_, k) => dkm.readUInt32BE(at + 8 + 12 * k));
+    at += 8 + bytes;
+  }
+  return [];
+}

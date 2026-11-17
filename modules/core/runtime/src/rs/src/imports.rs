@@ -4,7 +4,7 @@
 use crate::platform::cstr_eq;
 use crate::state::log_at;
 use crate::{arena, aux, collect, dlog, entry, hash32, intro, io, worker};
-use crate::{debug_selected_params, imp_param_get, imp_param_set};
+use crate::debug_selected_params;
 use crate::health::dkrt_blocks;
 use crate::report::{debug_peek, debug_poll, debug_span_clock, debug_speed_flags, debug_track_type};
 
@@ -119,8 +119,6 @@ import_table! {
     ("dk_hash32_update", imp_hash32_update),
     ("dk_hash32_finish", imp_hash32_finish),
     ("dk_intro_take", imp_intro_take),
-    ("dk_param_get", imp_param_get),
-    ("dk_param_set", imp_param_set),
     ("dk_module_ctx_add_machine", collect::dk_module_ctx_add_machine),
     ("dk_module_ctx_add_fx", collect::dk_module_ctx_add_fx),
     ("dk_record_add", collect::dk_record_add),
@@ -202,8 +200,6 @@ const _: dkrt_sdk::api::DkHash32InitFn = imp_hash32_init;
 const _: dkrt_sdk::api::DkHash32UpdateFn = imp_hash32_update;
 const _: dkrt_sdk::api::DkHash32FinishFn = imp_hash32_finish;
 const _: dkrt_sdk::api::DkIntroTakeFn = imp_intro_take;
-const _: dkrt_sdk::api::DkParamGetFn = imp_param_get;
-const _: dkrt_sdk::api::DkParamSetFn = imp_param_set;
 const _: dkrt_sdk::api::DkModuleCtxAddMachineFn = collect::dk_module_ctx_add_machine;
 const _: dkrt_sdk::api::DkModuleCtxAddFxFn = collect::dk_module_ctx_add_fx;
 const _: dkrt_sdk::api::DkMachineAddPageFn = collect::dk_machine_add_page;

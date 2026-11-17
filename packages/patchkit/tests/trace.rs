@@ -10,7 +10,7 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// A repository root of its own whose only fixture module is `test/trace-demo` without its trace marks: the lines of the macros are
+/// A repository root of its own whose only fixture module is `test/dyn-fx-gain` without its trace marks: the lines of the macros are
 /// dropped. The module keeps its id (the id feeds the registry records), so it cannot sit next to the real fixture. `modules`, `devices`, `sdk` and the toolchain are the repository's.
 fn stripped_root(dir: &Path) {
     use std::os::unix::fs::symlink;
@@ -20,13 +20,13 @@ fn stripped_root(dir: &Path) {
     }
     std::fs::create_dir_all(dir.join("out")).unwrap();
     symlink(Env::new(&real).tools, dir.join("out/tools")).unwrap();
-    let from = real.join("tests/fixtures/modules/trace-demo");
-    let to = dir.join("tests/fixtures/modules/trace-demo");
+    let from = real.join("tests/fixtures/modules/dyn-fx-gain");
+    let to = dir.join("tests/fixtures/modules/dyn-fx-gain");
     for rel in [
         "module.toml",
         "build/gen/module_ids.h",
         "src/module.c",
-        "src/dsp/trace_demo.s",
+        "src/dsp/dyn_fx_gain.s",
     ] {
         let text = std::fs::read_to_string(from.join(rel)).unwrap();
         let text = if rel == "module.toml" || rel.ends_with(".h") {
@@ -48,12 +48,12 @@ fn stripped_root(dir: &Path) {
     }
 }
 
-/// `patchkit --root ROOT pack test/trace-demo --device dt2 [--trace]`: the file's bytes.
+/// `patchkit --root ROOT pack test/dyn-fx-gain --device dt2 [--trace]`: the file's bytes.
 fn pack(root: &Path, out: &Path, trace: bool) -> Vec<u8> {
     let mut c = Command::new(env!("CARGO_BIN_EXE_patchkit"));
     c.arg("--root")
         .arg(root)
-        .args(["pack", "test/trace-demo", "--device", "dt2", "-o"])
+        .args(["pack", "test/dyn-fx-gain", "--device", "dt2", "-o"])
         .arg(out);
     if trace {
         c.arg("--trace");

@@ -1,5 +1,8 @@
 import type { Session } from '@digi/test-support';
 
+/** The word-aligned address at or below ADDRESS, unsigned: `& ~3` alone is a signed 32-bit result, negative from 0x80000000 up (the DN2 voice words). */
+export const wordBase = (address: number): number => (address & ~3) >>> 0;
+
 /** Read-only ColdFire and DSP memory access over the control socket. */
 export function memory(session: Session) {
   async function cf(addr: number): Promise<number> {
@@ -21,7 +24,7 @@ export function memory(session: Session) {
   }
   /** Halfword at a ColdFire address (big endian, read through the aligned word). */
   async function half(addr: number): Promise<number> {
-    const word = await cf(addr & ~3);
+    const word = await cf(wordBase(addr));
     return (addr & 2 ? word : word >>> 16) & 0xffff;
   }
   /** Value of stock sound parameter `index` (the mirror index, 25 + knob slot for the machine knobs) of `track` on DT2: the 16 Sound objects lie

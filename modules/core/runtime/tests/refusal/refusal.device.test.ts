@@ -25,7 +25,7 @@ const GOOD = 'test/commit-demo';
 const LFO = 'test/lfo-shape';
 const LFO_DUP = 'test/lfo-shape-dup';
 /** The service of the lfo_shape kind is a file of the card (`services/lfo.dks`), not a part of the image: the two fixtures need it. */
-const LFO_SERVICE = 'core/lfo';
+const LFO_SERVICE = 'core/services/lfo';
 const UNOWNED_KIND = 90;
 
 interface Seen {

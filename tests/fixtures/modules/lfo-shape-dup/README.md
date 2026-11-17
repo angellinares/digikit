@@ -1,1 +1,1 @@
-Test fixture of the R7 registry proof: `init` emits one `lfo_shape` record (shape id 7, a ramp from 500 in steps of 100) with `dk_record_add`. The `lfo` service of the runtime keeps it; nothing in the firmware uses it.
+Test fixture of the R7 registry proof: the code of `test/lfo-shape` under another module name. Both emit an `lfo_shape` record with the shape id 7, so only one of the two loads (`E_PLAN_KEY` for the second owner of the key). Nothing in the firmware uses it.
