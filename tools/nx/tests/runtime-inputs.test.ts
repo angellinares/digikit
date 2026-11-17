@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { overrideInputs } from '../device-inputs.mjs';
+import { CELLS, firmwareDir, overrideInputs, syxPath } from '../device-inputs.mjs';
 import { releaseProfileEnv } from '../cargo-profile-env.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-runtime-inputs-'));
@@ -99,5 +99,20 @@ describe('Cargo release profile cache input', () => {
       releaseProfileEnv(options),
     );
     expect(releaseProfileEnv({ CARGO_PROFILE_RELEASE_OPT_LEVEL: '' })).not.toEqual(releaseProfileEnv({}));
+  });
+});
+
+describe('stock firmware folder', () => {
+  const root = resolve(import.meta.dirname, '../../..');
+
+  it('is firmware/ of the repository, or DIGI_FIRMWARE_DIR resolved against the repository root', () => {
+    expect(firmwareDir({})).toBe(join(root, 'firmware'));
+    expect(firmwareDir({ DIGI_FIRMWARE_DIR: '' })).toBe(join(root, 'firmware'));
+    expect(firmwareDir({ DIGI_FIRMWARE_DIR: scratch })).toBe(scratch);
+    expect(firmwareDir({ DIGI_FIRMWARE_DIR: 'elsewhere/fw' })).toBe(join(root, 'elsewhere/fw'));
+  });
+
+  it('holds the stock image of every cell', () => {
+    for (const cell of CELLS) expect(syxPath(cell, { DIGI_FIRMWARE_DIR: scratch })).toBe(join(scratch, cell.syx));
   });
 });

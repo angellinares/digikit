@@ -8,9 +8,13 @@ import { fileURLToPath } from 'node:url';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const wasmPath = join(root, 'apps/web/public/patchkit.wasm');
+/** The stock images: $DIGI_FIRMWARE_DIR (relative to the repository root), else firmware/ (as tools/firmware/config.py). */
+export const firmwareDir = process.env.DIGI_FIRMWARE_DIR
+  ? resolve(root, process.env.DIGI_FIRMWARE_DIR)
+  : join(root, 'firmware');
 export const images: Record<'dt2' | 'dn2', string> = {
-  dt2: join(root, 'firmware', 'Digitakt_II_OS1.17.syx'),
-  dn2: join(root, 'firmware', 'Digitone_II_OS1.12.syx'),
+  dt2: join(firmwareDir, 'Digitakt_II_OS1.17.syx'),
+  dn2: join(firmwareDir, 'Digitone_II_OS1.12.syx'),
 };
 /** The wasm and both stock images are present. */
 export const haveWasmAndImages = [wasmPath, ...Object.values(images)].every(existsSync);

@@ -21,7 +21,7 @@ site for your device; the repository never includes them.
 | Digitakt II | 1.15C | `Digitakt_II_OS1.15C.syx` | `62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c` |
 | Digitone II | 1.10E | `Digitone_II_OS1.10E.syx` | `9881ee5ca4624be2b833e5eb94e294f2f8425371e6729781baccd1c256cac504` |
 
-Put the files in `firmware/`; the tools look there first (`tools/firmware/config.py`).
+Put the files in `firmware/`, or set `DIGI_FIRMWARE_DIR` to the folder that holds them (`tools/firmware/config.py`).
 `firmware/README.md` lists the images and their SHA-256 values. `DIGI_EMU_SYX`
 (Digitone II) and `DIGI_EMU_SYX_DT2` (Digitakt II) override the paths.
 

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { firmwareDir } from './device-inputs.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const readyJson = JSON.parse(readFileSync(join(root, 'tools/emulator/ready_inputs.json'), 'utf8'));
@@ -35,8 +36,8 @@ export const coupledInputs = async (env = process.env) => {
   const lines = [];
   const add = async (label, file) => lines.push(`${label} ${isFile(file) ? await fileHash(file) : 'missing'}`);
 
-  await add('dn2/syx', env.DIGI_EMU_SYX || env.DIGI_COUPLED_SYX || join(root, 'firmware/Digitone_II_OS1.12.syx'));
-  await add('dt2/syx', env.DIGI_EMU_SYX_DT2 || join(root, 'firmware/Digitakt_II_OS1.17.syx'));
+  await add('dn2/syx', env.DIGI_EMU_SYX || env.DIGI_COUPLED_SYX || join(firmwareDir(env), 'Digitone_II_OS1.12.syx'));
+  await add('dt2/syx', env.DIGI_EMU_SYX_DT2 || join(firmwareDir(env), 'Digitakt_II_OS1.17.syx'));
 
   const dn2Ready = under(env.DIGI_EMU_READY_DIR || readyJson.ready_dir);
   const dt2Ready = under(env.DIGI_EMU_READY_DIR_DT2 || readyJson.ready_dirs.dt2);

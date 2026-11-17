@@ -1,6 +1,6 @@
 // Prints one sha256 hex line over the untracked inputs of the device tests: firmware images, ready dirs
 // and the DT2 sample card, plus binary overrides (root overrides deliberately prevent reuse).
-// Mirrors packages/test-support/src/inputs.ts (FIRMWARE table, ready files,
+// Mirrors packages/test-support/src/inputs.ts (FIRMWARE table, DIGI_FIRMWARE_DIR, ready files,
 // DIGI_PK_READY_<DEV>_<VER> override) and tests/regression/runtime/devices.ts (DT2 card dir
 // out/runs/patchkit/samples); a change there must change this file.
 // The ready dirs come from tools/emulator/ready_inputs.json, as there.
@@ -12,10 +12,17 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const readyJson = JSON.parse(readFileSync(join(root, 'tools/emulator/ready_inputs.json'), 'utf8'));
 
+// The stock images: $DIGI_FIRMWARE_DIR (relative to the repository root), else firmware/. The same rule as
+// tools/firmware/config.py FIRMWARE_DIR and the control daemon.
+export const firmwareDir = (env = process.env) =>
+  env.DIGI_FIRMWARE_DIR ? resolve(root, env.DIGI_FIRMWARE_DIR) : join(root, 'firmware');
+
 export const CELLS = [
-  { dev: 'dt2', ver: '1.17', syx: 'firmware/Digitakt_II_OS1.17.syx', ready: readyJson.ready_dirs.dt2, samples: true },
-  { dev: 'dn2', ver: '1.12', syx: 'firmware/Digitone_II_OS1.12.syx', ready: readyJson.ready_dir, samples: false },
+  { dev: 'dt2', ver: '1.17', syx: 'Digitakt_II_OS1.17.syx', ready: readyJson.ready_dirs.dt2, samples: true },
+  { dev: 'dn2', ver: '1.12', syx: 'Digitone_II_OS1.12.syx', ready: readyJson.ready_dir, samples: false },
 ];
+/** The stock image of a cell. */
+export const syxPath = (cell, env = process.env) => join(firmwareDir(env), cell.syx);
 const READY_FILES = ['digi-audio-m5.snap', 'digi-audio-dn2-image.bin', 'digi-audio-m5.snap.dsp', 'SOURCE.json'];
 
 const fileHash = (file) =>
@@ -118,7 +125,7 @@ export const deviceInputs = async () => {
     const label = `${c.dev}-${c.ver}`;
     const readyDir =
       process.env[`DIGI_PK_READY_${c.dev.toUpperCase()}_${c.ver.replace('.', '')}`] ?? join(root, c.ready);
-    lines.push(`${label}/syx ${await fileHash(join(root, c.syx))}`);
+    lines.push(`${label}/syx ${await fileHash(syxPath(c))}`);
     for (const f of READY_FILES) lines.push(`${label}/ready/${f} ${await fileHash(join(readyDir, f))}`);
     if (c.samples) {
       const dir = join(root, 'out/runs/patchkit/samples');
