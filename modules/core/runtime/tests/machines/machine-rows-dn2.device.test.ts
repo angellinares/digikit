@@ -67,6 +67,7 @@ describeOn('dn2', `DN2 ${FIRMWARE.dn2} machines.dks: the own page of a run-time 
     const rt = await run.load('with-machines', { modules: [ID], selection: ['modules/dyn-dn2.dkm'] });
     const { session } = rt;
     await expectLoaded(rt, run);
+    await session.expectNoFault('machines.dks loaded');
     expect(await stockFrames(rt), 'FM TONE SYN, FLTR and AMP show the same frames with machines.dks loaded').toEqual(stock);
 
     const tables = await decodeTables(session, run.plan);

@@ -192,7 +192,7 @@ for (const device of DEVICES) {
           if (hooked) expect(await cell('fxp_nload')).toBeGreaterThan(loads);
           expect(Math.abs((await stock()) - stockK1)).toBeLessThanOrEqual(0x40);
           expect(await stock()).not.toBe(moved);
-          expect(loaded.file).toEqual(Array(fx.store_halfwords).fill(0));
+          if (hooked) expect(loaded.file).toEqual(Array(fx.store_halfwords).fill(0));
           await restart(['modules/m0.dkm', 'modules/m1.dkm', 'modules/m2.dkm'], 'effects', [SINE, GAIN, GAIN_B]);
         } else await inspect([SINE, GAIN, GAIN_B], 'effects-boot');
         const effectIds = await ids();

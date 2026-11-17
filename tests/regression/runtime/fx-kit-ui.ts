@@ -4,7 +4,7 @@ import { openPages } from './fx-pages-ui.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword, kitMenu, kitSlotOne } from './fx-track-ui.ts';
 import { type RuntimePlan } from './runtime-plan.ts';
-import { symbolsOf } from './service-symbols.ts';
+import { hasServiceSymbols, symbolsOf } from './service-symbols.ts';
 
 export type FxKitObservation = [ms: number, row: number, p0: number, mix: number];
 
@@ -73,9 +73,11 @@ export function createFxKitUi(runtime: Rt, plan: RuntimePlan, profile: FxProfile
       await slot(n);
       await shot(session, artifacts, `${tag}-load-slot`);
       const file: number[] = [];
-      const before = await cell('fxp_nload');
+      // the load cells are the fx service file's: a boot without it has none, so the file stays empty
+      const hooked = hasServiceSymbols(runtime);
+      const before = hooked ? await cell('fxp_nload') : 0;
       const seen = await watchFxKitRows(runtime, plan, profile, 'YES', 600, 2, async () => {
-        if (!file.length && (await cell('fxp_nload')) !== before) {
+        if (hooked && !file.length && (await cell('fxp_nload')) !== before) {
           const base = (await cell('fxp_load_src')) + profile.fx.store_off;
           for (let i = 0; i < profile.fx.store_halfwords; i++) file.push(await halfword(session, base + 2 * i));
         }

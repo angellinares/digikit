@@ -43,6 +43,7 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} machines.dks: the SRC page of a run-time 
     const rt = await run.load('with-machines', { modules: [ID], selection: ['modules/sine.dkm'] });
     const { session } = rt;
     await expectLoaded(rt, run);
+    await session.expectNoFault('machines.dks loaded');
     expect(await stockFrames(rt), 'the stock SRC, FLTR and AMP pages show the same frames with machines.dks loaded').toEqual(stock);
 
     const tables = await decodeTables(session, run.plan);

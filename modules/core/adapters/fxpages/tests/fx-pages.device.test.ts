@@ -143,7 +143,7 @@ for (const device of DEVICES) {
 
         const stock = fixture.runtime;
         await inspect(stock, 'stock-boot', false);
-        await expectNoPages(stock, plan);
+        await expectNoPages(stock, plan, false);
         await selectSine(stock, profile);
         expect(await stockPages(stock, artifacts, 'stock'), 'stock DEL/REV/CHO pixels').toEqual(
           referenceHashes,
@@ -212,7 +212,7 @@ for (const device of DEVICES) {
         expect([await kit.raw(0), await kit.raw(7)], 'live kit defaults').toEqual([0x3200, 0x7f00]);
         expect(await rowWords(effect), 'DSP row defaults').toEqual([bits(0.5), bits(1)]);
         await mainPage(effect);
-        const a = await note(effect, 'effect-a', trigger);
+        const a = await note(effect, 'effect-a');
 
         await effectPage(effect);
         const quietEffect = await kit.snapshot();
@@ -284,7 +284,7 @@ for (const device of DEVICES) {
           await expectRuntimeUi(effect.session, plan, artifacts, { afterEpoch: Number(epoch) });
           await bounded(() => effect.session.client.guardSet(context.baseline('effect').guard));
           await inspect(reboot, 'gone-boot', false, Number(epoch));
-          await expectNoPages(reboot, plan);
+          await expectNoPages(reboot, plan, false);
           await selectSine(reboot, profile);
           expect(await stockPages(reboot, artifacts, 'gone'), 'stock pixels after effect removal').toEqual(
             referenceHashes,

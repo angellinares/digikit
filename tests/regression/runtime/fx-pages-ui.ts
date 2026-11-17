@@ -115,9 +115,16 @@ export async function pageState(runtime: Pick<TestRuntime, 'session'>, plan: Run
   };
 }
 
-export async function expectNoPages(runtime: Pick<TestRuntime, 'session'>, plan: RuntimePlan) {
-  // a boot without an effect has no fx service file: the page state is the service's, so there is no page list to read and no page is owned
-  if (!hasServiceSymbols(runtime)) return;
+export async function expectNoPages(
+  runtime: Pick<TestRuntime, 'session'>,
+  plan: RuntimePlan,
+  serviceExpected: boolean,
+) {
+  // a boot without an effect has no fx service file: the page state is the service's, so the service must be absent and there is no page list to read
+  if (!serviceExpected) {
+    expect(hasServiceSymbols(runtime), 'no fx service file is loaded').toBe(false);
+    return;
+  }
   const state = await pageState(runtime, plan);
   expect(state.count, 'stock page list is selected').toBe(0);
   expect(state.owner, 'no page is owned').toEqual([0, 0, 0, 0]);

@@ -163,6 +163,7 @@ for (const device of DEVICES) {
           what: 'the MIX knob is at its end',
         });
         expect(await kit.raw(7)).toBe(target);
+        await rowIs('the MIX word at target', (r) => r[13] === (target ? bits(1) : 0));
         expect((await words())[1]).toBe(target ? bits(1) : 0);
         await shot(runtime.session, artifacts, tag);
       };
