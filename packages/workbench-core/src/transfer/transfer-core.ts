@@ -90,10 +90,10 @@ export function installServices(view: TransferView, ticks: Set<string>): { id: s
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** `pluck installs with: fx service, machines service`; null when the module needs no service. */
-export function installsWithLine(row: TransferRow): string | null {
-  const names = (row.services ?? []).map((sv) => sv.label);
-  return names.length ? `${row.label ?? row.name} installs with: ${names.join(', ')}` : null;
+/** The count text of a pane header: nothing ticked gives `12 items` (no lead), some ticked gives lead `3` and rest ` of 12 selected`. */
+export function tickCountText(ticked: number, total: number): { lead: string; rest: string } {
+  if (ticked > 0) return { lead: String(ticked), rest: ` of ${total} selected` };
+  return { lead: '', rest: total > 0 ? plural(total, 'item', 'items') : '' };
 }
 
 /** The text of a refused module: nothing was uploaded for it. */
@@ -223,22 +223,6 @@ export function serviceTags(sv: ServiceRef): RowTag[] {
       title: sv.state === 'differs' ? 'A different build is on the device; Install replaces it' : undefined,
     },
   ];
-}
-
-/** The line under the list for the ticked modules and their services: what is installed together and what needs uploading; '' without services. */
-export function fitLine(view: TransferView, ticks: Set<string>): string {
-  const svs = tickedServices(view, ticks);
-  if (!svs.length) return '';
-  const mods = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && !r.service_refusal);
-  const who =
-    mods.length === 1
-      ? `${mods[0]!.label ?? mods[0]!.name} and its ${plural(svs.length, 'service', 'services')}`
-      : `${mods.length} modules and their ${plural(svs.length, 'service', 'services')}`;
-  const up = svs.filter((sv) => sv.state !== 'on device');
-  const upText = up.length
-    ? `${plural(up.length, 'service needs', 'services need')} uploading (${up.map((sv) => sv.label).join(', ')}).`
-    : 'No service needs uploading.';
-  return `Fits together: ${who}. ${upText}`;
 }
 
 /**

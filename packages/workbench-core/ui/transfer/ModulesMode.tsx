@@ -14,7 +14,6 @@ import {
   DevicePane,
   SelectAll,
   ServiceSubRow,
-  WithLine,
   createConfirm,
   DeleteButton,
   writing,
@@ -36,10 +35,8 @@ import {
   deletePaths,
   deviceTags,
   eventText,
-  fitLine,
   installModules,
   installServices,
-  installsWithLine,
   serviceRefusalText,
   localTags,
   tickedFit,
@@ -346,21 +343,6 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                   </Show>
                 </div>
               </Show>
-              <Show when={fitLine(v(), ticks())}>{(text) => <p class="fitline withservices">{text()}</p>}</Show>
-              <Show when={tickedFit(v(), ticks())}>
-                {(f) => (
-                  <p
-                    class="fitline"
-                    classList={{ [f().tone]: true }}
-                    title="The ticked modules together against the device's limits, as the next boot loads them (nothing else counted)"
-                  >
-                    {f().text}
-                    <Show when={tickedLoad(v(), ticks())}>
-                      {(load) => <span class="load">After the next boot: {load()}</span>}
-                    </Show>
-                  </p>
-                )}
-              </Show>
               <For each={available(v(), showTests())}>
                 {(g) => (
                   <div class="group">
@@ -404,9 +386,6 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                               <For each={r.services ?? []}>
                                 {(s) => <ServiceSubRow service={s} selected={ticks().has(rowKey(r))} />}
                               </For>
-                              <Show when={ticks().has(rowKey(r)) && installsWithLine(r)}>
-                                {(text) => <WithLine text={text()} />}
-                              </Show>
                             </>
                           )}
                         </For>
@@ -415,6 +394,17 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                   </div>
                 )}
               </For>
+              <Show when={tickedFit(v(), ticks())?.tone === 'warn' && tickedFit(v(), ticks())}>
+                {(f) => (
+                  <p
+                    class="fitbar"
+                    role="status"
+                    title={tickedLoad(v(), ticks()) ? `${f().text}\n${tickedLoad(v(), ticks())}` : f().text}
+                  >
+                    {f().text}
+                  </p>
+                )}
+              </Show>
             </>
           )}
         </Show>
