@@ -1,6 +1,6 @@
-// The selection behaviour of a list pane (Solid and the DOM; the rules are in select-core.ts, which node tests): a click on a row selects it
-// (Shift: range, Cmd or Ctrl: toggle), a press on empty space draws a marquee that selects the rows it touches (the pane scrolls at its edges),
-// Esc clears, Cmd or Ctrl+A selects all, the arrows move, Enter and Backspace open and go up. The tick of a row is its selection.
+// The selection behaviour of a list pane (Solid and the DOM; the rules are in select-core.ts, which node tests): a click on a row toggles it
+// (Shift: add a range), a press on empty space draws a marquee that adds the rows it touches (the pane scrolls at its edges);
+// a click on empty space changes nothing. Esc and the select-all checkbox clear, Cmd or Ctrl+A selects all, the arrows move, Enter and Backspace open and go up. The tick of a row is its selection.
 // Used by both panes of both modes; `TransferParts.tsx` puts `handlers`, `ref` and the marquee box on the pane.
 import { createSignal } from 'solid-js';
 import {
@@ -60,7 +60,7 @@ export function createPaneSelect(o: PaneSelectOptions) {
       .find((el) => el.dataset.key === key)
       ?.scrollIntoView({ block: 'nearest' });
 
-  /** A click on a row (not on its tick or a button): Finder's rules. */
+  /** A click on a row (not on its tick or a button): a checklist, a plain click toggles the row. */
   const click = (key: string, e: MouseEvent) => {
     if (o.disabled()) return;
     const r = clickSelect(o.keys(), o.selected(), anchor, key, modsOf(e));
@@ -76,10 +76,9 @@ export function createPaneSelect(o: PaneSelectOptions) {
     anchor = cursor = key;
     o.set(r.selected);
   };
-  /** A drag starts on a row: the selection goes along when the row is in it, else the row alone is selected. */
+  /** A drag starts on a row: the selection goes along when the row is in it, else the row alone. The selection does not change. */
   const dragStart = (key: string, e: DragEvent) => {
-    const d = dragKeys(o.keys(), o.selected(), key);
-    o.set(d.selected);
+    const d = { keys: dragKeys(o.keys(), o.selected(), key) };
     const dt = e.dataTransfer;
     if (!dt) return;
     dt.setData(ROWS_TYPE, JSON.stringify(d.keys));
@@ -137,7 +136,6 @@ export function createPaneSelect(o: PaneSelectOptions) {
     e.preventDefault();
     el.focus({ preventScroll: true });
     el.setPointerCapture(e.pointerId);
-    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     const base = o.selected();
     const origin = el.getBoundingClientRect();
     const start = { x: e.clientX - origin.left + el.scrollLeft, y: e.clientY - origin.top + el.scrollTop };
@@ -154,7 +152,7 @@ export function createPaneSelect(o: PaneSelectOptions) {
         w: Math.abs(cur.x - start.x),
         h: Math.abs(cur.y - start.y),
       });
-      o.set(marqueeSelection(base, marqueeKeys(boxes(), start.y, cur.y), additive));
+      o.set(marqueeSelection(base, marqueeKeys(boxes(), start.y, cur.y)));
     };
     const autoscroll = () => {
       const r = el.getBoundingClientRect();
@@ -180,7 +178,6 @@ export function createPaneSelect(o: PaneSelectOptions) {
       el.removeEventListener('pointercancel', end);
       window.clearInterval(timer);
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
-      if (!moved && !additive) o.set(new Set());
       setBox(undefined);
     };
     el.addEventListener('pointermove', move);

@@ -17,9 +17,9 @@ export function toggleAll(keys: readonly string[], ticked: ReadonlySet<string>):
   return next;
 }
 
-// ---- the selection of a list, like a file explorer ----------------------------------------------------------------------------------
-// The tick of a row is its selection: one set per pane, changed by a click (one row), Shift (a range from the anchor), Cmd or Ctrl (toggle one
-// row), a drag over empty space (the marquee), the keys, and the header box. `keys` are the rows in list order (the rows that can be selected).
+// ---- the selection of a list, a checklist ----------------------------------------------------------------------------------------------
+// The tick of a row is its selection: one set per pane, changed by a click (toggle one row), Shift (add a range from the anchor), Cmd or Ctrl
+// (toggle one row), a drag over empty space (the marquee), the keys, and the header box. `keys` are the rows in list order (the rows that can be selected).
 
 /** The result of a click or a key: the new selection and the row that Shift extends from. */
 export interface Selection {
@@ -49,8 +49,8 @@ export function rangeKeys(keys: readonly string[], a: string | undefined, b: str
 }
 
 /**
- * A click on a row, as in Finder. Plain: only this row. Cmd or Ctrl: this row is toggled. Shift: the range from the anchor to this row replaces
- * the selection; Shift and Cmd: the range is added to it. The anchor moves with a plain or Cmd click and stays for Shift.
+ * A click on a row. The panes are checklists: a plain click (or Cmd or Ctrl) toggles this row, like its checkbox, and keeps the other ticks.
+ * Shift: the range from the anchor to this row is added to the selection. The anchor moves with a toggle and stays for Shift.
  */
 export function clickSelect(
   keys: readonly string[],
@@ -62,20 +62,18 @@ export function clickSelect(
   if (mods.shift) {
     const from = anchor !== undefined && keys.includes(anchor) ? anchor : key;
     const range = rangeKeys(keys, from, key);
-    return { selected: new Set(mods.mod ? [...selected, ...range] : range), anchor: from };
+    return { selected: new Set([...selected, ...range]), anchor: from };
   }
-  if (mods.mod) {
-    const next = new Set(selected);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return { selected: next, anchor: key };
-  }
-  return { selected: new Set([key]), anchor: key };
+  return tickSelect(selected, key);
 }
 
-/** The tick of one row (the checkbox): it toggles that row only, like a Cmd-click. */
-export const tickSelect = (selected: ReadonlySet<string>, key: string): Selection =>
-  clickSelect([], selected, undefined, key, { shift: false, mod: true });
+/** The tick of one row (the checkbox): it toggles that row only. A plain click on the row does the same. */
+export function tickSelect(selected: ReadonlySet<string>, key: string): Selection {
+  const next = new Set(selected);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return { selected: next, anchor: key };
+}
 
 /** Cmd or Ctrl+A: every row of the pane (unlike the header box, it does not clear when all are selected already). */
 export const selectEverything = (keys: readonly string[]): Set<string> => new Set(keys);
@@ -95,7 +93,7 @@ export interface RowBox {
   bottom: number;
 }
 
-/** Below this many pixels of movement a press on empty space is a click (it clears the selection), not a marquee. */
+/** Below this many pixels of movement a press on empty space is a click (it leaves the selection unchanged), not a marquee. */
 export const MARQUEE_SLOP = 4;
 
 /** The rows that the band between `y1` and `y2` (either order) touches. */
@@ -105,9 +103,9 @@ export function marqueeKeys(rows: readonly RowBox[], y1: number, y2: number): st
   return rows.filter((r) => r.bottom >= lo && r.top <= hi).map((r) => r.key);
 }
 
-/** The selection while a marquee is drawn: the rows it touches, with the selection from before the press when Shift or Cmd is held. */
-export const marqueeSelection = (base: ReadonlySet<string>, hit: readonly string[], additive: boolean): Set<string> =>
-  new Set(additive ? [...base, ...hit] : hit);
+/** The selection while a marquee is drawn: the selection from before the press plus the rows the band touches (a checklist: a band only adds). */
+export const marqueeSelection = (base: ReadonlySet<string>, hit: readonly string[]): Set<string> =>
+  new Set([...base, ...hit]);
 
 /** How far the pane scrolls on each step while the pointer is near its top or bottom edge during a marquee (pixels; 0 away from the edges).
  * `top` and `bottom` are the visible area of the list in client coordinates, `y` the pointer. */
@@ -176,15 +174,10 @@ export function moveSelect(
 
 // ---- dragging rows -------------------------------------------------------------------------------------------------------------------
 
-/** The rows a drag that starts on `key` carries: the whole selection when the row is in it, else just that row (which becomes the selection).
- * Rows in list order. */
-export function dragKeys(
-  keys: readonly string[],
-  selected: ReadonlySet<string>,
-  key: string,
-): { keys: string[]; selected: Set<string> } {
-  if (selected.has(key)) return { keys: keys.filter((k) => selected.has(k)), selected: new Set(selected) };
-  return { keys: [key], selected: new Set([key]) };
+/** The rows a drag that starts on `key` carries: the whole selection when the row is in it, else just that row. A drag never changes the
+ * selection. Rows in list order. */
+export function dragKeys(keys: readonly string[], selected: ReadonlySet<string>, key: string): string[] {
+  return selected.has(key) ? keys.filter((k) => selected.has(k)) : [key];
 }
 
 /** Where a drop lands: on a device folder row, in that folder; anywhere else in the pane, in the open folder. */

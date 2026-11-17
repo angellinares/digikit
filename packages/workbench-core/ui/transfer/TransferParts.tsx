@@ -144,8 +144,8 @@ export interface ListRowProps {
 /** The folder of the device that a drag is over (a folder row, or the Up row), or undefined; the row shows it as the drop target. */
 const [dropHover, setDropHover] = createSignal<string>();
 
-/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. A click selects
- * it (Finder's rules), a double click opens a folder, and the text is not selectable. */
+/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. A click toggles
+ * it (a checklist), a double click opens a folder, and the text is not selectable. */
 export function ListRow(props: ListRowProps): JSX.Element {
   return (
     <li
