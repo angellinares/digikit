@@ -211,7 +211,7 @@ pub fn needs_of<B: Bytes>(src: &mut B) -> Result<Needs, Error> {
 /// each entry head; only `USES` is read in full), so the menu never holds the whole table.
 fn keys_table<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), Error> {
     let mut head = [0u8; keys::HEAD];
-    if (size as usize) < head.len() || size % 4 != 0 || !src.read(off, &mut head) {
+    if (size as usize) < head.len() || !size.is_multiple_of(4) || !src.read(off, &mut head) {
         return Err(Error::Register);
     }
     if u32::from_be_bytes([head[0], head[1], head[2], head[3]]) != keys::MAGIC

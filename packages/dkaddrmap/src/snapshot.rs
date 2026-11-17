@@ -116,7 +116,7 @@ pub fn decode_loads(loader: &Loader, snap: &Snapshot) -> Result<LoadTable, Strin
     let state = snap
         .get(SYM_STATE)
         .ok_or_else(|| format!("snapshot has no {SYM_STATE}"))?;
-    if state.len() < STATE_HEADER || (state.len() - STATE_HEADER) % STATE_RECORD != 0 {
+    if state.len() < STATE_HEADER || !(state.len() - STATE_HEADER).is_multiple_of(STATE_RECORD) {
         return Err(format!(
             "{SYM_STATE}: {} bytes are not a header and whole records",
             state.len()

@@ -132,7 +132,9 @@ impl<'a> Dkds<'a> {
             n.checked_mul(IMPORT_LEN).ok_or("overflow")?,
         )?;
         Ok(raw
-            .chunks_exact(IMPORT_LEN)
+            .as_chunks::<IMPORT_LEN>()
+            .0
+            .iter()
             .map(|e| {
                 let l = e.iter().position(|b| *b == 0).unwrap_or(IMPORT_LEN);
                 String::from_utf8_lossy(&e[..l]).into_owned()
@@ -142,9 +144,14 @@ impl<'a> Dkds<'a> {
 
     pub fn relocs(&self) -> Result<Vec<RawReloc>, String> {
         let n = self.reloc_count();
-        let raw = self.range(self.word(DSP_H_RELOC_OFF as usize), n.checked_mul(RELOC_LEN).ok_or("overflow")?)?;
+        let raw = self.range(
+            self.word(DSP_H_RELOC_OFF as usize),
+            n.checked_mul(RELOC_LEN).ok_or("overflow")?,
+        )?;
         Ok(raw
-            .chunks_exact(RELOC_LEN)
+            .as_chunks::<RELOC_LEN>()
+            .0
+            .iter()
             .map(|r| RawReloc {
                 offset: be32(r, RELOC_OFFSET as usize),
                 word: be32(r, RELOC_WORD as usize),

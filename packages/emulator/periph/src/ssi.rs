@@ -313,10 +313,10 @@ impl Ssi0Dma {
         }
         let dest0 = tcd.daddr();
         let source0 = tcd.saddr();
-        if let Some(p) = provided {
-            if p.len() != nbytes {
-                return None;
-            }
+        if let Some(p) = provided
+            && p.len() != nbytes
+        {
+            return None;
         }
         let elements = nbytes / source_size;
         let new_source = advance(tcd.saddr(), tcd.soff(), elements);

@@ -42,7 +42,7 @@ fn be32(data: &[u8], at: usize) -> Option<u32> {
 }
 
 pub fn list_image(image: &dyn RandomAccessRead) -> Result<Vec<ImageEntry>, ListError> {
-    if image.len() % SECTOR as u64 != 0 {
+    if !image.len().is_multiple_of(SECTOR as u64) {
         return Err(ListError::InvalidHeader);
     }
     let mut header = [0; SECTOR];

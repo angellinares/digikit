@@ -75,10 +75,10 @@ impl SparseImage {
                 return Err(SparseImageError::Overlap { offset, length });
             }
         }
-        if let Some((&start, _)) = self.ranges.range(offset..).next() {
-            if start < end {
-                return Err(SparseImageError::Overlap { offset, length });
-            }
+        if let Some((&start, _)) = self.ranges.range(offset..).next()
+            && start < end
+        {
+            return Err(SparseImageError::Overlap { offset, length });
         }
         self.ranges.insert(offset, data.to_vec());
         Ok(())
@@ -269,7 +269,7 @@ pub(crate) fn validate_native(sample: &NativeSample) -> bool {
         && declared == sample.info.data_len
         && rate == 48_000
         && usize::from(sample.info.channels) == channels
-        && declared % (channels * 2) == 0
+        && declared.is_multiple_of(channels * 2)
         && sample.info.frames == declared / (channels * 2)
 }
 

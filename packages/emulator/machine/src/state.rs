@@ -168,7 +168,7 @@ pub fn parse(input: &[u8]) -> Result<MachineState, StateError> {
         let mut sectors = Vec::with_capacity(count);
         let mut last = None;
         let mut written_bytes = 0u64;
-        for record in raw.chunks_exact(OVERLAY_RECORD_SIZE) {
+        for record in raw.as_chunks::<OVERLAY_RECORD_SIZE>().0 {
             let sector = u64::from_le_bytes(record[..8].try_into().unwrap());
             let written: [u8; 64] = record[8..72].try_into().unwrap();
             let data: [u8; 512] = record[72..].try_into().unwrap();

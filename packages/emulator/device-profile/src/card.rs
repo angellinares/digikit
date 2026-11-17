@@ -185,7 +185,7 @@ impl CardLayout {
                 return Err(format!("{name}: slots and stride_sectors must be nonzero"));
             }
             if p.slot_bytes == 0
-                || p.slot_bytes as u64 % SECTOR_BYTES != 0
+                || !(p.slot_bytes as u64).is_multiple_of(SECTOR_BYTES)
                 || p.slot_bytes as u64 > p.stride_sectors * SECTOR_BYTES
             {
                 return Err(format!(
@@ -227,10 +227,10 @@ impl CardLayout {
                 r.sector + r.sectors,
             ));
         }
-        if let Some(fs) = &self.path_fs {
-            if fs.end_sector <= fs.superblock_sector || fs.end_sector > self.total_sectors {
-                return Err("the path filesystem range is empty or past the card".into());
-            }
+        if let Some(fs) = &self.path_fs
+            && (fs.end_sector <= fs.superblock_sector || fs.end_sector > self.total_sectors)
+        {
+            return Err("the path filesystem range is empty or past the card".into());
         }
         if let Some(store) = &self.store {
             if store.first_sector >= store.end_sector {
@@ -263,13 +263,12 @@ impl CardLayout {
             }
         }
         // The firmware's own slots and records lie below the path filesystem (the store is above it, or elsewhere).
-        if let Some(fs) = &self.path_fs {
-            if let Some(over) = spans
+        if let Some(fs) = &self.path_fs
+            && let Some(over) = spans
                 .iter()
                 .find(|s| s.0 != "store" && s.0 != "path filesystem" && s.2 > fs.superblock_sector)
-            {
-                return Err(format!("{} reaches the path filesystem", over.0));
-            }
+        {
+            return Err(format!("{} reaches the path filesystem", over.0));
         }
         Ok(())
     }

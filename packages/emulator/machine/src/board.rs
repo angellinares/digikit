@@ -338,7 +338,7 @@ impl Board {
                 && tcd.nbytes & 0xc000_0000 == 0
                 && n != 0
                 && n <= 4096
-                && n % 4 == 0
+                && n.is_multiple_of(4)
                 && (tcd.attr & 7) == 2
                 && ((tcd.attr >> 8) & 7) == 2
                 && if channel == ssi::RX_CHAN {
@@ -430,13 +430,14 @@ impl Board {
             } else {
                 ssi.tx_bytes += n as u64;
             }
-            if result.major_complete && plan.tcd.csr & edma::CSR_E_SG != 0 {
-                if let Some(descriptor) = plan.descriptor {
-                    for (offset, byte) in descriptor.into_iter().enumerate() {
-                        self.dma
-                            .edma_regs
-                            .set_u8_at(edma::tcd_offset(channel) + offset, byte);
-                    }
+            if result.major_complete
+                && plan.tcd.csr & edma::CSR_E_SG != 0
+                && let Some(descriptor) = plan.descriptor
+            {
+                for (offset, byte) in descriptor.into_iter().enumerate() {
+                    self.dma
+                        .edma_regs
+                        .set_u8_at(edma::tcd_offset(channel) + offset, byte);
                 }
             }
             if self.policy == CompletionPolicy::Device
@@ -692,6 +693,10 @@ impl Board {
     /// Validate and install Oracle forced read words. A forced word may
     /// overlay one owned register (the Python hook does this before the
     /// peripheral read), but may not cross into or out of owned MMIO.
+    #[allow(
+        clippy::result_unit_err,
+        reason = "one failure kind: callers expect success or map the error"
+    )]
     pub fn install_forced_mmio(&mut self, words: BTreeMap<u32, u32>) -> Result<(), ()> {
         if words.keys().any(|&base| {
             let Some(end) = base.checked_add(3) else {
@@ -1326,10 +1331,9 @@ impl Board {
         let argument = self.esdhc.read(esdhc::BASE + esdhc::CMDARG, 4).unwrap_or(0);
         self.drain_esdhc_host_writes();
         let (base, len) = self.dma_window(command)?;
-        if self.card_trace.is_some() {
+        if let Some(trace) = self.card_trace.as_mut() {
             // Commands decoded before this transfer (CMD23) go first.
             let before = self.esdhc.take_cmd_trace();
-            let trace = self.card_trace.as_mut().unwrap();
             for (cmd, arg) in before {
                 if trace.len() < CARD_TRACE_MAX {
                     trace.push(CardOp { cmd, arg, bytes: 0 });
@@ -1505,7 +1509,7 @@ impl Board {
                 address: addr,
                 bytes: len,
             })? as u8);
-            let soff = i32::try_from(tcd.soff).expect("eDMA SOFF is signed 16-bit");
+            let soff = i32::from(tcd.soff);
             addr = addr
                 .checked_add_signed(soff)
                 .ok_or(BoardWriteError::DspiDma {

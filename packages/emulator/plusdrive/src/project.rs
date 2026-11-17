@@ -123,9 +123,9 @@ fn extract(seed: ProjectSeed<'_>) -> Result<Vec<u8>, ProjectError> {
 
 fn validate_container(container: &[u8]) -> Result<(), ProjectError> {
     if container.len() != CONTAINER_SIZE
-        || word(&container, 0) != Some(CONTAINER_MAGIC)
-        || word(&container, 4) != Some(3)
-        || word(&container, CONTAINER_END_OFFSET) != Some(CONTAINER_END_MAGIC)
+        || word(container, 0) != Some(CONTAINER_MAGIC)
+        || word(container, 4) != Some(3)
+        || word(container, CONTAINER_END_OFFSET) != Some(CONTAINER_END_MAGIC)
     {
         return Err(ProjectError::InvalidContainer);
     }
@@ -140,8 +140,7 @@ fn nonempty_refs(container: &[u8]) -> Result<Vec<[u8; 16]>, ProjectError> {
         .get(REF_TABLE_OFFSET..end)
         .ok_or(ProjectError::InvalidContainer)?;
     let mut refs = Vec::new();
-    for reference in table.chunks_exact(16) {
-        let reference: [u8; 16] = reference.try_into().unwrap();
+    for &reference in table.as_chunks::<16>().0 {
         if reference != [0; 16]
             && reference != [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         {
