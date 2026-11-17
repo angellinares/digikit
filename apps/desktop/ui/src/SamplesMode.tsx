@@ -1,6 +1,6 @@
 // Transfer page, Samples mode, a file explorer on both sides. On your computer: a folder of samples (chosen once, remembered; one level shown
 // with a breadcrumb) and the files added by hand or dropped (kept in the list even when they are outside the folder). On device: the device's
-// sample folders. Rows are selected like in Finder (click, Shift, Cmd or Ctrl, a marquee, Cmd+A, Esc; the tick is the selection), a folder
+// sample folders. Rows are a checklist (a click toggles a row, Shift adds a range, Cmd or Ctrl, a marquee, Cmd+A, Esc; the tick is the selection), a folder
 // opens with a double click or Enter, "Up" and the breadcrumb go back. Upload sends the selected rows, a folder with everything in it and its
 // structure kept, into the open device folder; so does a drag of the rows onto the device pane or onto one of its folders. The backend is the
 // one the device profile names (`[storage] samples`: the stock MidiRpc file commands or the digikit store; samples-backend.ts), so the mode is

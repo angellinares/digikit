@@ -8,7 +8,7 @@ import { createCheckingHint } from '../../src/transfer/checking-hint';
 import type { PaneSelect } from '../../src/transfer/pane-select';
 import { dragKind, selectState, toggleAll } from '../../src/transfer/select-core';
 import { linkHint, linkTag } from '../../src/transfer/link-core';
-import { deleteLabel, freeLine, writing, type RowTag } from '../../src/transfer/transfer-core';
+import { deleteLabel, freeLine, tickCountText, writing, type RowTag } from '../../src/transfer/transfer-core';
 import { formatBytes } from '../../src/modules/backend';
 import type { ServiceRef } from '../../src/modules/services';
 
@@ -144,8 +144,8 @@ export interface ListRowProps {
 /** The folder of the device that a drag is over (a folder row, or the Up row), or undefined; the row shows it as the drop target. */
 const [dropHover, setDropHover] = createSignal<string>();
 
-/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. A click selects
- * it (Finder's rules), a double click opens a folder, and the text is not selectable. */
+/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. A click toggles
+ * it (a checklist), a double click opens a folder, and the text is not selectable. */
 export function ListRow(props: ListRowProps): JSX.Element {
   return (
     <li
@@ -241,11 +241,6 @@ export function ServiceSubRow(props: { service: ServiceRef; selected?: boolean }
   );
 }
 
-/** The "installs with" line under a ticked module. */
-export function WithLine(props: { text: string }): JSX.Element {
-  return <li class="with">{props.text}</li>;
-}
-
 /** The first row of a list inside a folder: "↑ Up" goes to the parent. A file dropped on it goes into the parent (`dropPath`). */
 export function UpRow(props: { disabled: boolean; onUp: () => void; dropPath?: string; title: string }): JSX.Element {
   return (
@@ -264,6 +259,19 @@ export function UpRow(props: { disabled: boolean; onUp: () => void; dropPath?: s
         </span>
       </li>
     </ul>
+  );
+}
+
+/** The count after the select-all box: `12 items`, or `3 of 12 selected` with the 3 in the accent colour. */
+function TickCount(props: { ticked: number; total: number }): JSX.Element {
+  const t = () => tickCountText(props.ticked, props.total);
+  return (
+    <span class="selcount">
+      <Show when={t().lead}>
+        <span class="lead">{t().lead}</span>
+      </Show>
+      {t().rest}
+    </span>
   );
 }
 
@@ -293,11 +301,7 @@ export function SelectAll(props: {
         disabled={props.disabled || props.keys.length === 0}
         onChange={() => props.onChange(toggleAll(props.keys, props.ticked))}
       />
-      <Show when={count() > 0}>
-        <span class="selcount" title={`${count()} of ${props.keys.length} ticked`}>
-          {count()} / {props.keys.length}
-        </span>
-      </Show>
+      <TickCount ticked={count()} total={props.keys.length} />
     </>
   );
 }
@@ -448,10 +452,7 @@ export function LocalPane(props: {
       }}
     >
       <div class="colhead">
-        <div class="hl">
-          {props.selectAll}
-          <h3>On your computer</h3>
-        </div>
+        <div class="hl">{props.selectAll}</div>
         <div class="acts">{props.actions}</div>
       </div>
       <div class="listarea">{props.children}</div>
@@ -519,10 +520,7 @@ export function DevicePane(props: {
       }}
     >
       <div class="colhead">
-        <div class="hl">
-          {props.selectAll}
-          <h3>On device</h3>
-        </div>
+        <div class="hl">{props.selectAll}</div>
         <div class="acts">{props.actions}</div>
       </div>
       <Show when={!props.hideTarget}>

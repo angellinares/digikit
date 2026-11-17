@@ -22,13 +22,12 @@ import {
   eventText,
   installModules,
   installServices,
-  installsWithLine,
+  tickCountText,
   installResultLines,
   deleteResultLines,
   neededServiceText,
   serviceRefusalText,
   serviceTags,
-  fitLine,
   modulesBar,
   onDevice,
   onDeviceWithPending,
@@ -398,8 +397,10 @@ const shot = row('a/shot', 'Machines', { label: 'shot', services: [machines] });
 const sv = { ...view, modules: [pluck, shot] };
 
 test('services: the with line, sub row tags, the fit line and the services to upload', () => {
-  assert.equal(installsWithLine(pluck), 'pluck installs with: fx service, machines service');
-  assert.equal(installsWithLine(row('a/none', 'Tools')), null);
+  assert.deepEqual(tickCountText(0, 12), { lead: '', rest: '12 items' });
+  assert.deepEqual(tickCountText(0, 1), { lead: '', rest: '1 item' });
+  assert.deepEqual(tickCountText(0, 0), { lead: '', rest: '' });
+  assert.deepEqual(tickCountText(3, 12), { lead: '3', rest: ' of 12 selected' });
   assert.deepEqual(
     serviceTags(fx).map((t) => [t.text, t.tone]),
     [['not on device', 'warn']],
@@ -409,16 +410,6 @@ test('services: the with line, sub row tags, the fit line and the services to up
     [['on device', 'ok']],
   );
   assert.equal(serviceTags({ ...fx, state: 'differs' })[0].text, 'differs');
-  assert.equal(
-    fitLine(sv, new Set(['a/pluck'])),
-    'Fits together: pluck and its 2 services. 1 service needs uploading (fx service).',
-  );
-  assert.equal(
-    fitLine(sv, new Set(['a/pluck', 'a/shot'])),
-    'Fits together: 2 modules and their 2 services. 1 service needs uploading (fx service).',
-  );
-  assert.equal(fitLine(sv, new Set()), '');
-  assert.equal(fitLine({ ...view, modules: [row('a/none', 'Tools')] }, new Set(['a/none'])), '');
   // each service once, skipping the one on the device
   assert.deepEqual(installServices(sv, new Set(['a/pluck', 'a/shot'])), [
     { id: 'fx', path: 'services/fx.dks', bytes: 38400 },
