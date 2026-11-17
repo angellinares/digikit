@@ -260,7 +260,7 @@ function deviceFile(short: string): Toml {
 /** The spec of module MID on DEVICE, or null when the module is no machine with a DSP object for that device. */
 /**
  * Problems of a machine module's `build/gen/gallery.json` for a device, as `device: text` lines. A device of `[targets]` or `ports` of
- * module.toml (or of an object's `devices`) that a machine of the gallery does not list, or lists with no parameter, has no knob slots
+ * module.toml (or of an object's `devices`) that a machine of the gallery does not list, or lists with no parameter (unless `[uses.DEVICE] param_rows = 0` declares none), has no knob slots
  * there: the rig would run it with every parameter word at 0. `module:check` writes the gallery, so the fix is to run it again.
  */
 export function galleryGaps(mid: string): string[] {
@@ -279,7 +279,7 @@ export function galleryGaps(mid: string): string[] {
     for (const d of [...wanted].sort()) {
       const dev = m.devices?.[d];
       if (!dev) out.push(`${d}: machine ${m.id} is not listed in build/gen/gallery.json`);
-      else if (!(gallery.params?.[d] ?? []).length)
+      else if (!(gallery.params?.[d] ?? []).length && man.uses?.[d]?.param_rows !== 0)
         out.push(`${d}: machine ${m.id} has no parameter in build/gen/gallery.json`);
     }
   return out;
