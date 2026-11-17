@@ -688,7 +688,7 @@ test('buildView with services: a library module lists its services with their st
   const shot = (await libraryModule(needing('someone/shot', ['fx']), needsOf))!;
   dev.files.set('modules/shot.dkm', shot.bytes);
   const view = await buildView(session(dev), [pluck, shot], depsOf([fx, machines]));
-  const rows = Object.fromEntries(view.modules.map((r) => [r.id, r]));
+  const rows = Object.fromEntries(view.modules.map((r): [string, typeof r] => [String(r.id), r]));
   assert.deepEqual(
     rows['someone/pluck'].services?.map((r) => [r.stem, r.state]),
     [
