@@ -26,9 +26,21 @@ Start from docs/plans/sdk-runtime-roadmap.md, then this file. Plans: docs/plans/
 
 Backup tags `backup/pre-target-rewrite/*` and `refs/original/*` hold the pre-rewrite commits (see "Done today"). Drop them after the batch merges: `git tag -l 'backup/pre-target-rewrite/*' | xargs git tag -d; git for-each-ref --format='%(refname)' refs/original | xargs -n1 git update-ref -d; git gc --prune=now`.
 
+## Device re-run results (batch 908041e3d; logs out-rerun-1..3.log in lane sdk-design)
+
+Passing now: frametype-slot (DN2), fx-contract (DT2, DN2), fx-send (DT2, DN2), fx-reuse, fx-pages (DT2), inferred-needs full tier (DT2, DN2, 8 cases), and earlier in the day lfo, modules-capacity, dynreg equiv and round trip, bootscreen x3, two-notes, routes, track-route files, fixtures, providers, refusals, safe-mode, boot-restart, crash-capture, fault-trace.
+
+Still failing (work these first, one file at a time, `pnpm nx:pilot run <project>:test-device--<file>--<dev>`):
+- machine-rows-dn2: the first knob turn changes no Sound word within 3 s, although the DN2 diagnostic run with the same 30 ms timing changed word 26 (8192 -> 8448). Compare the test's steps before the turn with the diagnostic (in git history of this session: the diagnostic did pickSine(5), TRIG 1, SYN, then three 4-detent ENC B events 30 ms apart and a 100 ms settle).
+- machine-rows-dt2: "the stock SRC, FLTR and AMP pages show the same frames with machines.dks loaded" fails: the frames differ. Either the machines.dks hooks change stock pages on DT2 (a real finding) or the capture differs between the two boots; look at the saved frames.
+- fx-bipolar: DT2 the dry/wet audio compare (`hook_ab compare`) fails; DN2 a gain value 1064956904 (0.9976) where 1065353216 (1.0) was expected. Real numeric change or tolerance.
+- fx-pages (DN2): "track send note setup too late: current frame 7486, trigger 7000" (setup timing).
+- fx-kit-persist (DT2: `symbol fxp_nload: 0 addresses in the plan`, one more plan lookup of an fx service symbol; DN2: a hook counter 0 where >= 1 was expected).
+- overdrive-type did not run (wrong target name in the run); run `core/overdrive`'s device target.
+
 ## In flight at the end of this session
 
-- Device re-run on the batch (lane sdk-design, logs `out-rerun-1..3.log`): machine files (both devices), fx-contract, fx-bipolar, fx-pages, fx-kit-persist, fx-send, fx-reuse, overdrive-type, inferred-needs (full). Read the results; fix file by file.
+- The device re-run finished; results above.
 - Agents paused or done: RS-C waits for "continue (b)-(e)"; RS-S, fingerprint pins, unit-gaps wait for their next step.
 
 ## Next, in order
