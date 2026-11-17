@@ -7,7 +7,7 @@ import { fmtRate } from '../../src/transfer/rate-core';
 import { createCheckingHint } from '../../src/transfer/checking-hint';
 import type { PaneSelect } from '../../src/transfer/pane-select';
 import { dragKind, selectState, toggleAll } from '../../src/transfer/select-core';
-import { linkTag } from '../../src/transfer/link-core';
+import { linkHint, linkTag } from '../../src/transfer/link-core';
 import { deleteLabel, freeLine, writing, type RowTag } from '../../src/transfer/transfer-core';
 import { formatBytes } from '../../src/modules/backend';
 import type { ServiceRef } from '../../src/modules/services';
@@ -537,6 +537,9 @@ export function DevicePane(props: {
                   <span class="meta">{freeLine(d().free)}</span>
                 </Show>
                 <Show when={activeMode() === 'samples' && linkTag(sampleLink())}>{(t) => <Tag tag={t()} />}</Show>
+                <Show when={activeMode() === 'samples' && linkHint(sampleLink())}>
+                  {(h) => <span class="meta link-hint">{h()}</span>}
+                </Show>
                 <Show when={d().storage}>
                   <span class="meta storage">{d().storage}</span>
                 </Show>

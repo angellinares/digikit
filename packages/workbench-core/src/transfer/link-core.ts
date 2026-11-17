@@ -6,6 +6,7 @@ import type { RowTag } from './transfer-core.ts';
 /** `bulk`: the USB bulk link of usb-fast; `sysex`: no bulk link for this target; `fallback`: bulk failed during the last run (`reason`), SysEx took over. */
 export interface LinkState {
   state: 'bulk' | 'sysex' | 'fallback';
+  /** `fallback`: why the bulk link stopped. `sysex`: why the bulk link was not chosen (the last note of the choice), when usb-fast is loaded. */
   reason?: string;
   /** `sysex` only: usb-fast is selected but did not load at the last boot (the device's LOADS record); `loadFailureText` says why. */
   failure?: LoadFailure;
@@ -32,14 +33,26 @@ export function linkTag(link: LinkState | undefined): RowTag | undefined {
     default:
       if (link.failure)
         return { text: `SYSEX: ${loadFailureShort(link.failure)}`, tone: 'warn', title: loadFailureText(link.failure) };
-      if (link.wrongMode)
-        return { text: 'SYSEX', tone: 'warn', title: 'Set USB CONFIG to USB MIDI on the device for Fast USB' };
+      if (link.wrongMode) return { text: 'SYSEX', tone: 'warn', title: linkHint(link) ?? '' };
+      if (link.reason) return { text: 'SYSEX', tone: 'warn', title: linkHint(link) ?? '' };
       return {
         text: 'SYSEX',
         tone: 'dim',
         title: 'Samples go over MIDI SysEx. For faster transfers, install the usb-fast module on the device.',
       };
   }
+}
+
+/** One short visible sentence under the pill that says why samples do not use Fast USB; null for a bulk link. */
+export function linkHint(link: LinkState | undefined): string | null {
+  if (!link || link.state === 'bulk') return null;
+  if (link.state === 'fallback')
+    return `Fast USB stopped during this run (${link.reason || 'no reason logged'}); the rest went over SysEx.`;
+  if (link.failure) return loadFailureText(link.failure);
+  if (link.wrongMode)
+    return 'This firmware has no Fast USB interface in USB AUDIO/MIDI. Flash firmware from the Firmware page, or set USB CONFIG to USB MIDI on the device.';
+  if (link.reason) return `Fast USB not used: ${link.reason}`;
+  return 'Install the usb-fast module for Fast USB.';
 }
 
 /** The end of the progress line of a running upload: ` · via Fast USB` or ` · via SysEx` ('' while the link is unknown). */

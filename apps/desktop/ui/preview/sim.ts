@@ -36,8 +36,8 @@ export interface SimState {
   putfail: boolean;
   /** Names (comma separated) of files that the fake device holds already with the same bytes: an upload skips them (skip=kick,snare). */
   skip: string;
-  /** The link of the samples: none (no pill), bulk, sysex, wrongmode (SysEx, device in USB AUDIO/MIDI), fallback (bulk until the second file, then SysEx). */
-  link: 'none' | 'bulk' | 'sysex' | 'wrongmode' | 'fallback';
+  /** The link of the samples: none (no pill), bulk, sysex, wrongmode (SysEx, device in USB AUDIO/MIDI), fallback (bulk until the second file, then SysEx), reason (SysEx with the reason of the bulk choice). */
+  link: 'none' | 'bulk' | 'sysex' | 'wrongmode' | 'fallback' | 'reason';
 }
 
 export const PARAMS = [
