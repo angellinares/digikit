@@ -26,7 +26,7 @@ async function expectRemoteKeys(runtime: TestRuntime): Promise<void> {
     const rt = { ...runtime, ui };
     await shot('start');
     const o = { holdMs: 300, gapMs: 1200 };
-    await openDigikitMenu(rt, { ...o, checkpoint: async (name) => shot(name) });
+    await openDigikitMenu(rt, { ...o, checkpoint: async (name) => void (await shot(name)) });
     await openRuntimeAbout(rt, plan, liveArtifacts(session, 'remote-input'), o);
     for (let i = 0; i < 4; i++) await ui.tap('NO', { holdMs: 300, until: { ms: 2000, why: 'remote keys do not pass the input queue' } });
     await shot('after-back');

@@ -1,7 +1,5 @@
-import path from 'node:path';
 import { pollUntil } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { captureRemoteOled } from '@digi/regression/runtime/remote.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
@@ -23,26 +21,13 @@ const DSP_TYPE_CACHE = portAnchorAddress('dt2', FIRMWARE.dt2, 'dsp.voice.value.t
 /** The frames of the stock SRC pages (two presses: the second page), FLTR and AMP of track 1 (the menu frames of the old cell are not compared). */
 async function stockFrames(rt: Rt, expected?: string[]): Promise<string[]> {
   const frames: string[] = [];
-  let mismatched = false;
   for (const key of ['SRC', 'SRC', 'FLTR', 'AMP']) {
     await rt.ui.tap(key, { until: { ms: 300, why: REDRAW } });
     frames.push(await rt.session.frameHash());
     // with `expected` (the loaded boot): keep the screen of each page that differs from the stock one
     if (expected && frames.at(-1) !== expected[frames.length - 1]) {
       const name = `stock-frame-${frames.length}-${key}`;
-      await captureRemoteOled(rt.session, name);
-      console.info(`${name} screen: ${path.join(liveArtifacts(rt.session, 'remote-input'), `${name}.png`)}`);
-      // does the UI task run? (the status fields that move while it does)
-      const { mode, epoch, cf, heartbeat, boot } = await rt.session.status();
-      console.info(
-        `${name} status: ${JSON.stringify({ mode, epoch, icount: boot?.icount, cf: { phase: cf.phase, ready: cf.ready, main_ui_reached: cf.main_ui_reached, pc: cf.pc }, heartbeat: { stalled: heartbeat.stalled, stall_count: heartbeat.stall_count, mainloop_hits: heartbeat.mainloop_hits } })}`,
-      );
-      if (!mismatched) {
-        mismatched = true;
-        await rt.ui.wait({ ms: 1000, why: 'diagnostic: does the page settle given 1000 ms more emulated time' });
-        const later = await rt.session.frameHash();
-        console.info(`${name} after 1000 ms: changed ${later !== frames.at(-1)}, equals expected ${later === expected[frames.length - 1]}`);
-      }
+      console.info(`${name} screen: ${await captureRemoteOled(rt.session, name)}`);
     }
   }
   return frames;

@@ -1,7 +1,5 @@
-import path from 'node:path';
 import { button, encoder as encoderCode, pollUntil, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
-import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { captureRemoteOled } from '@digi/regression/runtime/remote.ts';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
@@ -100,9 +98,10 @@ async function turnEvents(rt: Rt, encoder: string, step: number, count: number, 
 }
 
 /**
- * Turn `encoder` by `detents` (negative: down) in events of 4, 30 ms apart (the timing the diagnostic run showed to move the word: 8192 to 8448 for 12 detents). Waits
- * until a Sound word differs from the one before the turn (the firmware stored the value). Returns the Sound index it changed with the values before and after (fails
- * when it changed none or several).
+ * Turn `encoder` by `detents` (negative: down) in events of 4, 30 ms apart, and repeat the burst (up to TURN_BURSTS times) until a Sound word moves. Waits until a Sound
+ * word differs from the one before the turn (the firmware stored the value). Returns the Sound index it changed with the values before and after (fails when it
+ * changed none or several). The size of the change depends on how many bursts the lead-in filter swallowed, so it is not a fixed delta (one burst of 12 detents moved a
+ * word from 8192 to 8448): a test checks the direction, not an exact step.
  */
 export async function turnChangesOneWord(rt: Rt, encoder: string, detents = 12) {
   const before = await soundWords(rt.session);
@@ -117,8 +116,7 @@ export async function turnChangesOneWord(rt: Rt, encoder: string, detents = 12) 
       what: `${encoder} changed a Sound word`,
     });
   } catch (error) {
-    await captureRemoteOled(rt.session, 'knob-timeout');
-    console.info(`knob-timeout screen: ${path.join(liveArtifacts(rt.session, 'remote-input'), 'knob-timeout.png')}`);
+    console.info(`knob-timeout screen: ${await captureRemoteOled(rt.session, 'knob-timeout')}`);
     throw error;
   }
   const after = await soundWords(rt.session);
