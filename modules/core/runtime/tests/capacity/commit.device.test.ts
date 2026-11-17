@@ -1,19 +1,19 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { PROVIDER_IDX } from '@digi/dk-session';
 import { RESOURCE } from '@digi/dk-session/gen_proto';
-import { committedRecords } from '@digi/test-support/commit-records';
+import { committedRecords, decodeCommitEvent } from '@digi/test-support/commit-records';
 import { expect, test } from 'vitest';
 import { cardRigs, type CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { dspBytes, word } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
 import { dynType } from '@digi/regression/runtime/project-kit.ts';
-import { moduleRingEvents } from '@digi/regression/runtime/runtime-menu.ts';
-import { neededServices } from '@digi/regression/runtime/service-files.ts';
+import { moduleRingEvents, ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { LOADED } from '@digi/regression/runtime/synth.ts';
-import { bootEntries, COUPLED_ROOTS, providerArena, SYMBOLS, type Entry } from './capacity-helpers.ts';
+import { block, LOADED } from '@digi/regression/runtime/synth.ts';
+import { bootEntries, COUPLED_ROOTS, SYMBOLS, type Entry } from './capacity-helpers.ts';
 
 /**
  * The commit of a module (docs/plans/sdk.md 6.3), end to end on both devices, with the fixture test/commit-demo: a machine `cmach` with three
@@ -75,11 +75,49 @@ function replaceAll(buf: Buffer, from: Buffer, to: Buffer, lo = 0, hi = buf.leng
   return n;
 }
 
-/** Refused and left nothing behind: no module listed, no row, no DSP range, no arena block. */
-async function expectNothing(rig: CardRig, got: Awaited<ReturnType<typeof bootEntries>>, loaded: string[], rows: number) {
+/** What the good boot of the fixture holds in the arena: all of it, and the part the providers (services the module needs) hold. */
+interface GoodArena {
+  used: number;
+  providers: number;
+}
+const goodArena = new Map<string, GoodArena>();
+
+/**
+ * Boot the fixture alone and record its arena: `providers` is `ARENA.used` less the module's image block and its committed record block (the Collect
+ * of its load is freed). The runtime does not publish the providers' own blocks.
+ */
+async function bootGood(rig: CardRig): Promise<Awaited<ReturnType<typeof bootEntries>>> {
+  const entries: Entry[] = [{ name: ID, file: moduleArtifact(rig.device, ID), want: LOADED }];
+  const got = await bootEntries(rig, 'commit-good', entries);
+  const [event] = await moduleRingEvents(got.rt.session, rig.plan, 'MODULE_COMMIT');
+  const used = got.cap.ARENA!.used;
+  const providers = used - block(got.mods[0]!.cf_size) - block(decodeCommitEvent(event!).size);
+  goodArena.set(rig.device, { used, providers });
+  return got;
+}
+
+/** The arena of the good boot (a boot of its own, made before the boots under test). */
+async function goodArenaOf(rig: CardRig): Promise<GoodArena> {
+  if (!goodArena.has(rig.device)) await bootGood(rig);
+  return goodArena.get(rig.device)!;
+}
+
+/**
+ * Refused and left nothing behind: no module listed, no row, no DSP range, no arena block. `good` is `goodArenaOf` of the rig, read before this boot. With no
+ * module loaded the arena holds the providers' blocks only, and none when the refused file needed no service (no provider loaded on this boot).
+ */
+async function expectNothing(
+  rig: CardRig,
+  got: Awaited<ReturnType<typeof bootEntries>>,
+  loaded: string[],
+  rows: number,
+  good: GoodArena,
+) {
   const { mods, cap, rt } = got;
-  // the providers (services the module needs) hold arena blocks of their own: the baseline is a boot of the same services with no module
-  const baseline = await providerArena(rig, 'commit-baseline', neededServices([moduleArtifact(rig.device, ID)]));
+  const providersLoaded = (await ringEvents(rt.session, rig.plan, 'MOD_LOAD')).filter(
+    (e) => e.args[0] === PROVIDER_IDX && e.args[1] === 0,
+  ).length;
+  const providers = providersLoaded ? good.providers : 0;
   expect(
     mods.map((m) => m.name),
     'MODULES lists only the modules that loaded',
@@ -88,10 +126,10 @@ async function expectNothing(rig: CardRig, got: Awaited<ReturnType<typeof bootEn
     [cap.MACHINE_ROWS!.used, cap.PARAM_ROWS!.used, cap.VOICE_ROWS!.used],
     'the refused module wrote no machine, parameter or voice row',
   ).toEqual([rows, rows * 3, rows]);
-  expect(
-    [cap.DSP_AREA!.used > 0, cap.ARENA!.used > baseline],
-    'and holds no DSP range and no arena block beyond the providers unless an earlier module does',
-  ).toEqual([rows > 0, rows > 0]);
+  expect(cap.DSP_AREA!.used > 0, 'and holds no DSP range unless an earlier module does').toBe(rows > 0);
+  expect(cap.ARENA!.used, 'and no arena block beyond the providers and the modules that loaded').toBe(
+    rows > 0 ? good.used : providers,
+  );
   expect((await word(rt.session, planSymbol(rig.plan, 'DKRT_TABLE_BAD'))) >>> 24, 'the firmware tables are intact').toBe(0);
   expect(await moduleRingEvents(rt.session, rig.plan, 'MODULE_COMMIT'), 'a refused commit logs no MODULE_COMMIT').toHaveLength(rows);
 }
@@ -118,8 +156,7 @@ cardRigs(
     test('the commit logs its rows, writes the voice row ranges and latch mask and commits the effect page', async () => {
       await rig.first();
       const dev = DEVICE[rig.device];
-      const entries: Entry[] = [{ name: ID, file: moduleArtifact(rig.device, ID), want: LOADED }];
-      const got = await bootEntries(rig, 'commit-good', entries);
+      const got = await bootGood(rig);
       expect(got.mods.map((m) => m.name)).toEqual([ID]);
       const { session } = got.rt;
 
@@ -178,9 +215,10 @@ cardRigs(
         expect(f.readUInt32BE(at), 'the fixture declares three param rows').toBe(3);
         f.writeUInt32BE(2, at);
       });
+      const good = await goodArenaOf(rig);
       const got = await bootEntries(rig, 'commit-uses', [{ name: ID, file, want: E_DECL_USES }]);
       expect(got.info.results).toEqual([E_DECL_USES]);
-      await expectNothing(rig, got, [], 0);
+      await expectNothing(rig, got, [], 0, good);
     });
 
     test('a machine index that the keys table lacks is E_DECL_ID and writes nothing', async () => {
@@ -191,9 +229,10 @@ cardRigs(
         f.writeUInt16BE(0, f.readUInt32BE(H_KEYS_OFF) + 6);
         f.writeUInt32BE(0, H_DSP_SIZE);
       });
+      const good = await goodArenaOf(rig);
       const got = await bootEntries(rig, 'commit-id', [{ name: ID, file, want: E_DECL_ID }]);
       expect(got.info.results).toEqual([E_DECL_ID]);
-      await expectNothing(rig, got, [], 0);
+      await expectNothing(rig, got, [], 0, good);
     });
 
     test('an effect id that a loaded module has is E_FX_ID_DUP and the first module stays intact', async () => {
@@ -208,9 +247,10 @@ cardRigs(
         { name: ID, file: moduleArtifact(rig.device, ID), want: LOADED },
         { name: 'test/commit-copy', file: copy, want: E_FX_ID_DUP },
       ];
+      const good = await goodArenaOf(rig);
       const got = await bootEntries(rig, 'commit-dup', entries);
       expect(got.info.results[1]).toBe(E_FX_ID_DUP);
-      await expectNothing(rig, got, [ID], 1);
+      await expectNothing(rig, got, [ID], 1, good);
     });
   },
 );
