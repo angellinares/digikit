@@ -184,6 +184,7 @@ for (const device of DEVICES) {
       await mainPage(runtime);
       await sound('b');
       await endpoint(0x7000, 1, 0x7f00, 'gbp-page-mix-top');
+      await mainPage(runtime);
       await ui.fxPage(3);
       const halfRaw = await kit.setRaw('LEVEL', 7, 0x4000);
       await rowIs('the MIX word follows the knob', (r) => Math.abs(floatWord(r[13]!) - halfRaw / 0x7f00) < 1e-4);
@@ -192,6 +193,7 @@ for (const device of DEVICES) {
       await mainPage(runtime);
       await sound('h');
       await endpoint(0x7000, 1, 0x7f00, 'gbp-page-mix-top-again');
+      await mainPage(runtime);
       await turn(0x1800, 'down');
       await mainPage(runtime);
       await sound('d');
