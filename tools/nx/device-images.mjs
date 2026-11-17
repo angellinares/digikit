@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'smol-toml';
-import { CELLS } from './device-inputs.mjs';
+import { CELLS, syxPath } from './device-inputs.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const pk = join(root, 'dist/patchkit/patchkit');
@@ -26,7 +26,7 @@ const run = promisify(execFile);
 // Static module root lists (`apply --modules`) that tests use: tests/regression/runtime/image-roots.json, also read by runtime-plan.ts.
 // Their image, plan and address map are kept under dist/bytes/images/<device>/<id>.* for the tests to copy.
 const { sets: rootSets } = JSON.parse(readFileSync(join(root, 'tests/regression/runtime/image-roots.json'), 'utf8'));
-const cells = CELLS.filter((cell) => existsSync(join(root, cell.syx)));
+const cells = CELLS.filter((cell) => existsSync(syxPath(cell)));
 const jobs = cells.flatMap((cell) => [
   ...(setsOf.get(cell.dev) ?? []).map((set) => ({ cell, label: set, select: ['--set', set] })),
   ...rootSets
@@ -73,7 +73,7 @@ try {
           root,
           'apply',
           '--firmware',
-          cell.syx,
+          syxPath(cell),
           ...select,
           '-o',
           out,

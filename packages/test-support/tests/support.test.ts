@@ -4,7 +4,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, vi } from 'vitest';
-import { button, encoder, golden, validateRuntimeInputs, coupledEnv, Session } from '../src/index.ts';
+import {
+  button,
+  encoder,
+  firmwareDir,
+  golden,
+  repoRoot,
+  resolveInputs,
+  validateRuntimeInputs,
+  coupledEnv,
+  Session,
+} from '../src/index.ts';
 
 test('empty startup rejects sessions that cannot defer a reusable coupled baseline', async () => {
   for (const options of [
@@ -124,5 +134,26 @@ test('coupled launch defaults follow actual firmware bytes and preserve explicit
     assert.deepEqual(coupledEnv('not-read.syx', { DIGI_EMU_FAST: '0' }), {});
   } finally {
     read.mockRestore();
+  }
+});
+
+test('stock images come from DIGI_FIRMWARE_DIR, else firmware/ of the repository', () => {
+  const root = repoRoot();
+  assert.equal(firmwareDir({}), path.join(root, 'firmware'));
+  assert.equal(firmwareDir({ DIGI_FIRMWARE_DIR: 'elsewhere/fw' }), path.join(root, 'elsewhere/fw'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-firmware-'));
+  const prev = process.env.DIGI_FIRMWARE_DIR;
+  try {
+    process.env.DIGI_FIRMWARE_DIR = dir;
+    assert.equal(firmwareDir(), dir);
+    // The folder is empty, so the error names the .syx in it.
+    assert.throws(
+      () => resolveInputs('dn2', '1.12'),
+      (e: Error) => e.message.startsWith(path.join(dir, 'Digitone_II_OS1.12.syx')),
+    );
+  } finally {
+    if (prev === undefined) delete process.env.DIGI_FIRMWARE_DIR;
+    else process.env.DIGI_FIRMWARE_DIR = prev;
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

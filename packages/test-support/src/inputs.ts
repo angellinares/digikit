@@ -42,6 +42,13 @@ export function repoRoot(): string {
   }
 }
 
+/** The stock images: $DIGI_FIRMWARE_DIR (relative to the repository root), else firmware/. The same rule as
+ * tools/firmware/config.py FIRMWARE_DIR, the control daemon and tools/nx/device-inputs.mjs. */
+export function firmwareDir(env: NodeJS.ProcessEnv = process.env): string {
+  const dir = env.DIGI_FIRMWARE_DIR;
+  return dir ? path.resolve(repoRoot(), dir) : path.join(repoRoot(), 'firmware');
+}
+
 /** The .syx and ready-input files of a device and firmware version; throws when one is missing. */
 export function resolveInputs(device: Device, firmware: string): ReadyInputs {
   const root = repoRoot();
@@ -49,7 +56,7 @@ export function resolveInputs(device: Device, firmware: string): ReadyInputs {
   let syx: string;
   let readyDir: string;
   if (spec) {
-    syx = path.join(root, 'firmware', spec.syx);
+    syx = path.join(firmwareDir(), spec.syx);
     const env = process.env[`DIGI_PK_READY_${device.toUpperCase()}_${firmware.replace('.', '')}`];
     readyDir = env ?? path.join(root, spec.ready);
   } else {
@@ -66,7 +73,7 @@ export function resolveInputs(device: Device, firmware: string): ReadyInputs {
     if (!fs.existsSync(f)) {
       throw new Error(
         `${f} is missing; build the ready dir with ` +
-          `\`uv run python -m tools.emulator.ready ${device} --syx ${path.basename(syx)} --out ${readyDir} --force\``,
+          `\`uv run python -m tools.emulator.ready ${device} --syx ${syx} --out ${readyDir} --force\``,
       );
     }
   }

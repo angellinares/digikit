@@ -11,6 +11,7 @@ import { buildModuleData, shipModules } from '../scripts/gen-modules.mjs';
 import { isShipped, shippedDevices } from '../src/data/shipped.mjs';
 import { PatchKit } from '@digi/workbench-core/patch/patchkit-core.ts';
 import {
+  firmwareDir,
   haveWasmAndImages as have,
   images,
   manifestFiles,
@@ -142,7 +143,7 @@ test.skipIf(!have)('worker core: a firmware of the other device, and garbage, ar
   const { bundle } = buildModuleData(root);
   const kit = await PatchKit.create(readBytes(wasmPath), JSON.stringify(bundle));
   assert.throws(() => kit.check(new Uint8Array(1000)), /./);
-  const old = join(root, 'firmware', 'Digitakt_II_OS1.15C.syx');
+  const old = join(firmwareDir, 'Digitakt_II_OS1.15C.syx');
   if (existsSync(old)) {
     const c = kit.check(new Uint8Array(readFileSync(old)));
     assert.equal(c.port, null);
