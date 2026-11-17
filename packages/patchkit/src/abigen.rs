@@ -163,7 +163,7 @@ fn layouts(abi: &Abi, sizes: &BTreeMap<String, usize>) -> Result<Vec<Layout>> {
                     .get(ty)
                     .ok_or_else(|| err!("{SOURCE}: {what}: field {name}: unknown type {ty:?}"))?,
             };
-            if off % ealign != 0 {
+            if !off.is_multiple_of(ealign) {
                 return Err(err!(
                     "{SOURCE}: {what}: field {name} at {off} needs padding (alignment {ealign})"
                 ));
@@ -181,7 +181,7 @@ fn layouts(abi: &Abi, sizes: &BTreeMap<String, usize>) -> Result<Vec<Layout>> {
         if fields.is_empty() {
             return Err(err!("{SOURCE}: {what}: has no fields"));
         }
-        if off % 4 != 0 {
+        if !off.is_multiple_of(4) {
             return Err(err!(
                 "{SOURCE}: {what}: size {off} is not a multiple of 4 (padding)"
             ));

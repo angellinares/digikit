@@ -180,7 +180,7 @@ mod tests {
     /// `n` instructions after a Type 12a `LCNTR = 4, DO end UNTIL LCE` at address 0, 3 short words apart; the one at body index `visa`
     /// (if any) is 2 bytes long.
     fn counted_loop(n: u64, visa: Option<usize>) -> Vec<Placed> {
-        let mut code: Vec<Placed> = vec![(0, 6, decode_isa(0x0c00_0400_0000 | 3 * n))];
+        let mut code: Vec<Placed> = vec![(0, 6, decode_isa(0x0c00_0400_0000 | (3 * n)))];
         for k in 0..n as usize {
             let bytes = if visa == Some(k) { 2 } else { 6 };
             code.push((3 * (k as u64 + 1), bytes, decode_isa(0)));

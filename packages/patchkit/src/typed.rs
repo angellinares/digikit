@@ -432,6 +432,7 @@ pub struct DevResolved {
 
 /// Where the parameters of one machine sit on a device: `pos[i]` is the knob position of parameter `i` (of the machine's list);
 /// `pages` (page devices only) are the pages with their (parameter, position) entries.
+#[allow(clippy::type_complexity)]
 struct Placed {
     pos: Vec<usize>,
     pages: Vec<(String, String, Vec<(usize, usize)>)>,

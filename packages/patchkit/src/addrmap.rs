@@ -524,7 +524,7 @@ mod tests {
                 fini: None,
             }],
         };
-        let r = Resolver::new(&[map.clone()], &loads).unwrap();
+        let r = Resolver::new(std::slice::from_ref(&map), &loads).unwrap();
         let pair_b = map.entries.iter().find(|e| e.name == "pair_b").unwrap();
         let hit = r.lookup(Cpu::Cf, 0x2100_0000 + pair_b.addr + 4).unwrap();
         assert_eq!((hit.name.as_str(), hit.offset), ("pair_b", 4));

@@ -1796,6 +1796,7 @@ fn fx_inc(sdk: &Sdk) -> String {
 /// The C header of a contract's numbers: guarded `#define` lines, then the enums, then the byte and word offsets of the fields.
 /// `enums` lists (type name, test for the names of its members); the other constants are macros. The values are the ones of the
 /// `.inc` file; a `_MAGIC` is printed in hex and `DK_LEVEL_BOUND_BITS` also as the float `DK_LEVEL_BOUND`.
+#[allow(clippy::type_complexity)]
 fn c_consts(
     guard: &str,
     consts: &[MachineConst],
@@ -2673,6 +2674,7 @@ fn c_struct(s: &mut String, name: &str, comment: &str, fields: &[CField]) {
 }
 
 /// A typed C view header: `purpose` line, the include of the consts header, the two structs, the entry points.
+#[allow(clippy::too_many_arguments)]
 fn view_h(
     guard: &str,
     file: &str,

@@ -168,7 +168,7 @@ impl LivePlayer {
         let mut input = self.offline_input.lock().expect("offline input poisoned");
         let mut frame = [StereoSample::default(); FRAME_LEN];
         let mut n = 0;
-        for chunk in out.chunks_exact_mut(FRAME_LEN) {
+        for chunk in out.as_chunks_mut::<FRAME_LEN>().0 {
             render_one(&self.source, &self.queue, &mut input, &mut frame);
             chunk.copy_from_slice(&frame);
             n += 1;

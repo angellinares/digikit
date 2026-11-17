@@ -96,6 +96,7 @@ pub fn coverage(
             g.3.push(json!({"name": i.name}));
         }
     }
+    #[allow(clippy::type_complexity)]
     let sum = |f: fn(&(u32, u32, u32, Vec<Value>)) -> u32| groups.values().map(f).sum::<u32>();
     let (total, covered, allowed) = (sum(|g| g.0), sum(|g| g.1), sum(|g| g.2));
     let unknown: Vec<&String> = linked

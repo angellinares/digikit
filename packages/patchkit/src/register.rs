@@ -231,7 +231,7 @@ pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<O
             Some("bipolar") => 1,
             Some(o) => return Err(err!("{w}: display {o:?} is percent or bipolar")),
         };
-        if !(k.min < k.max) || !(k.min..=k.max).contains(&k.default) {
+        if k.min >= k.max || !(k.min..=k.max).contains(&k.default) {
             return Err(err!(
                 "{w}: needs min < max and a default inside (min {}, max {}, default {})",
                 k.min,
@@ -363,7 +363,7 @@ impl EffectPage {
                 f32::from_bits(k.default),
             );
             if !(lo.is_finite() && hi.is_finite() && d.is_finite())
-                || !(lo < hi)
+                || lo >= hi
                 || !(lo..=hi).contains(&d)
             {
                 return Err(err!("knob {}: min < max and default inside", k.name));

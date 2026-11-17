@@ -831,18 +831,17 @@ fn sample_pool_facts(short: &str, p: Option<AdapterSamplePool>) -> Result<Option
             "{short}: [adapter.sample_pool] ddr_base and ddr_bytes are both 0 or both set"
         ));
     }
-    if p.ddr_bytes != 0 {
-        if p.ddr_base & 0xfff != 0
+    if p.ddr_bytes != 0
+        && (p.ddr_base & 0xfff != 0
             || p.ddr_bytes & 0xfff != 0
             || p.ddr_base < DSP_DDR_BASE
             || p.ddr_base
                 .checked_add(p.ddr_bytes)
-                .is_none_or(|e| e > 0x1_0000_0000)
-        {
-            return Err(err!(
-                "{short}: [adapter.sample_pool] the DDR range must be 4 KiB aligned, in the DSP's DDR (from 0x80000000) and below 4 GiB"
-            ));
-        }
+                .is_none_or(|e| e > 0x1_0000_0000))
+    {
+        return Err(err!(
+            "{short}: [adapter.sample_pool] the DDR range must be 4 KiB aligned, in the DSP's DDR (from 0x80000000) and below 4 GiB"
+        ));
     }
     if p.ddr_bytes != 0
         && (p.ddr_base < SAMPLE_POOL_STOCK_END || p.ddr_base + p.ddr_bytes > DSP_DDR_END)
@@ -1022,7 +1021,7 @@ fn adapter_constants(a: &AdapterF) -> Vec<C> {
     ]);
     for (i, name) in ADM_SLOT_NAMES.iter().enumerate() {
         v.push(C {
-            name: *name,
+            name,
             value: a.param_slots.get(i).map_or(ADM_NO_SLOT, |s| *s as i64),
             scope: Scope::PerDevice,
             note: "[adapter.machine] param_slots: knob position of module parameter i (255: none)",
@@ -1827,10 +1826,9 @@ fn check_sources(
                 }
             } else if p.extension().is_some_and(|x| exts.iter().any(|w| x == *w))
                 && !outputs.contains(&p)
+                && let Ok(t) = std::fs::read_to_string(&p)
             {
-                if let Ok(t) = std::fs::read_to_string(&p) {
-                    texts.push(t);
-                }
+                texts.push(t);
             }
         }
     }

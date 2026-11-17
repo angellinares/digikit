@@ -287,6 +287,7 @@ fn pick_config(
     Ok((default.config(), default.sample_format(), true))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_stream(
     device: &cpal::Device,
     config: &StreamConfig,

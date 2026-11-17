@@ -435,9 +435,7 @@ impl<C: SharcCore> SharcRenderer<C> {
     }
 
     fn silent(&mut self, out: &mut FrameOutput, end: FrameEnd) -> FrameEnd {
-        for v in &mut out.voices {
-            *v = [0.0; VOICE_SAMPLES];
-        }
+        out.voices.fill([0.0; VOICE_SAMPLES]);
         end
     }
 
@@ -496,7 +494,7 @@ pub fn swap16_into(frame: &[u8], dst: &mut Vec<u8>, limit: usize) {
     let n = frame.len().min(limit);
     dst.clear();
     dst.extend_from_slice(&frame[..n]);
-    for pair in dst.chunks_exact_mut(2) {
+    for pair in dst.as_chunks_mut::<2>().0 {
         pair.swap(0, 1);
     }
 }
@@ -984,9 +982,7 @@ impl<C: SharcCore> LiveSource<C> {
     /// is empty, nothing ran, the output is silence).
     pub fn step(&mut self, frame: &[u8]) -> Option<FrameEnd> {
         if frame.is_empty() {
-            for v in &mut self.out.voices {
-                *v = [0.0; VOICE_SAMPLES];
-            }
+            self.out.voices.fill([0.0; VOICE_SAMPLES]);
             self.log.lock().expect("render log poisoned").idle_frames += 1;
             return None;
         }

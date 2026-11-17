@@ -489,7 +489,7 @@ pub fn check_text(sections: &[(String, Vec<u8>)], label: &str) -> Result<BTreeMa
     let mut ranges = vec![];
     let mut starts: Vec<(u32, &str)> = vec![];
     for (name, blob) in sections {
-        while image.len() % 4 != 0 {
+        while !image.len().is_multiple_of(4) {
             image.push(0);
         }
         let lo = image.len() as u32;

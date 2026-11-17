@@ -33,6 +33,12 @@ pub struct FakeStorage {
     pub samples_path_max: Cell<u32>,
 }
 
+impl Default for FakeStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FakeStorage {
     pub fn new() -> Self {
         FakeStorage {

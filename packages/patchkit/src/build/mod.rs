@@ -198,7 +198,7 @@ fn evict(dir: &Path, rel: &str) {
         .map(|e| e.path().join(rel))
         .filter_map(|f| Some((f.metadata().ok()?.modified().ok()?, f)))
         .collect();
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     let now = std::time::SystemTime::now();
     for (used, f) in entries.into_iter().skip(KEEP_ENTRIES) {
         if now

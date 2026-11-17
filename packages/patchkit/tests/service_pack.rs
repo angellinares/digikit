@@ -150,6 +150,7 @@ fn the_output_name_must_match_the_role() {
 #[test]
 fn a_service_with_an_unknown_service_or_a_foreign_export_is_refused() {
     let d = scratch("bad");
+    #[allow(clippy::type_complexity)]
     let cases: [(&str, &dyn Fn(&str) -> String, &str); 7] = [
         (
             "unknown service",

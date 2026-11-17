@@ -144,7 +144,7 @@ pub fn pack_module(lib: &Library, id: &str, o: &PackOptions) -> Result<Packed> {
             .iter()
             .zip(&m.manifest.object)
             .filter(|(o, r)| {
-                o.arch == "sharc" && (r.devices.is_empty() || r.devices.iter().any(|d| *d == dev))
+                o.arch == "sharc" && (r.devices.is_empty() || r.devices.contains(&dev))
             })
             .collect();
         if sharc.len() > 1 {

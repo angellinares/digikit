@@ -157,6 +157,12 @@ pub struct FakeCore {
     dsp: *mut DspState,
 }
 
+impl Default for FakeCore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FakeCore {
     pub fn new() -> Self {
         // zero is every state's valid initial value (the real objects are zeroed statics)
@@ -189,6 +195,11 @@ impl FakeCore {
     }
     /// One UI pass and one worker step, as the runtime's job queue runs them: a job whose last step ended, or that was cancelled, gets its `done` (status
     /// or `JOB_E_CANCELLED`) and leaves the queue; then the first job left runs one step (it stays while the step returns 1). A `done` may post a job.
+    ///
+    /// # Safety
+    ///
+    /// The pump calls the `step` and `done` functions of the queued jobs with their `ctx`. Each function must be safe to call
+    /// with the `ctx` that was posted with it.
     pub unsafe fn job_pump(&self) {
         let ended: Vec<FakeJob> = {
             let mut jobs = self.jobs.borrow_mut();

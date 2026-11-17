@@ -71,11 +71,15 @@ fn struct_gap_gets_padding_and_asserts() {
 #[test]
 fn overlapping_field_is_an_error() {
     let t = "[[struct]]\nname = \"cf.menu.struct.Bad\"\nsize = 0x10\nfields = [\n  { name = \"a\", off = 0x0, type = \"u32\" },\n  { name = \"b\", off = 0x2, type = \"u32\" },\n]\ndoc = \"Bad.\"\n";
-    let e = render(&[("t.toml", t)]).err().expect("error");
+    let e = render(&[("t.toml", t)]).expect_err("error");
     assert!(e.0.contains("cf.menu.struct.Bad"), "{}", e.0);
 }
 
 #[test]
+#[allow(
+    clippy::assertions_on_constants,
+    reason = "the test fails when the policy constant changes"
+)]
 fn pointer_return_renders_in_rust_and_c() {
     assert!(POINTER_RETURNS_ALLOWED);
     let t = format!(
@@ -109,7 +113,7 @@ fn site_bind_static_makes_a_static() {
 #[test]
 fn entry_without_doc_is_an_error() {
     let t = "[[fn]]\nname = \"cf.view.fn.push\"\ncpu = \"cf\"\nrule = { kind = \"cf_func\", hash = \"00\", offset = 0, len = 4 }\nsig = \"void ()\"\n";
-    let e = render(&[("t.toml", t)]).err().expect("error");
+    let e = render(&[("t.toml", t)]).expect_err("error");
     assert!(e.0.contains("cf.view.fn.push: no doc"), "{}", e.0);
 }
 
@@ -136,7 +140,7 @@ fn hook_text(site: &str, mode: &str, regs: &str, extra: &str) -> String {
 
 fn hook_error(site: &str, mode: &str, regs: &str, extra: &str) -> String {
     let t = hook_text(site, mode, regs, extra);
-    let e = render(&[("t.toml", t.as_str())]).err().expect("error");
+    let e = render(&[("t.toml", t.as_str())]).expect_err("error");
     assert!(e.0.contains("cf.view.hook.loop"), "{}", e.0);
     e.0
 }

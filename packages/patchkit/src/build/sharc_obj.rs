@@ -54,7 +54,7 @@ fn rx(cell: &'static OnceLock<Regex>, pat: &str, flags: &str) -> &'static Regex 
 /// Swap the two bytes of every complete 16-bit parcel (Selache order <-> boot-stream order); a trailing byte stays.
 pub fn swap_parcels(data: &[u8]) -> Vec<u8> {
     let mut v = data.to_vec();
-    for c in v.chunks_exact_mut(2) {
+    for c in v.as_chunks_mut::<2>().0 {
         c.swap(0, 1);
     }
     v
@@ -62,7 +62,9 @@ pub fn swap_parcels(data: &[u8]) -> Vec<u8> {
 
 /// The 16-bit parcels of boot-order bytes (a trailing byte is dropped), at most three.
 fn parcels(boot: &[u8]) -> Vec<u16> {
-    boot.chunks_exact(2)
+    boot.as_chunks::<2>()
+        .0
+        .iter()
         .take(3)
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect()
@@ -96,7 +98,7 @@ fn bss_prepare(source: &str) -> Result<(String, Vec<DataDecl>)> {
     let mut failed: Option<Error> = None;
     let source = pkhex.replace_all(source, |c: &regex_lite::Captures| {
         let digits = &c[2];
-        if digits.len() % 2 != 0 {
+        if !digits.len().is_multiple_of(2) {
             failed.get_or_insert(err!(".PKHEX {}: an odd number of hex digits", &c[1]));
         }
         let blob: Vec<u8> = (0..digits.len() / 2)
@@ -221,7 +223,7 @@ fn parse_elf(blob: &[u8]) -> Result<Elf> {
     let h = se::parse_header(blob).map_err(|e| err!("selas object: {e}"))?;
     let e = h.ei_data;
     let at = |off: usize, n: usize| -> Result<&[u8]> {
-        blob.get(off..off.checked_add(n).unwrap_or(usize::MAX))
+        blob.get(off..off.saturating_add(n))
             .ok_or_else(|| err!("selas object: truncated"))
     };
     let mut raw = vec![];

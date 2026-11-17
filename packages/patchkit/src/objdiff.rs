@@ -332,20 +332,20 @@ pub(crate) fn load(o: &Dko, strict: bool) -> Result<Loaded> {
     let mut referrers: HashMap<(&str, i64), HashSet<&str>> = HashMap::new();
     let mut from_loc: HashMap<&str, BTreeSet<i64>> = HashMap::new();
     for r in &o.relocs {
-        if let Some((t, off)) = resolve(&r.symbol, r.addend) {
-            if pool.contains(t.name.as_str()) {
-                let m = if locations.contains(r.section.as_str()) {
-                    &mut from_loc
-                } else {
-                    &mut real
-                };
-                m.entry(t.name.as_str()).or_default().insert(off);
-                if !locations.contains(r.section.as_str()) {
-                    referrers
-                        .entry((t.name.as_str(), off))
-                        .or_default()
-                        .insert(r.section.as_str());
-                }
+        if let Some((t, off)) = resolve(&r.symbol, r.addend)
+            && pool.contains(t.name.as_str())
+        {
+            let m = if locations.contains(r.section.as_str()) {
+                &mut from_loc
+            } else {
+                &mut real
+            };
+            m.entry(t.name.as_str()).or_default().insert(off);
+            if !locations.contains(r.section.as_str()) {
+                referrers
+                    .entry((t.name.as_str(), off))
+                    .or_default()
+                    .insert(r.section.as_str());
             }
         }
     }
@@ -419,10 +419,10 @@ pub(crate) fn load(o: &Dko, strict: bool) -> Result<Loaded> {
             // whatever the pool placed there, so the target is "the end of that piece". An adjacent piece that the item reads next is
             // compared by this label too: a difference in it is caught by the piece multiset and by the other users of that piece.
             let prev = at.iter().copied().rfind(|&c| c < off);
-            if let Some(a) = prev {
-                if referrers.get(&(n, a)).is_some_and(|f| f.contains(from)) {
-                    return Ok(format!("str-end:{}", piece_key[&(n, a)]));
-                }
+            if let Some(a) = prev
+                && referrers.get(&(n, a)).is_some_and(|f| f.contains(from))
+            {
+                return Ok(format!("str-end:{}", piece_key[&(n, a)]));
             }
             return Ok(format!("str:{key}{:+}", off - start));
         }
@@ -435,13 +435,13 @@ pub(crate) fn load(o: &Dko, strict: bool) -> Result<Loaded> {
     // who refers into each section (the owner of an anonymous constant is the owner of its users)
     let mut referred_by: HashMap<&str, BTreeSet<&str>> = HashMap::new();
     for r in &o.relocs {
-        if let Some((t, _)) = resolve(&r.symbol, r.addend) {
-            if t.name != r.section {
-                referred_by
-                    .entry(t.name.as_str())
-                    .or_default()
-                    .insert(r.section.as_str());
-            }
+        if let Some((t, _)) = resolve(&r.symbol, r.addend)
+            && t.name != r.section
+        {
+            referred_by
+                .entry(t.name.as_str())
+                .or_default()
+                .insert(r.section.as_str());
         }
     }
     let mut items = vec![];
@@ -716,10 +716,10 @@ pub fn diff_owned(
     let owner_of = |old: Option<&Item>, new: Option<&Item>| -> String {
         let mut v: Vec<&str> = vec![];
         for (i, w) in [(old, &wa), (new, &wb)] {
-            if let Some(o) = i.and_then(|i| w.get(&i.raw)) {
-                if !v.contains(&o.as_str()) {
-                    v.push(o);
-                }
+            if let Some(o) = i.and_then(|i| w.get(&i.raw))
+                && !v.contains(&o.as_str())
+            {
+                v.push(o);
             }
         }
         v.join(",")

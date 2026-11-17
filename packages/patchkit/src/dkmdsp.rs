@@ -822,7 +822,7 @@ impl DspSection {
         let image_size = d.image_size() as usize;
         let align = d.align();
         if image_size == 0
-            || image_size % 4 != 0
+            || !image_size.is_multiple_of(4)
             || !align.is_power_of_two()
             || !(8..=GRANULE).contains(&align)
         {
@@ -942,7 +942,7 @@ impl DspSection {
                 }
             }
             ranges.sort_unstable();
-            if get(f, H_BSS) % 4 != 0 || ranges.windows(2).any(|w| w[0].1 > w[1].0) {
+            if !get(f, H_BSS).is_multiple_of(4) || ranges.windows(2).any(|w| w[0].1 > w[1].0) {
                 return Err(err!(
                     "sample track section has overlapping ranges or unaligned BSS"
                 ));
@@ -957,7 +957,7 @@ impl DspSection {
             .into_iter()
             .max()
             .unwrap();
-            if off % 4 != 0
+            if !off.is_multiple_of(4)
                 || u64::from(off) < table_end
                 || u64::from(off) + SAMPLE_RECORD_LEN as u64 > u64::from(get(f, H_IMAGE_OFF))
             {
@@ -994,7 +994,7 @@ impl DspSection {
     /// The reference loader: the image placed at the L2 byte address `base`, imports resolved by `resolve` (pc or byte address as
     /// the DSP symbol is exported). The runtime's Rust loader must produce the same bytes.
     pub fn relocated(&self, base: u32, resolve: &dyn Fn(&str) -> Option<u32>) -> Result<Vec<u8>> {
-        if base % self.align != 0 || base < L2_BYTE_BASE {
+        if !base.is_multiple_of(self.align) || base < L2_BYTE_BASE {
             return Err(err!("DSP placement {base:#x}"));
         }
         let pc_shift = (base - L2_BYTE_BASE) / 2;

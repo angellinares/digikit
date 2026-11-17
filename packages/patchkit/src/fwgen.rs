@@ -197,7 +197,7 @@ pub struct HandlerPlan {
 pub fn handler_plan(decls: &[&str], device_short: &str, hook: &str) -> Result<HandlerPlan> {
     for text in decls.iter().copied() {
         let f: Files = toml::from_str(text).map_err(|e| err!("devices/fw: {e}"))?;
-        for h in f.hook.iter().filter(|h| h.name == hook) {
+        if let Some(h) = f.hook.iter().find(|h| h.name == hook) {
             if !h.devices.is_empty() && !h.devices.iter().any(|d| d == device_short) {
                 return Err(err!("{hook}: not declared for the device {device_short}"));
             }
@@ -215,9 +215,7 @@ pub fn handler_plan(decls: &[&str], device_short: &str, hook: &str) -> Result<Ha
 
 /// Does the declared hook `hook` have a `handler` (a C-callable function the trampoline calls)? A hook without one is a raw hook: entered at its `entry` itself (`bind`).
 pub fn hook_has_handler(decls: &[&str], device_short: &str, hook: &str) -> Result<bool> {
-    Ok(declared_hook(decls, device_short, hook, |h| {
-        h.handler.is_some()
-    })?)
+    declared_hook(decls, device_short, hook, |h| h.handler.is_some())
 }
 
 /// Does the raw hook `hook` declare the exit `tail = true` (run the displaced instructions of the site, then continue at site + len)?
@@ -233,7 +231,7 @@ fn declared_hook(
 ) -> Result<bool> {
     for text in decls.iter().copied() {
         let files: Files = toml::from_str(text).map_err(|e| err!("devices/fw: {e}"))?;
-        for h in files.hook.iter().filter(|h| h.name == hook) {
+        if let Some(h) = files.hook.iter().find(|h| h.name == hook) {
             if !h.devices.is_empty() && !h.devices.iter().any(|d| d == device_short) {
                 return Err(err!("{hook}: not declared for the device {device_short}"));
             }
@@ -1253,7 +1251,7 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
 }
 
 /// The `.toml` files under `dir` (not `subsystems.toml` at the top), as (path relative to the root, text) in path order.
-fn collect(root: &Path, dir: &Path, rel: &str, out: &mut Vec<(String, String)>) -> Result<()> {
+fn collect(dir: &Path, rel: &str, out: &mut Vec<(String, String)>) -> Result<()> {
     let mut paths: Vec<_> = std::fs::read_dir(dir)
         .map_err(|e| err!("{}: {e}", dir.display()))?
         .map(|e| e.map(|e| e.path()))
@@ -1268,7 +1266,7 @@ fn collect(root: &Path, dir: &Path, rel: &str, out: &mut Vec<(String, String)>) 
             .to_string();
         let r = format!("{rel}/{name}");
         if p.is_dir() {
-            collect(root, &p, &r, out)?;
+            collect(&p, &r, out)?;
         } else if name.ends_with(".toml") && r != format!("{SOURCE}/subsystems.toml") {
             let text = std::fs::read_to_string(&p).map_err(|e| err!("{}: {e}", p.display()))?;
             out.push((r, text));
@@ -1280,14 +1278,14 @@ fn collect(root: &Path, dir: &Path, rel: &str, out: &mut Vec<(String, String)>) 
 /// The texts of every declaration file under `devices/fw/` of the repository root, in the order `generate` reads them.
 pub fn fw_texts(root: &Path) -> Result<Vec<String>> {
     let mut files = Vec::new();
-    collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
+    collect(&root.join(SOURCE), SOURCE, &mut files)?;
     Ok(files.into_iter().map(|(_, t)| t).collect())
 }
 
 /// The outputs, reading `devices/fw/` under the repository root.
 pub fn generate(root: &Path) -> Result<Vec<(String, String)>> {
     let mut files = Vec::new();
-    collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
+    collect(&root.join(SOURCE), SOURCE, &mut files)?;
     let refs: Vec<(&str, &str)> = files
         .iter()
         .map(|(p, t)| (p.as_str(), t.as_str()))
@@ -1644,7 +1642,7 @@ pub fn reference(
 pub fn generate_with_ports(root: &Path) -> Result<Vec<(String, String)>> {
     let mut out = generate(root)?;
     let mut files = Vec::new();
-    collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
+    collect(&root.join(SOURCE), SOURCE, &mut files)?;
     let refs: Vec<(&str, &str)> = files
         .iter()
         .map(|(p, t)| (p.as_str(), t.as_str()))

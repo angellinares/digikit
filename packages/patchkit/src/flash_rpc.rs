@@ -243,6 +243,10 @@ impl RpcFlash {
 
     /// The next thing to do. Call it at the start and after each `on_reply`, `on_timeout`, `confirm` and `cancel`. While a request is
     /// in flight it returns that request again.
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "a state machine step, not an iterator"
+    )]
     pub fn next(&mut self) -> Action {
         match self.st.clone() {
             St::Start => {

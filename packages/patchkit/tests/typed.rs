@@ -2,7 +2,6 @@
 
 use patchkit::modgen;
 use patchkit::module::Library;
-use patchkit::port::Registry;
 use patchkit::typed::Models;
 use std::path::PathBuf;
 

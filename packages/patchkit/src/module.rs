@@ -1046,7 +1046,7 @@ impl Library {
         let mut modules = vec![];
         for p in paths {
             let dir = p.parent().unwrap().to_path_buf();
-            let text = std::fs::read_to_string(&p).map_err(|e| err!("{}: {e}", p.display()))?;
+            let text = std::fs::read_to_string(p).map_err(|e| err!("{}: {e}", p.display()))?;
             // a content module's objects come from the cache (built when stale); the others are files of the module
             let built = match build {
                 Some((env, b)) => {

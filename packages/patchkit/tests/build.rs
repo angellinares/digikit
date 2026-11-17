@@ -572,7 +572,14 @@ fn a_content_module_builds_into_the_cache_on_demand() {
     let inode = || std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&cached).unwrap());
     let stamp = inode();
     // a current object is read, not built again
-    assert_eq!(scan(Some(&[id.clone()])).get(&id).unwrap().objects.len(), 1);
+    assert_eq!(
+        scan(Some(std::slice::from_ref(&id)))
+            .get(&id)
+            .unwrap()
+            .objects
+            .len(),
+        1
+    );
     assert_eq!(inode(), stamp);
     // a changed source makes it stale; the next scan builds it again
     std::fs::write(

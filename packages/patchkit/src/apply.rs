@@ -461,7 +461,9 @@ fn placed_words(chunks: &[Chunk], addr: u64) -> Vec<u32> {
     };
     let at = (addr - c.addr) as usize;
     c.image[at..]
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .take(INFO_WORDS)
         .map(|w| u32::from_be_bytes([w[0], w[1], w[2], w[3]]))
         .collect()

@@ -182,7 +182,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models, decl: Option<&Dko>) -> Res
         .by_device
         .get(dev)
         .ok_or_else(|| err!("no device model for {dev:?}"))?;
-    if spec.pad % 4 != 0 || spec.bss % 4 != 0 {
+    if !spec.pad.is_multiple_of(4) || !spec.bss.is_multiple_of(4) {
         return Err(err!("{}: pad and bss are multiples of 4", spec.name));
     }
     let obj = if spec.machines > 0 {
@@ -243,7 +243,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models, decl: Option<&Dko>) -> Res
             }
         }
     }
-    let rows = (spec.machines as u32, spec.params as u32, spec.pages as u32);
+    let rows = (spec.machines, spec.params, spec.pages);
     let rbytes = record_bytes(spec, dev);
     let mut keys = vec![0u8; dkneeds::keys::keys_size(rows, rbytes, machine_keys.len(), 0)];
     dkneeds::keys::write_keys(rows, rbytes, &machine_keys, &[], &mut keys)

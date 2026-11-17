@@ -193,7 +193,7 @@ fn bind_site(
     let to32 = |v: u64, what: &str| {
         u32::try_from(v).map_err(|_| err!("{hook}: {what} {v:#x} is not 32 bits"))
     };
-    while image.len() % 4 != 0 {
+    while !image.len().is_multiple_of(4) {
         image.push(0);
     }
     let tramp_off = image.len();
@@ -258,7 +258,7 @@ fn bind_raw(
         if a != b {
             return Err(err!("PC-relative displaced instruction at {hook}"));
         }
-        while image.len() % 4 != 0 {
+        while !image.len().is_multiple_of(4) {
             image.push(0);
         }
         tail_off = Some(image.len() as u32);

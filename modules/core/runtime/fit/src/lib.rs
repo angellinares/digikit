@@ -416,9 +416,9 @@ pub fn fit_set(caps: &mut [DkrtCap], entries: &[DkrtScan], ticked: &[u8], out: &
     out.count = n as u32;
     empty(caps);
     let tick = |i: usize| i < ticked.len() && ticked[i] != 0;
-    for i in 0..n {
-        if entries[i].flags & SCAN_NEEDS != 0 {
-            let nd = scan_needs(&entries[i]);
+    for (i, e) in entries[..n].iter().enumerate() {
+        if e.flags & SCAN_NEEDS != 0 {
+            let nd = scan_needs(e);
             size_k(&mut out.rows[i].mem, nd.arena + nd.dsp_area);
         }
     }
@@ -435,8 +435,7 @@ pub fn fit_set(caps: &mut [DkrtCap], entries: &[DkrtScan], ticked: &[u8], out: &
                 out.line[..len].copy_from_slice(&buf[..len]);
             }
         }
-        for i in 0..n {
-            let e = &entries[i];
+        for (i, e) in entries[..n].iter().enumerate() {
             if e.flags & SCAN_NEEDS == 0 || e.flags & SCAN_COMPAT == 0 || tick(i) != (pass == 0) {
                 continue;
             }

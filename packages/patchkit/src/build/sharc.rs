@@ -276,7 +276,9 @@ pub fn rule_problems(obj: &Dko) -> Vec<dksharc::rules::RuleProblem> {
             continue;
         };
         let text: Vec<u16> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         let n = text.len() as u64;
