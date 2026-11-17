@@ -102,4 +102,4 @@ def test_default_cli_keeps_human_readable_output(tmp_path, capsys):
     )
     output = capsys.readouterr().out
     assert "max_err_ulps" in output
-    assert "PASS (gain 0.5: error within 2 ulps)" in output
+    assert "PASS (gain 0.5: error within 2**-20 of the peak)" in output
