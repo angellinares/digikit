@@ -200,6 +200,9 @@ for (const device of DEVICES) {
         expect(effectIds[1]).not.toBe(0);
         expect(effectIds[1]).not.toBe(effectIds[0]);
         expect(effectIds[2]).toBe(0);
+        console.info(
+          `fx service counters: ${(await Promise.all(['fxp_ninit', 'fxp_nload', 'fxp_nsave', 'fxp_nsound'].map(async (n) => `${n}=${await cell(n)}`))).join(' ')}`,
+        );
         expect(await cell('fxp_ninit')).toBeGreaterThanOrEqual(1);
         expect(await word(session, sym('DKRT_FXP') + 24)).toBe(2);
         expect(await mark()).toBe(MARK);
