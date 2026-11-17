@@ -44,6 +44,12 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} machines.dks: the SRC page of a run-time 
   test('rows, list entry, committed type and the SRC knob of Sine', async () => {
     const plain = await run.first();
     const stock = await stockFrames(plain);
+    if (new Set(stock).size === 1) {
+      // the keys changed nothing on the plain boot: keep the screen and the status for the diagnosis
+      const status = await plain.session.status();
+      console.info(`plain boot ignored the page keys: mode ${status.mode}, cf ${JSON.stringify(status.cf)}`);
+      console.info(`plain-stock screen: ${await captureRemoteOled(plain.session, 'plain-stock')}`);
+    }
     expect(new Set(stock).size, 'the stock pages show different frames').toBeGreaterThan(1);
 
     const rt = await run.load('with-machines', { modules: [ID], selection: ['modules/sine.dkm'] });
