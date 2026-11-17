@@ -4,7 +4,7 @@ import { captureRemoteOled } from '@digi/regression/runtime/remote.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 import { portAnchorAddress } from '@digi/regression/runtime/device-data.ts';
-import { dspBytes, REDRAW, type Rt } from '@digi/regression/runtime/fx-live.ts';
+import { dspBytes, REDRAW, stableFrameHash, type Rt } from '@digi/regression/runtime/fx-live.ts';
 import { decodeTables, dynType, selectDt2, trackType } from '@digi/regression/runtime/project-kit.ts';
 import { ENCODERS, expectLoaded, namedKnobs, tableSymbols, turnChangesOneWord } from './machines-kit.ts';
 
@@ -23,7 +23,7 @@ async function stockFrames(rt: Rt, expected?: string[]): Promise<string[]> {
   const frames: string[] = [];
   for (const key of ['SRC', 'SRC', 'FLTR', 'AMP']) {
     await rt.ui.tap(key, { until: { ms: 300, why: REDRAW } });
-    frames.push(await rt.session.frameHash());
+    frames.push(await stableFrameHash(rt));
     // with `expected` (the loaded boot): keep the screen of each page that differs from the stock one
     if (expected && frames.at(-1) !== expected[frames.length - 1]) {
       const name = `stock-frame-${frames.length}-${key}`;

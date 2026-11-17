@@ -7,6 +7,7 @@ import { readSettingsRecordIfPresent, settingsValue, type DkModule } from '@digi
 import {
   button,
   emulatorClock,
+  pollUntil,
   repoRoot,
   type Session,
   runUntilFramesWithProgress,
@@ -117,11 +118,28 @@ async function baseline(
   };
 }
 
+/** The frame hash once the screen holds still: two reads 100 ms of emulated time apart are equal (a redraw may follow the first tap after a boot). */
+export async function stableFrameHash(rt: Rt): Promise<string> {
+  let last: string | undefined;
+  const { hash } = await pollUntil(
+    rt.clock,
+    async () => {
+      const hash = await rt.session.frameHash();
+      const stable = hash === last;
+      last = hash;
+      return { hash, stable };
+    },
+    (r) => r.stable,
+    { withinMs: 5000, intervalMs: 100, message: 'the frame holds still for 100 ms of emulated time' },
+  );
+  return hash;
+}
+
 export async function analysisJson<T>(module: string, args: string[], artifacts: string, tag: string): Promise<T> {
   try {
     const result = await exec('uv', ['run', '--no-sync', 'python', '-m', module, ...args], {
       cwd: root,
-      timeout: 30_000,
+      timeout: 180_000, // a heavy analysis (four 28 MB overlays) takes 8 s on an idle host and over 30 s under load: the wall time only guards against a hang
       maxBuffer: 4 * 1024 * 1024,
       env: { ...process.env, UV_NO_SYNC: '1' },
     });

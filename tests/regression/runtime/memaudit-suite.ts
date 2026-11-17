@@ -148,11 +148,15 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
                 return out;
               };
               // F is sized by a boot of the set before it, so that the providers its modules need are loaded
-              const fill = await fullSetOnBoot(g, (await needsOf(mods.map((m) => m.file))).map(usageOf), async (before) => {
-                const probe = { modules: [...mods, ...(await packFill(before, 'probe'))] };
-                const rt = await h.load('audit-probe', { ...probe, selection: probe.modules.map((m) => m.name) });
-                return (await pausedProtocol(rt, async (dk) => (await dk.capacity()).ARENA!)).largest;
-              });
+              const fill = await fullSetOnBoot(
+                g,
+                (await needsOf(mods.map((m) => m.file))).map(usageOf),
+                async (before) => {
+                  const probe = { modules: [...mods, ...(await packFill(before, 'probe'))] };
+                  const rt = await h.load('audit-probe', { ...probe, selection: probe.modules.map((m) => m.name) });
+                  return (await pausedProtocol(rt, async (dk) => (await dk.capacity()).ARENA!)).largest;
+                },
+              );
               for (const [i, m] of (await packFill(fill, 'full')).entries()) {
                 mods.push(m);
                 wants.push(fill[i]!.want);
