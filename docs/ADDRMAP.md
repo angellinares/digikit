@@ -139,7 +139,7 @@ The second command is an all-zero module table: no module loaded. With real byte
 
 ## Workbench
 
-The desktop Log pane names addresses of the **emulator** and of a **device** (`apps/desktop/ui/src/log-names*.ts`, `dkprof-env.ts`); the shared text builders are in
+The desktop Log pane names addresses of the **emulator** and of a **device** (`packages/dk-session/src/log-names.ts`, `apps/desktop/ui/src/log-names-backend.ts`, `dkprof-env.ts`); the shared text builders are in
 `packages/dk-session/src/runtime-log.ts`. One path serves both origins: the load table is read through the dk-session protocol with PEEK of the debug module
 (`DkSession.peek`; the capability PEEK, so `digikit/debug` must be loaded), on the session the follower already uses, and `dkprof.wasm` decodes it. `mem.cf.peek` is not used.
 Only the source of the ship map differs. **Hardware proof is a later, explicit step**: the device path runs in the emulator over the same code

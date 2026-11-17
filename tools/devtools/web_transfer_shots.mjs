@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Screenshots of the site's Transfer page (apps/web/src/pages/transfer.astro) in headless Chromium against a running `astro preview` or dev
 // server, with a fake Web MIDI device: a test shim injected into each page (nothing of it is in the site). The shim's port feeds a FakeDevice
-// (apps/web/tests/support/fakedevice.ts, the digikit protocol byte for byte) in this process, so the page runs its real session code.
+// (packages/test-support/src/fakedevice.ts, the digikit protocol byte for byte) in this process, so the page runs its real session code.
 //
 //   node tools/devtools/web_transfer_shots.mjs --url http://127.0.0.1:4399/ [--out DIR] [--chrome PATH] [--port 9622] [scene ...]
 //   node tools/devtools/web_transfer_shots.mjs --list
@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closeTab, connect, evaluate, launchChrome, sleep } from './cdp.mjs';
-import { FakeDevice } from '../../apps/web/tests/support/fakedevice.ts';
+import { FakeDevice } from '../../packages/test-support/src/fakedevice.ts';
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {

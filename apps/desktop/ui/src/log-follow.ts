@@ -7,7 +7,7 @@ import type { LogInput, Origin } from './log-core.ts';
 import { changeLevel, configOf, readLevels, type LevelChange, type LevelView } from './log-level-core.ts';
 import { LogFollower, POLL_MS, pace, type FollowSession, type OriginStatus } from './log-follow-core.ts';
 import { logInputs } from './log-state.ts';
-import type { LogNames } from './log-names.ts';
+import type { LogNames } from '@digi/dk-session/log-names';
 
 /** The protocol session as the follower uses it. */
 export const followSession = (dk: DkSession): FollowSession => ({

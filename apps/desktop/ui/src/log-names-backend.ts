@@ -6,7 +6,7 @@
 // Maps of the built modules come from `library.readMaps` for both.
 import type { Host } from '@digi/workbench-core/host/host.ts';
 import type { DkProf } from '@digi/dk-session/dkprof';
-import { createLogNames, type LogNames, type NameSources, type RuntimeMaps } from './log-names';
+import { createLogNames, type LogNames, type NameSources, type RuntimeMaps } from '@digi/dk-session/log-names';
 import { deviceOfPort } from './remote-core';
 
 const sources = (host: Pick<Host, 'library'>, prof: () => Promise<DkProf>): Omit<NameSources, 'ship'> => ({

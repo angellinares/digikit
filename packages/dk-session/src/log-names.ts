@@ -2,10 +2,10 @@
 // packages/dk-session/src/runtime-log.ts, and the load table read from the memory of the running image through PEEK of the debug module
 // (the emulator and a device alike). No DOM, no Tauri: `prof` is dkprof.wasm (packages/dk-session/src/dkprof.ts) and the session is a
 // `DkSession` or a fake, so a test gives the real wasm and a fake memory.
-// Host tests: apps/desktop/ui/tests/log-names.test.ts.
-import type { AddrMapJson, DkProf, LoadTableJson } from '@digi/dk-session/dkprof';
-import type { AddrNamer } from '@digi/dk-session';
-import { CAP } from '@digi/dk-session/gen_proto';
+// Host tests: packages/dk-session/tests/log-names.test.ts.
+import type { AddrMapJson, DkProf, LoadTableJson } from './dkprof.ts';
+import type { AddrNamer } from './runtime-log.ts';
+import { CAP } from './gen_proto.ts';
 
 /** What the controller answers to `runtime.maps` (docs/CONTROL.md). */
 export interface RuntimeMaps {

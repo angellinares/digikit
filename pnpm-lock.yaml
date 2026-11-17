@@ -273,6 +273,9 @@ importers:
       '@astrojs/check':
         specifier: 0.9.10
         version: 0.9.10(@emnapi/runtime@1.11.3)(prettier-plugin-astro@1.1.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(prettier@3.9.9))(prettier@3.9.9)(typescript@5.9.3)
+      '@digi/test-support':
+        specifier: workspace:*
+        version: link:../../packages/test-support
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -340,6 +343,9 @@ importers:
       '@digi/control-client':
         specifier: workspace:*
         version: link:../control-client
+      '@digi/dk-session':
+        specifier: workspace:*
+        version: link:../dk-session
     devDependencies:
       '@types/node':
         specifier: 22.15.0

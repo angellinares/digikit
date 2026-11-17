@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { DkSession } from '@digi/dk-session';
 import { sessionStoreOps } from '@digi/workbench-core/target-ops/session-store.ts';
 import { test } from 'vitest';
+import { FakeDevice } from '@digi/test-support/fakedevice';
 import { dkm } from './support/dkm.ts';
-import { FakeDevice } from './support/fakedevice.ts';
 
 const setup = () => {
   const dev = new FakeDevice();

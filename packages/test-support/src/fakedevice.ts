@@ -1,5 +1,5 @@
 // A fake digikit device that speaks the SysEx protocol of docs/design/digikit-upload.md byte for byte (framing included), as a `DkTransport` for
-// `DkSession`: files, a selection, a log, modules, and a RESTART that is silent for a while and then boots again. Shared by dktransfer.test.ts and
+// `DkSession`: files, a selection, a log, modules, and a RESTART that is silent for a while and then boots again. Shared by the site's dktransfer.test.ts and
 // the screenshot runs of the site's Transfer page (tools/devtools/web_transfer_shots.mjs).
 import { decode8in7, encode8in7, fileHash, type DkTransport } from '@digi/dk-session';
 import { CAP, CAPACITY_KINDS, CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
@@ -59,6 +59,7 @@ export class FakeDevice implements DkTransport {
     if (msg[1] === 0x00) return this.rpc(msg);
     const cmd = msg[5];
     const seq = msg[6];
+    if (cmd === undefined || seq === undefined) throw new Error('fake device: short request frame');
     const body = decode8in7(msg.subarray(7, msg.length - 1));
     if (this.silent > 0) {
       this.silent--;
@@ -185,6 +186,7 @@ export class FakeDevice implements DkTransport {
       }
       case CMD.SELECT: {
         const n = body[0];
+        if (n === undefined) return err(-51);
         let at = 1;
         this.selection = [];
         for (let i = 0; i < n; i++) {

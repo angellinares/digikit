@@ -1,4 +1,5 @@
-// Names in the Log pane (apps/desktop/ui/src/log-names.ts, log-names-backend.ts, the names of packages/dk-session/src/runtime-log.ts): a golden
+// Names in the Log pane (the app's log follower and name backends, apps/desktop/ui/src/log-follow.ts and log-names-backend.ts, with the shared
+// log-names resolver from @digi/dk-session/log-names): a golden
 // fault record with a small ship map, a module map and a load table read from a fake guest memory, through the real dkprof.wasm
 // (`dkprof:wasm`, a dependency of this project's test-host). Unresolved addresses stay hex. The emulator and the device origin go through the same
 // code (PEEK of the debug module on the follower's session); they differ in where the ship map comes from.
@@ -14,7 +15,7 @@ import { createLogFollow } from '../src/log-follow.ts';
 import type { LogInput } from '../src/log-core.ts';
 import { createDkProfLoader } from '../src/dkprof-env.ts';
 import { createDeviceNames, createEmulatorNames } from '../src/log-names-backend.ts';
-import { makeResolver, readLoadTable } from '../src/log-names.ts';
+import { makeResolver, readLoadTable } from '@digi/dk-session/log-names';
 import { createFakeHost } from '@digi/workbench-core/host/fake-host.ts';
 
 let prof: DkProf;

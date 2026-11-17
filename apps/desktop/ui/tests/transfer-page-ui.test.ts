@@ -1,4 +1,4 @@
-import type { UploadEvent, Uploads } from '../src/samples-core.ts';
+import type { UploadEvent, Uploads } from '@digi/workbench-core/transfer/sample-upload.ts';
 type WithoutFolder<T> = T extends unknown ? Omit<T, 'folder'> : never;
 type UploadEventWithoutFolder = WithoutFolder<Exclude<UploadEvent, { event: 'note' }>>;
 // The pure logic behind the Transfer page's behaviour: select all, the speed and the time left, when the page reads by itself, when it says
@@ -14,15 +14,13 @@ import {
   focusReadDue,
   listingChanged,
 } from '@digi/workbench-core/transfer/refresh-core.ts';
+import { folderStatus, samplesBar, uploadStatus } from '@digi/workbench-core/transfer/samples-core.ts';
 import {
   applyUpload,
-  folderStatus,
-  samplesBar,
   uploadCancelled,
   uploadFailure,
   uploadLines,
-  uploadStatus,
-} from '../src/samples-core.ts';
+} from '@digi/workbench-core/transfer/sample-upload.ts';
 import {
   MARQUEE_SLOP,
   ROWS_TYPE,

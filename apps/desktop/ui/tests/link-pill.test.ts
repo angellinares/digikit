@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { linkHint, linkTag, viaSuffix } from '@digi/workbench-core/transfer/link-core.ts';
-import { applyUpload, samplesBar, type Uploads } from '../src/samples-core.ts';
+import { applyUpload, type Uploads } from '@digi/workbench-core/transfer/sample-upload.ts';
+import { samplesBar } from '@digi/workbench-core/transfer/samples-core.ts';
 
 test('no pill and no suffix while the link is unknown', () => {
   assert.equal(linkTag(undefined), undefined);

@@ -13,30 +13,32 @@ import { labelOf, type SamplesBackendApi } from './samples-backend';
 import WaitNotice from '@digi/workbench-core/ui/transfer/WaitNotice.tsx';
 import {
   applyUpload,
+  dropUploads,
+  joinPath,
+  parentOf,
+  uploadCancelled,
+  uploadFailure,
+  uploadItems,
+  type UploadItem,
+} from '@digi/workbench-core/transfer/sample-upload.ts';
+import {
   confirmDeleteLabel,
   crumbs,
   deletePartLine,
   deleteRows,
   deletingLine,
-  dropUploads,
   folderNameError,
-  joinPath,
   foldersFromOutside,
   localCrumbs,
   localRowTags,
   localRows,
   noFoldersMessage,
-  parentOf,
   planUpload,
   sampleRows,
   samplesBar,
   selectedRows,
-  uploadCancelled,
-  uploadFailure,
-  uploadItems,
   type LocalRow,
-  type UploadItem,
-} from './samples-core';
+} from '@digi/workbench-core/transfer/samples-core.ts';
 import {
   Crumbs,
   DevicePane,

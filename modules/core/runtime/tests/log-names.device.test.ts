@@ -6,7 +6,7 @@ import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installModules, moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { createLogNames } from '../../../../apps/desktop/ui/src/log-names.ts';
+import { createLogNames } from '@digi/dk-session/log-names';
 
 /**
  * Names in the workbench Log pane (docs/ADDRMAP.md "Workbench"), end to end in the emulator over the dk-session path that a device uses too: the

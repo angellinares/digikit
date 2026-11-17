@@ -378,7 +378,7 @@ export const moduleOf = (source: number, names: ReadonlyMap<number, string>): st
 /**
  * Names an address of the running image, `module: function+0xNN` (or `function+0xNN` for the runtime and the firmware), or null when no map
  * holds it. `ret`: the address is a return address, looked up one instruction earlier. The workbench makes it from the address maps and the
- * load table (apps/desktop/ui/src/log-names.ts); without one every address stays hex.
+ * load table (packages/dk-session/src/log-names.ts); without one every address stays hex.
  */
 export type AddrNamer = (cpu: 'cf' | 'sharc', addr: number, ret?: boolean) => string | null;
 
