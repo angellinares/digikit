@@ -52,6 +52,7 @@ impl std::fmt::Display for ReadError {
 
 /// A base image seen through the guest's write overlay (the card the guest sees). Bytes that neither the base nor
 /// the overlay holds read as zero.
+#[allow(clippy::type_complexity, reason = "one map field")]
 pub struct OverlayImage<'a> {
     base: &'a dyn RandomAccessRead,
     sectors: BTreeMap<u64, (Box<[u8; 64]>, Box<[u8; SECTOR]>)>,
@@ -118,7 +119,7 @@ impl RandomAccessRead for OverlayImage<'_> {
 pub const OVERLAY_RECORD: usize = 8 + 64 + SECTOR;
 
 pub fn parse_overlay(bytes: &[u8]) -> Result<Vec<CardOverlaySector>, ReadError> {
-    if bytes.len() % OVERLAY_RECORD != 0 {
+    if !bytes.len().is_multiple_of(OVERLAY_RECORD) {
         return Err(ReadError::BadOverlay(format!(
             "{} bytes is not a multiple of {OVERLAY_RECORD}",
             bytes.len()
@@ -126,7 +127,7 @@ pub fn parse_overlay(bytes: &[u8]) -> Result<Vec<CardOverlaySector>, ReadError> 
     }
     let mut out = Vec::with_capacity(bytes.len() / OVERLAY_RECORD);
     let mut previous = None;
-    for record in bytes.chunks_exact(OVERLAY_RECORD) {
+    for record in bytes.as_chunks::<OVERLAY_RECORD>().0 {
         let sector = u64::from_le_bytes(record[..8].try_into().unwrap());
         if previous.is_some_and(|p| p >= sector) {
             return Err(ReadError::BadOverlay(format!(

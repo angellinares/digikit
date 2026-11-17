@@ -482,7 +482,9 @@ impl Time {
         if next == f64::INFINITY {
             return Some((u64::MAX, level)); // no timer is armed
         }
-        (next >= 0.0 && next < 9.0e15).then(|| (next.ceil() as u64, level))
+        (0.0..9.0e15)
+            .contains(&next)
+            .then(|| (next.ceil() as u64, level))
     }
 
     /// `service_with(done, _)` is known to change nothing.

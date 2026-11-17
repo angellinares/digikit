@@ -263,6 +263,7 @@ fn extents(logical: u32, first: u32, count: u32, max: u32) -> Vec<(u32, u32, u32
 }
 
 /// A record with inline extents (at most 8) or pointers to extent-index pages.
+#[allow(clippy::too_many_arguments)]
 fn make_record(
     attr: u8,
     size: u32,

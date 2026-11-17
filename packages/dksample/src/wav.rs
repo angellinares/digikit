@@ -99,7 +99,7 @@ fn decode(fmt: &[u8], data: &[u8]) -> Result<(u32, Vec<Vec<f64>>), WavError> {
     if width == 0 || usize::from(block) != usize::from(ch) * width {
         return Err(WavError::InvalidFormat("block alignment"));
     }
-    if data.len() % usize::from(block) != 0 {
+    if !data.len().is_multiple_of(usize::from(block)) {
         return Err(WavError::InvalidFormat("partial frame"));
     }
     let frames = data.len() / usize::from(block);
@@ -107,7 +107,7 @@ fn decode(fmt: &[u8], data: &[u8]) -> Result<(u32, Vec<Vec<f64>>), WavError> {
         .map(|_| Vec::with_capacity(frames))
         .collect::<Vec<_>>();
     for f in 0..frames {
-        for c in 0..usize::from(ch) {
+        for (c, channel) in out.iter_mut().enumerate() {
             let p = f * usize::from(block) + c * width;
             let v = match (tag, bits) {
                 (1, 8) => (f64::from(data[p]) - 128.0) / 128.0,
@@ -130,7 +130,7 @@ fn decode(fmt: &[u8], data: &[u8]) -> Result<(u32, Vec<Vec<f64>>), WavError> {
             if !v.is_finite() {
                 return Err(WavError::NonFinite);
             }
-            out[c].push(v)
+            channel.push(v)
         }
     }
     Ok((rate, out))

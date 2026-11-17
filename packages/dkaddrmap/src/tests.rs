@@ -224,7 +224,7 @@ fn module_dsp_entries_are_rebased_by_the_dsp_base() {
             fini: None,
         }],
     };
-    let r = Resolver::new(&[map.clone()], &load(Some(0xb8_1000))).unwrap();
+    let r = Resolver::new(std::slice::from_ref(&map), &load(Some(0xb8_1000))).unwrap();
     let hit = r.lookup(Cpu::Sharc, 0xb8_1014).unwrap();
     assert_eq!((hit.name.as_str(), hit.offset), ("demo_render", 4));
     assert_eq!(hit.module.as_deref(), Some("test/demo"));

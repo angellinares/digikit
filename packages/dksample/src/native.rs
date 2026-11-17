@@ -19,7 +19,7 @@ pub enum NativeError {
 
 /// The native file of `pcm_be16` (big-endian int16, interleaved when `stereo`): header, PCM, trailer of zeros.
 pub fn build_native_sample(pcm_be16: &[u8], stereo: bool) -> Result<Vec<u8>, NativeError> {
-    if pcm_be16.len() % if stereo { 4 } else { 2 } != 0 {
+    if !pcm_be16.len().is_multiple_of(if stereo { 4 } else { 2 }) {
         return Err(NativeError::InvalidPcmLength);
     }
     let len = u32::try_from(pcm_be16.len()).map_err(|_| NativeError::InvalidPcmLength)?;

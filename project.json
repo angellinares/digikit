@@ -77,7 +77,7 @@
       "cache": false,
       "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/Cargo.lock", "{workspaceRoot}/mise.toml"],
       "options": {
-        "command": "node tools/nx/rust-env.mjs -- cargo clippy --no-deps --all-targets -p coldfire -p dt2-firmware-loader -p emmc-card -p dkupload -p sharc-gen -p sharc-stats -p sharc-gen-2 -p bootstrap-emu -p dkmidi -p dkbulk -p dkui-host -- -D warnings",
+        "command": "node tools/nx/rust-env.mjs -- cargo clippy --no-deps --all-targets -p coldfire -p dt2-firmware-loader -p emmc-card -p dkupload -p sharc-gen -p sharc-stats -p sharc-gen-2 -p bootstrap-emu -p dkmidi -p dkbulk -p dkui-host -p device-profile -p periph -p machine -p plusdrive-format -p dksample -p dkneeds -p dkaddrmap -p dksharc -p dkprof -- -D warnings",
         "cwd": "."
       },
       "description": "cargo clippy with -D warnings on the workspace crates that have no clippy warnings. Add a crate when its warnings are fixed."

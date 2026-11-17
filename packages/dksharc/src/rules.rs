@@ -331,11 +331,11 @@ fn stack_problems(
         };
         let mut step: BTreeMap<u32, Option<St>> = BTreeMap::new();
         for insn in body {
-            if sp == "I7" {
-                if let Some(st) = frame_step(insn) {
-                    step.insert(insn.pc, Some(st));
-                    continue;
-                }
+            if sp == "I7"
+                && let Some(st) = frame_step(insn)
+            {
+                step.insert(insn.pc, Some(st));
+                continue;
             }
             match sp_step(insn, sp, idx) {
                 Sp::No => {}
@@ -591,7 +591,7 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
         let restored = ends.iter().all(|&e| {
             w.iter()
                 .rfind(|i| i.pc <= e)
-                .is_none_or(|i| loads(i, reg) || copied_back(*i))
+                .is_none_or(|i| loads(i, reg) || copied_back(i))
         });
         if !saved || !restored {
             out.push(problem("keep", first, reg.to_string()));

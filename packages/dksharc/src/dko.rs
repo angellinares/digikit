@@ -113,13 +113,9 @@ impl Dko {
             return Ok(());
         }
         match self.toolchain.get(ISA_CHECK_KEY) {
-            None => Err(format!(
-                "the ColdFire object has no ISA check record: build it with `mise run module:build` (`patchkit build`)"
-            )),
+            None => Err("the ColdFire object has no ISA check record: build it with `mise run module:build` (`patchkit build`)".to_string()),
             Some(r) if *r == self.isa_digest()? => Ok(()),
-            Some(_) => Err(format!(
-                "the ColdFire object's ISA check record does not match its bytes (edited after the build?): rebuild it with `mise run module:build`"
-            )),
+            Some(_) => Err("the ColdFire object's ISA check record does not match its bytes (edited after the build?): rebuild it with `mise run module:build`".to_string()),
         }
     }
 

@@ -1051,11 +1051,11 @@ fn main() -> ExitCode {
             counters.esdhc_unmodeled += 1;
             continue;
         }
-        for (word, got) in data.chunks_exact(4).enumerate() {
+        for (word, got) in data.as_chunks::<4>().0.iter().enumerate() {
             counters.esdhc_hwr_checked += 1;
             match esdhc.take_host_write() {
                 Some((expected_addr, expected))
-                    if expected_addr == addr + (word as u32 * 4) && expected == got => {}
+                    if expected_addr == addr + (word as u32 * 4) && expected == *got => {}
                 _ => counters.esdhc_unmodeled += 1,
             }
         }

@@ -373,7 +373,7 @@ impl<'a> Keys<'a> {
     /// `Format`: the file is from an older or a newer packer. `PROVIDES` and `BIND` in a version 1 table are `Tag`.
     pub fn parse(bytes: &'a [u8]) -> Result<Keys<'a>, KeysError> {
         if bytes.len() < HEAD
-            || bytes.len() % 4 != 0
+            || !bytes.len().is_multiple_of(4)
             || u32_at(bytes, 0) != MAGIC
             || !(1..=VERSION).contains(&u16_at(bytes, 4))
         {
@@ -399,7 +399,7 @@ impl<'a> Keys<'a> {
                 return Err(KeysError::Tag);
             }
             last = tg;
-            if len % 4 != 0 || len > bytes.len() - at - ENTRY_HEAD {
+            if !len.is_multiple_of(4) || len > bytes.len() - at - ENTRY_HEAD {
                 return Err(KeysError::Size);
             }
             let body = &bytes[at + ENTRY_HEAD..at + ENTRY_HEAD + len];

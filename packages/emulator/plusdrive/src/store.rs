@@ -332,7 +332,7 @@ fn plausible(h: &Header, available: u64) -> bool {
         && h.table_first >= 1
         && (h.table_sectors == 0
             || u64::from(h.table_first) + u64::from(h.table_sectors) <= available)
-        && u64::from(h.used) >= 1 + u64::from(h.table_sectors)
+        && u64::from(h.used) > u64::from(h.table_sectors)
         && u64::from(h.used) <= available
 }
 

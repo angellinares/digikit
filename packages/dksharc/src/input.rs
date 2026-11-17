@@ -114,7 +114,7 @@ impl Input {
                 entries.push(("note_on", word(8)));
             }
         }
-        for f in d.fxs()?.chunks_exact(FX_LEN) {
+        for f in d.fxs()?.as_chunks::<FX_LEN>().0 {
             entries.push(("fx_process", u32::from_be_bytes(f[..4].try_into().unwrap())));
         }
         let entries = entries

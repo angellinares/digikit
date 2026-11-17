@@ -531,6 +531,7 @@ impl DtimBank {
 
     /// Restore scheduling and representable bookkeeping state. Register
     /// pages are intentionally loaded by the board's separate MMIO path.
+    #[allow(clippy::too_many_arguments)]
     pub fn load_checkpoint_state(
         &mut self,
         next: &[Option<f64>; 4],
