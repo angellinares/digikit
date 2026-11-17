@@ -61,7 +61,8 @@ export const galleryGaps = (root, manifest) => {
   for (const m of gallery.machines ?? [])
     for (const d of [...wanted].sort()) {
       if (!m.devices?.[d]) gaps.push(`${d}: machine ${m.id} is not listed in ${file}`);
-      else if (!(gallery.params?.[d] ?? []).length && manifest.uses?.[d]?.param_rows !== 0) gaps.push(`${d}: machine ${m.id} has no parameter in ${file}`);
+      else if (!(gallery.params?.[d] ?? []).length && manifest.uses?.[d]?.param_rows !== 0)
+        gaps.push(`${d}: machine ${m.id} has no parameter in ${file}`);
     }
   return gaps;
 };
