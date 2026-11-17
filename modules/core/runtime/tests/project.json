@@ -138,7 +138,8 @@
         "files": ["log-names.device.test.ts"],
         "tags": ["C:diagnostics", "C:layout"],
         "modules": ["digikit/debug", "test/dyn-demo"],
-        "sources": ["packages/dk-session/src/log-names.ts"]
+        "sources": ["packages/dk-session/src/log-names.ts"],
+        "dkprofWasm": true
       },
       {
         "files": ["memaudit.device.test.ts"],
