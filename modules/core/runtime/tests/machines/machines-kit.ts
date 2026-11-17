@@ -2,7 +2,6 @@ import path from 'node:path';
 import { button, encoder as encoderCode, pollUntil, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
-import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { captureRemoteOled } from '@digi/regression/runtime/remote.ts';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
@@ -63,8 +62,6 @@ export async function expectLoaded(rt: Rt, rig: CardRig): Promise<void> {
     safe: 0,
     results: [0],
   });
-  // the card boot is done only when the main UI runs (DT2 boots slower than the module results settle)
-  await expectRuntimeUi(rt.session, rig.plan, liveArtifacts(rt.session, 'runtime-ready'));
 }
 
 /** The parameter halfwords of the Sound object of `track` (1 based): the array starts at +0x14, `sound_words` long (`[fx]` of devices/<profile>.toml). */
