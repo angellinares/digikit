@@ -1,5 +1,9 @@
+import path from 'node:path';
 import { button, encoder as encoderCode, pollUntil, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
+import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
+import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
+import { captureRemoteOled } from '@digi/regression/runtime/remote.ts';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
@@ -59,6 +63,8 @@ export async function expectLoaded(rt: Rt, rig: CardRig): Promise<void> {
     safe: 0,
     results: [0],
   });
+  // the card boot is done only when the main UI runs (DT2 boots slower than the module results settle)
+  await expectRuntimeUi(rt.session, rig.plan, liveArtifacts(rt.session, 'runtime-ready'));
 }
 
 /** The parameter halfwords of the Sound object of `track` (1 based): the array starts at +0x14, `sound_words` long (`[fx]` of devices/<profile>.toml). */
@@ -101,12 +107,18 @@ async function turnEvents(rt: Rt, encoder: string, step: number, count: number, 
 export async function turnChangesOneWord(rt: Rt, encoder: string, detents = 12) {
   const before = await soundWords(rt.session);
   await turnEvents(rt, encoder, detents < 0 ? -4 : 4, Math.abs(detents) / 4);
-  await rt.ui.wait({
-    state: () => soundWords(rt.session),
-    done: (w: number[]) => changed(before, w).length > 0,
-    withinMs: 3000,
-    what: `${encoder} changed a Sound word`,
-  });
+  try {
+    await rt.ui.wait({
+      state: () => soundWords(rt.session),
+      done: (w: number[]) => changed(before, w).length > 0,
+      withinMs: 3000,
+      what: `${encoder} changed a Sound word`,
+    });
+  } catch (error) {
+    await captureRemoteOled(rt.session, 'knob-timeout');
+    console.info(`knob-timeout screen: ${path.join(liveArtifacts(rt.session, 'remote-input'), 'knob-timeout.png')}`);
+    throw error;
+  }
   const after = await soundWords(rt.session);
   const diff = changed(before, after);
   expect(diff, `${encoder} changes one parameter word`).toHaveLength(1);

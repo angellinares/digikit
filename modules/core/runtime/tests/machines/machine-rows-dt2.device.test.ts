@@ -1,5 +1,8 @@
+import path from 'node:path';
 import { pollUntil } from '@digi/test-support';
 import { expect, test } from 'vitest';
+import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
+import { captureRemoteOled } from '@digi/regression/runtime/remote.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 import { portAnchorAddress } from '@digi/regression/runtime/device-data.ts';
@@ -18,11 +21,17 @@ const ID = 'test/sine';
 const DSP_TYPE_CACHE = portAnchorAddress('dt2', FIRMWARE.dt2, 'dsp.voice.value.type_cache');
 
 /** The frames of the stock SRC pages (two presses: the second page), FLTR and AMP of track 1 (the menu frames of the old cell are not compared). */
-async function stockFrames(rt: Rt): Promise<string[]> {
+async function stockFrames(rt: Rt, expected?: string[]): Promise<string[]> {
   const frames: string[] = [];
   for (const key of ['SRC', 'SRC', 'FLTR', 'AMP']) {
     await rt.ui.tap(key, { until: { ms: 300, why: REDRAW } });
     frames.push(await rt.session.frameHash());
+    // with `expected` (the loaded boot): keep the screen of each page that differs from the stock one
+    if (expected && frames.at(-1) !== expected[frames.length - 1]) {
+      const name = `stock-frame-${frames.length}-${key}`;
+      await captureRemoteOled(rt.session, name);
+      console.info(`${name} screen: ${path.join(liveArtifacts(rt.session, 'remote-input'), `${name}.png`)}`);
+    }
   }
   return frames;
 }
@@ -44,7 +53,7 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} machines.dks: the SRC page of a run-time 
     const { session } = rt;
     await expectLoaded(rt, run);
     await session.expectNoFault('machines.dks loaded');
-    expect(await stockFrames(rt), 'the stock SRC, FLTR and AMP pages show the same frames with machines.dks loaded').toEqual(stock);
+    expect(await stockFrames(rt, stock), 'the stock SRC, FLTR and AMP pages show the same frames with machines.dks loaded').toEqual(stock);
 
     const tables = await decodeTables(session, run.plan);
     const row = tables.machines['Sine'] as { short: string; clone_of: number; knobs: (string | number)[] };
