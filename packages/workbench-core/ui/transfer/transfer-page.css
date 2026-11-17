@@ -208,6 +208,26 @@
   width: 14px;
   flex: none;
 }
+/* the Files page tree: a spacer per level, and the open/close button before a folder's name */
+.transfer-page .rows .indent {
+  flex: none;
+  margin-right: -10px;
+}
+.transfer-page .rows .twisty {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-3, #868b94);
+}
+.transfer-page .rows button.twisty {
+  cursor: pointer;
+}
 .transfer-page .rows .name {
   flex: 1 1 0;
   min-width: 0;
@@ -538,6 +558,12 @@
   flex-wrap: wrap;
   gap: 6px 12px;
   margin-bottom: 8px;
+}
+/* The reason a samples link is not Fast USB: a line of its own when it does not fit */
+.transfer-page .devhead .link-hint {
+  flex: 1 1 16rem;
+  min-width: 0;
+  white-space: normal;
 }
 /* Modules mode: the storage line takes a line of its own under the device line */
 .transfer-page .devhead .storage {

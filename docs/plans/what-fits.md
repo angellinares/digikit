@@ -44,7 +44,7 @@ selecting or installing. Em's brief for the runtime UI: load and unload, health,
 
 1. **The Transfer page is storage only.** Modules mode keeps each row's file size and adds one storage line to the On device column, `Modules: <n> files, <size> · <free> free` (the store's free space,
    GiB from 1 GiB). No memory wording is left there except the fit tag, whose tooltip uses the new names: `CPU memory 3 KiB short`, `DSP memory 40 KiB short`.
-2. **The Memory panel** (`MemoryPanel.tsx`, `memory-core.ts`, `memory-backend.ts` in `apps/desktop/ui/src`): a collapsible panel in the Card panel's look, under the Card panel in one right-hand column of the Emulator page (`SidePanels.tsx`; both collapsible, a closed one keeps its title bar,
+2. **The Memory panel** (`MemoryPanel.tsx`, `memory-core.ts`, `memory-backend.ts` in `apps/desktop/ui/src`): a collapsible panel in the right-hand column of the Emulator page (`SidePanels.tsx`; collapsible, a closed one keeps its title bar,
    the column shrinks to a rail when both are closed) and in the same column of the Remote page (the target there is the emulator or a MIDI port). One bar per resource the device limits (DSP memory, CPU memory, Machines, Parameters, Pages where the device has page rows, Modules), split into one
    segment per loaded module, coloured by the module's type (machine, effect, tool; the site's `--amber`, `--teal`, `--ok`), then free space. What `used` holds beyond the known modules is one `Other`
    segment; hover a segment for the module and its amount; `used / limit` at the end of the bar (KiB for bytes). The data is CAPACITY and MODULES of the device and `needs_of` (patchkit.wasm) of the matching

@@ -486,10 +486,9 @@ These come from the profiling work and land after the steps in section 12 that t
 - **`DK_SPAN` (S5a, defined; producers are P8a).** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `<dk/core/trace.h>` (ColdFire C) and
   `DK_SPAN_BEGIN(SKIP, RA, RB)` and `DK_SPAN_END(SKIP, ROW, RA, RB, RC)` in `dsp/contract/dk_trace.inc` (SHARC+). They are always compiled in: they test
   the sink's pointer (C) or the stats window's pointer slot `_dk_stats_ptr` (SHARC+), and only when it is set read the cycle counter and report
-  `(owner, cycles)` to the `span` sink (C: `dk_span_emit`, runtime-and-services 5.11) or to the stub's `_dk_span_add` (SHARC+). With no sink the cost is one
+  `(owner, cycles)` to the `span` sink (C: `dk_span_emit`, runtime-and-services 5.11) or to the image's `_dk_span_add` (SHARC+). With no sink the cost is one
   load, one test and one branch for each macro, and the arguments are not evaluated; the SHARC+ counter read (`EMUCLK`, which takes the emulator out of the
-  fast tiers, `UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`) runs only while a window is registered. Only service dispatchers and the image
-  stub use them; `mise run check:layers` (rule spans) refuses them in content modules and apps. Checked by reading the disassembly of a test use (ColdFire
+  fast tiers, `UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`) runs only while a window is registered. Only service dispatchers use them; `mise run check:layers` (rule spans) refuses them in content modules and apps. Checked by reading the disassembly of a test use (ColdFire
   `tstl`/`bnes` on the sink word before any call; SHARC+ load, `PASS`, `IF EQ JUMP` before the `EMUCLK` read). The no-sink cost of the real dispatchers (a paired
   A/B of instruction counts within 0.02 percent) is measured with the first producer (P8a).
   The **stats window** is words in DSP data memory: a header of 4 words (magic `DKSW` 0x444b5357, version 1, rows 16, blocks measured since the window was

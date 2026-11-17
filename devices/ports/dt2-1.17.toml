@@ -2572,6 +2572,16 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.fn.file.alloc_pages"
+cpu = "cf"
+kind = "code"
+addr = 0x401581dc
+len = 4
+sha256 = "e26a6edd1fa03cb09e71e68d5c523db6fb0975d75aaf4aabb1a08024a42e5344"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.file.any_open"
 cpu = "cf"
 kind = "code"
@@ -2698,16 +2708,6 @@ kind = "code"
 addr = 0x4015b0ee
 len = 4
 sha256 = "8c532fe588d875e129a1fbdda2d83ead4577a118ea3f1fad8d75b63983c1d9bc"
-mark = "D"
-rule = "fw/storage:cf_func"
-
-[[anchor]]
-name = "cf.storage.fn.file.alloc_pages"
-cpu = "cf"
-kind = "code"
-addr = 0x401581dc
-len = 4
-sha256 = "e26a6edd1fa03cb09e71e68d5c523db6fb0975d75aaf4aabb1a08024a42e5344"
 mark = "D"
 rule = "fw/storage:cf_func"
 

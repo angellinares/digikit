@@ -1,4 +1,4 @@
-// The pure logic of the Card panel (no DOM, no Tauri): the folder status of `card.folder` and its texts.
+// The pure logic of the card-folder strip (CardPanel.tsx, on the Files page) (no DOM, no Tauri): the folder status of `card.folder` and its texts.
 // Host tests: apps/desktop/ui/tests/card.test.ts.
 
 export interface CardFile {
@@ -23,7 +23,7 @@ export interface CardFolder {
   device?: string;
   /** `plus_drive/<device>/`. */
   default_folder?: string | null;
-  /** The user chose the folder (the Card panel's "Choose folder..."), else it is the default. */
+  /** The user chose the folder (the strip's "Choose folder..."), else it is the default. */
   custom?: boolean;
   /** A saved choice whose folder is gone: the default is used instead. */
   chosen_missing?: string | null;
@@ -65,35 +65,6 @@ export function shortFolder(folder: string | null): string {
   const parts = folder.split('/').filter(Boolean);
   return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : folder;
 }
-
-/** The files as shown: the module store files by path. */
-export function fileRows(c: CardFolder): CardFile[] {
-  return [...c.files].sort((a, b) => a.path.localeCompare(b.path));
-}
-
-/** A top folder of the store and its files. */
-export interface CardGroup {
-  /** `modules`, `samples`, ... ('' for a file at the top). */
-  folder: string;
-  files: CardFile[];
-  bytes: number;
-}
-
-/** The files grouped by top folder, folders by name (the mirror lists the whole store flat). */
-export function fileGroups(c: CardFolder): CardGroup[] {
-  const by = new Map<string, CardFile[]>();
-  for (const f of fileRows(c)) {
-    const slash = f.path.indexOf('/');
-    const folder = slash < 0 ? '' : f.path.slice(0, slash);
-    by.set(folder, [...(by.get(folder) ?? []), f]);
-  }
-  return [...by]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([folder, files]) => ({ folder, files, bytes: files.reduce((n, f) => n + f.bytes, 0) }));
-}
-
-/** The name of a file inside its group: the path without the top folder. */
-export const nameInGroup = (path: string, folder: string): string => (folder ? path.slice(folder.length + 1) : path);
 
 /** What waits for a reload, or what is wrong with the saved choice; '' when there is nothing to say. */
 export function folderNotice(c: CardFolder): string {

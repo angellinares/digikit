@@ -60,7 +60,7 @@ iteration checks do not replace this gate. `mise run test:plan` explains task se
 | Framework module, runtime | `core/runtime:rust-tests` for runtime units, `core/runtime:test-assembly` for the seams to the service files and the image; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers. The default gate runs every owner's `test-device` and `test-conformance` and replays unchanged ones from the cache. |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
-| PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
+| PCM pins (`tests/scenarios/*.json`, device-test `pcmSha256`, rig pins) | from the signal report (section "PCM pins"); a change in how a module sounds goes to Em |
 
 ## Commands
 
@@ -1133,7 +1133,9 @@ To clear the Nx cache: `pnpm nx:pilot reset`.
 
 ## PCM pins
 
-PCM pins in `tests/scenarios/*.json` change only with Em's approval. `tests/sharc/integration/test_sharc_golden.py`
+A PCM pin (`tests/scenarios/*.json`, the device-test `pcmSha256` pins, the rig pins) is set or changed from a numeric report of the captured signal (pitch against the expected note, crest factor, harmonics, level envelope, onset, stereo match), with the WAV kept for listening; never from a hash alone. Claude approves when the report matches what the fixture should produce; a change in how a module sounds goes to Em. The harness keeps the capture: a pending or changed device pin prints its artifacts directory, which holds `run.wav` (stereo float32, 48 kHz). The report for a pin names the expected values (for `test/sine` at note 60: 261.63 Hz, crest 1.414, no harmonics, a steady level) beside the measured ones. Fingerprint pins (a numeric fingerprint with tolerances compared by a tool, replacing the hashes) are planned in docs/plans/test-architecture.md T2.
+
+`tests/sharc/integration/test_sharc_golden.py`
 hashes six SHARC core outputs: a refactor keeps them; an intended change updates them with
 `--update` and says why.
 

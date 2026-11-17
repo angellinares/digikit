@@ -1,5 +1,5 @@
-// A fake controller for the Card panel in the preview: `card.folder`, `card.folder_set`, `card.sync` and the folder dialog, so each state
-// of the panel is reached from the address (`?page=emulator&card=dn2|dt2&chosen=1&missing=1`) and by clicking.
+// A fake controller for the card-folder strip of the Files page in the preview: `card.folder`, `card.folder_set`, `card.sync` and the folder dialog, so each state
+// of the panel is reached from the address (`?page=files&card=dn2|dt2&chosen=1&missing=1`) and by clicking.
 //   card=dn2|dt2   the loaded device
 //   chosen=1       the user already chose a folder for it
 //   missing=1      the saved choice is gone (the default is used)

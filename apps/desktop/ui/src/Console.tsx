@@ -12,7 +12,8 @@ import {
   type RuntimeUpdate,
 } from '@digi/workbench-core/runtime/runtime.ts';
 import { booting as startBoot, bootingScreen, bootingStatus, loadFailure, type Booting } from './boot-core';
-import { bumpCardRefresh } from './card-state';
+import { bumpCardRefresh, cardRefresh } from './card-state';
+import CardPanel from './CardPanel';
 import {
   CHART,
   DOWN,
@@ -62,6 +63,7 @@ import FirmwarePage from '@digi/workbench-core/ui/firmware/FirmwarePage.tsx';
 import DefaultModules from '@digi/workbench-core/ui/firmware/DefaultModules.tsx';
 import { DefaultModuleError } from '@digi/workbench-core/firmware/default-modules-core.ts';
 import TransferPage from '@digi/workbench-core/ui/transfer/TransferPage.tsx';
+import FilesPage from '@digi/workbench-core/ui/files/FilesPage.tsx';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@digi/workbench-core/runtime/cards.ts';
 import { reloadError, reloadLine } from '@digi/workbench-core/runtime/reload.ts';
 import type { ControllerJob } from '@digi/workbench-core/jobs/jobs-core.ts';
@@ -138,7 +140,7 @@ export default function Console(props: { host: Host }) {
   const [dockSaved, setDockSaved] = createSignal(readDockPref());
   const [windowPx, setWindowPx] = createSignal(window.innerHeight);
   const [dockDrag, setDockDrag] = createSignal(false);
-  const [page, setPage] = createSignal<'emulator' | 'transfer' | 'remote' | 'firmware'>('emulator');
+  const [page, setPage] = createSignal<'emulator' | 'transfer' | 'files' | 'remote' | 'firmware'>('emulator');
   const [sidebarOpen, setSidebarOpen] = createSignal(readSidebarPref());
   const [card, setCard] = createSignal<CardStatus>();
   const [bootRuntime, setBootRuntime] = createSignal(readRuntimePref());
@@ -787,6 +789,17 @@ export default function Console(props: { host: Host }) {
           <button
             type="button"
             class="side"
+            classList={{ on: page() === 'files' }}
+            aria-current={page() === 'files' ? 'page' : undefined}
+            title="See every file in the target's card store: space, sizes and module headers"
+            onClick={() => setPage('files')}
+          >
+            <Icon d={FOLDER} />
+            <span>Files</span>
+          </button>
+          <button
+            type="button"
+            class="side"
             classList={{ on: page() === 'remote' }}
             aria-current={page() === 'remote' ? 'page' : undefined}
             title="Press the keys and turn the encoders of the target, and see its screen"
@@ -981,8 +994,6 @@ export default function Console(props: { host: Host }) {
                 host={props.host}
                 visible={sidePanelsShown()}
                 active={panelsActive()}
-                card
-                reload={restart}
                 metrics={metrics}
                 session={emulatorSession}
                 where={() => 'the emulator'}
@@ -991,6 +1002,20 @@ export default function Console(props: { host: Host }) {
           </div>
           <Show when={page() === 'transfer'}>
             <TransferPage onFlash={() => setPage('firmware')} />
+          </Show>
+          <Show when={page() === 'files'}>
+            <FilesPage
+              refresh={cardRefresh}
+              halted={() =>
+                target().kind === 'emulator' && paused() ? 'The emulator is paused. Resume it to read its card.' : null
+              }
+              save={(name, bytes) => props.host.fs.saveLog(bytes, name, 'file')}
+              extra={
+                <Show when={target().kind === 'emulator'}>
+                  <CardPanel host={props.host} reload={restart} />
+                </Show>
+              }
+            />
           </Show>
           <Show when={page() === 'remote'}>
             <RemotePage fallbackDevice={device()} emulatorLoaded={!!status()} host={props.host} />

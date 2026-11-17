@@ -171,7 +171,12 @@ export async function openDeviceSamples(_forRun = false): Promise<OpenedSamples>
         ? { state: 'sysex' }
         : sim.link === 'wrongmode'
           ? { state: 'sysex', wrongMode: true }
-          : { state: 'bulk' },
+          : sim.link === 'reason'
+            ? {
+                state: 'sysex',
+                reason: "none of 1 candidate(s) returned this device's nonce",
+              }
+            : { state: 'bulk' },
     );
   noteConnection({ type: 'answered', device: { id: 'dt2', name: NAME, runtime: '0.5.2' } });
   return {

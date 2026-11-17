@@ -123,6 +123,14 @@ Add a command: write the Rust command, then add a method to the group in `host.t
 
 Tests use `createFakeHost(replies)` from `host/fake-host.ts`: it records `calls` (command as `group.method`, arguments, order) and answers from `replies` (a value, or a function of the arguments). A command with no reply fails, except the ones that answer nothing (open, close, send, cancel). Examples: `ui/tests/samples-backend.test.ts`, `card-api.test.ts`, `links.test.ts`. The browser preview (`mise run ui:preview`) still replaces `@tauri-apps/api/core` with `ui/preview/tauri-mock.ts` behind `TauriHost`.
 
+### Target facade
+
+`packages/workbench-core/src/target-ops/` has `TargetOps { target; store: StoreOps; run: RunOps }`: what the UI asks of the selected target, the emulator or a device. `Host` stays the catalogue of platform services (files, dialogs, ports, firmware, `emu.*`); it does not describe a target.
+
+`store` works the same on both targets. `sessionStoreOps(session)` reads the card store over `DkSession` (INFO, LIST, CAPACITY, MODULES, LOADS, READ, VERIFY). `run` is a stub for now: `unwiredRunOps` makes every operation say why it is not wired. It is filled later, when pause, resume, reset and restart move behind this layer (emulator through `EmulatorRuntime`, device only restart through the protocol).
+
+Tests and the preview use fakes: `fakeStoreOps` and `demoStore` (`target/fake-store.ts`). The first user is the Files page (`packages/workbench-core/ui/files/FilesPage.tsx`), which shows the store read-only; open it in the desktop UI preview with `?page=files`.
+
 ### The app object, KeyValue and BlobStore (desktop UI and site)
 
 The Transfer pane, the Firmware page and the target selector keep no module-level state. `createTransferApp(env, { storage, sessions })` (`packages/workbench-core/src/transfer/app.ts`) builds one app from the environment (`TransferEnv`): `app.target` (selected target, its sessions and transports), `app.connection`, `app.jobs`, `app.state` (the Transfer page's signals), `app.backend` and `app.loadLibrary`. `createFirmwareApp(env, transferApp)` (`packages/workbench-core/src/firmware/app.ts`) adds `defaults` (default modules) and `state` (the flash). An entry point builds the apps once and wraps its pages in `<AppProvider app firmware>`; a component takes them with `useTransferApp()` or `useFirmwareApp()` and destructures what it uses. Code that is not a component takes the app (or the part it needs) as an argument.
