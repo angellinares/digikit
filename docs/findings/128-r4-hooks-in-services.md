@@ -6,7 +6,7 @@ Roadmap item R4 ([sdk-runtime-roadmap.md](../plans/sdk-runtime-roadmap.md)), sta
 
 **SHARC hooks cannot move into a `.dks`. ColdFire hooks can, with open points.** Confidence: about 80% for SHARC, about 70% for ColdFire. [D]
 
-- SHARC: the image keeps each SHARC hook site as a thin stub that jumps through a pointer slot (zero slot means stock). The dispatch code and the rows move into the `machines` and `fx` services. This is the design for section 6.1 of the plan.
+- SHARC: the image keeps each SHARC hook site as a thin stub that jumps through a pointer slot (zero slot means stock). The dispatch code moves into the `machines` and `fx` services; rows and adapter data stay in the image. This is the design for section 6.1 of the plan and [r12-8-sharc-stubs.md](../plans/r12-8-sharc-stubs.md).
 - ColdFire: the runtime installs service hooks at the main-OS task entry, after the card is readable.
 - Dynamic checks wait for R8 whole-path spike.
 
@@ -30,9 +30,9 @@ Evidence:
 Design:
 
 - The image keeps every SHARC hook site as a thin stub. The stub loads a pointer slot and jumps through it. A zero slot runs the stock path, so a device with no service behaves as stock.
-- The dispatch code and the voice and FX rows move into the `machines` and `fx` services. They load at run time and write their entry into the slot.
-- `DK_SPAN` and the DSP stack guard live in the stub, so content modules need neither.
-- Cost to check in R8 whole-path spike: stub overhead per block.
+- The dispatch code moves into the `machines` and `fx` services. They load at run time and write their entry into the slot.
+- The `DK_SPAN` mechanism is image-owned; its call sites sit in the service dispatch, so content modules need none. The DSP stack guard is a later item.
+- Cost to check in the R12-8 slice: stub overhead per block.
 
 ## ColdFire side
 
