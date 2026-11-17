@@ -2,12 +2,13 @@ import { encoder, type Session } from '@digi/test-support';
 import type { TestRuntime } from '../support.ts';
 import { REDRAW, SETTLE, bounded, captureNote, word, type Rt } from './fx-live.ts';
 import type { FxProfile } from './fx-session.ts';
+import { wordBase } from './memory.ts';
 
 export async function halfword(session: Session, address: number): Promise<number> {
-  const value = await word(session, address & ~3);
+  const value = await word(session, wordBase(address));
   const offset = address % 4;
   if (offset <= 2) return (value >>> (8 * (2 - offset))) & 0xffff;
-  return ((value & 0xff) << 8) | ((await word(session, (address & ~3) + 4)) >>> 24);
+  return ((value & 0xff) << 8) | ((await word(session, wordBase(address) + 4)) >>> 24);
 }
 
 export async function soundImage(session: Session, profile: FxProfile, track: number): Promise<number[]> {

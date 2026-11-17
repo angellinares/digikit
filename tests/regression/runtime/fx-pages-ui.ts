@@ -4,6 +4,7 @@ import type { TestRuntime } from '../support.ts';
 import { REDRAW, SETTLE, bounded, rpc, word, type Rt } from './fx-live.ts';
 import { shot, type FxProfile } from './fx-session.ts';
 import { halfword } from './fx-track-ui.ts';
+import { wordBase } from './memory.ts';
 import { type RuntimePlan } from './runtime-plan.ts';
 import { hasServiceSymbols, symbolsOf } from './service-symbols.ts';
 
@@ -43,9 +44,12 @@ export function pageKit(rt: Rt, profile: FxProfile, row = 0) {
       for (let i = 0; i < 2; i++) {
         const at = base + i;
         const shift = 8 * (3 - (at % 4));
-        const old = await word(session, at & ~3);
+        const old = await word(session, wordBase(at));
         const byte = (value >>> (8 * (1 - i))) & 0xff;
-        await rpc(session, 'mem.cf.poke', { addr: at & ~3, value: ((old & ~(0xff << shift)) | (byte << shift)) >>> 0 });
+        await rpc(session, 'mem.cf.poke', {
+          addr: wordBase(at),
+          value: ((old & ~(0xff << shift)) | (byte << shift)) >>> 0,
+        });
       }
     },
     async setRaw(enc: string, knob: number, target: number) {
@@ -139,7 +143,7 @@ export async function cstring(session: Session, address: number) {
   const bytes: number[] = [];
   for (let i = 0; i < 256; i++) {
     const at = address + i;
-    const byte = ((await word(session, at & ~3)) >>> (8 * (3 - (at % 4)))) & 0xff;
+    const byte = ((await word(session, wordBase(at))) >>> (8 * (3 - (at % 4)))) & 0xff;
     if (!byte) return Buffer.from(bytes).toString('latin1');
     bytes.push(byte);
   }
