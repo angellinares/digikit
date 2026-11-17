@@ -19,9 +19,9 @@ import { moduleResultsNote } from './runtime-menu.ts';
 import { pollEmulated } from './waits.ts';
 import {
   analysisJson,
-  audibleRequired,
   bounded,
   evidence,
+  evidenceCollector,
   options,
   pickSine,
   word,
@@ -248,10 +248,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
     if (typeof epoch !== 'number') throw new Error('route status lacks epoch');
     epochs.add(epoch);
   };
-  const collectEvidence = async (runtime: PatchedSession, tag: string, requireAudible?: boolean) => {
-    rememberEpoch((await bounded(() => runtime.session.status())).epoch);
-    await evidence(runtime, artifacts, tag, overlays, audibleRequired(config, runtime, requireAudible));
-  };
+  const collectEvidence = evidenceCollector(config, () => artifacts, overlays, rememberEpoch, evidence);
   const fixture = withReusablePatchedSession(
     {
       ...options(device),

@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import { withWaitApi, type TestRuntime } from '@digi/regression/support.ts';
-import { analysisJson, bounded, frames, rows, rpc, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
+import { bounded, compare, pcmMetrics, frames, rows, rpc, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { GAIN, SINE } from '@digi/regression/runtime/fixtures.ts';
 import { createFxKitUi, watchFxKitRows, type FxKitObservation } from '@digi/regression/runtime/fx-kit-ui.ts';
 import { knobFloat, mainPage, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
@@ -17,7 +17,7 @@ import { halfword, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { hasServiceSymbols, symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
+import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const GAIN_B = 'test/dyn-fx-gain-b';
@@ -46,12 +46,6 @@ const factor = (values: number[]) =>
       (1 + Math.fround(Math.fround(values[row * 8 + 7]!) / Math.fround(0x7f00)) * (knobFloat(values[row * 8]!) - 1)),
     1,
   );
-interface PcmMetrics {
-  identical: boolean;
-  rms_db: number | null;
-  max_err_ulps: number;
-  shift: number | null;
-}
 
 for (const device of DEVICES) {
   describe(`${device.toUpperCase()} ${FIRMWARE[device]} FX kit/project persistence`, () => {
@@ -146,22 +140,8 @@ for (const device of DEVICES) {
         await trackNote(runtime, file, (await frames(session)) + 300);
         pcm.set(tag, file);
       };
-      const metrics = (base: string, sample: string, gain: number, tag: string) =>
-        analysisJson<PcmMetrics>(
-          'tools.patchkit.pk_digikit_fxpage',
-          ['compare', pcm.get(base)!, pcm.get(sample)!, '--gain', String(gain)],
-          artifacts,
-          `pcm-${tag}`,
-        );
-      const ratio = async (base: string, sample: string, gain: number, ulps = 12) => {
-        const result = await metrics(base, sample, gain, sample);
-        expect(result.rms_db).not.toBeNull();
-        expect(result.max_err_ulps).toBeLessThanOrEqual(ulps);
-        expect(Math.abs(result.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
-        expect(result.shift).not.toBeNull();
-        // hook_ab counts interleaved stereo samples; enforce the bound in audio frames.
-        expect(Math.abs(result.shift!) / 2).toBeLessThanOrEqual(128);
-      };
+      const ratio = (base: string, sample: string, gain: number, identical = false) =>
+        compare(pcm.get(base)!, pcm.get(sample)!, gain, artifacts, sample, identical);
       const page = async (row: number, tag: string) => {
         await ui().fxPage(3 + row);
         await runtime.ui.wait({ ms: 600, why: SETTLE });
@@ -176,23 +156,14 @@ for (const device of DEVICES) {
           await kit.poke(32, 0x4800);
           stockK1 = await stock();
           expect(stockK1).not.toBe(raw);
-          // the hook cells are the fx service file's: the stock boot (no effect) has none, only the stock kit values are checked
-          const hooked = hasServiceSymbols(runtime);
-          const saves = hooked ? await cell('fxp_nsave') : 0;
+          // the stock boot has no fx service (no hook cells): only the stock kit values are checked
           await ui().saveKit(1, 'k1');
-          if (hooked) {
-            expect(await cell('fxp_nsave')).toBeGreaterThan(saves);
-            expect(await spare(await cell('fxp_save_dst'))).toEqual(Array(fx.store_halfwords).fill(0));
-          }
           await kit.poke(32, 0x2000);
           const moved = await stock();
           expect(moved).not.toBe(stockK1);
-          const loads = hooked ? await cell('fxp_nload') : 0;
-          const loaded = await ui().loadKit(1, 'k1');
-          if (hooked) expect(await cell('fxp_nload')).toBeGreaterThan(loads);
+          await ui().loadKit(1, 'k1');
           expect(Math.abs((await stock()) - stockK1)).toBeLessThanOrEqual(0x40);
           expect(await stock()).not.toBe(moved);
-          if (hooked) expect(loaded.file).toEqual(Array(fx.store_halfwords).fill(0));
           await restart(['modules/m0.dkm', 'modules/m1.dkm', 'modules/m2.dkm'], 'effects', [SINE, GAIN, GAIN_B]);
         } else await inspect([SINE, GAIN, GAIN_B], 'effects-boot');
         const effectIds = await ids();
@@ -290,11 +261,9 @@ for (const device of DEVICES) {
         expect(await rowWords()).toEqual(wordsSaved);
         noZero('kit', loaded.seen);
         await note('loaded');
-        const exact = await metrics('turned', 'loaded', 1, 'loaded');
-        expect(exact.identical).toBe(true);
-        expect(exact.shift).not.toBeNull();
-        expect(Math.abs(exact.shift!) / 2).toBeLessThanOrEqual(128);
-        expect((await metrics('changed', 'loaded', 1, 'changed-v-loaded')).identical).toBe(false);
+        await ratio('turned', 'loaded', 1, true);
+        const differs = await pcmMetrics(pcm.get('changed')!, pcm.get('loaded')!, 1, artifacts, 'changed-v-loaded');
+        expect(differs.identical).toBe(false);
         expect([await page(0, 'fx-page4-loaded'), await page(1, 'fx-page5-loaded')]).toEqual(hashes);
         await mainPage(runtime);
         const stockLoaded = await ui().loadKit(1, 'k1b');
@@ -305,7 +274,7 @@ for (const device of DEVICES) {
         expect(stockLoaded.file).toEqual(Array(fx.store_halfwords).fill(0));
         expect(Math.abs((await stock()) - stockK1)).toBeLessThanOrEqual(0x40);
         await note('again');
-        await ratio('default', 'again', 1, 4);
+        await ratio('default', 'again', 1);
         const projectValues = new Map([
           [0, 0x5200],
           [7, 0x3000],

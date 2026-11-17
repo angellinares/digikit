@@ -40,7 +40,7 @@ test.each([-1, 0.5, NaN])('invalid numeric sine hint %s does not press a panel k
   expect(client.inputButton).not.toHaveBeenCalled();
 });
 
-test('silent evidence preserves mandatory finite, guard and no-fault checks; default still requires sound', async () => {
+test('silent evidence preserves mandatory finite, guard and no-fault checks; the default does not require sound', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-fx-evidence-'));
   let nonfinite = 0;
   let hits = 0;
@@ -71,6 +71,7 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
     hits = 0;
     expectNoFault.mockRejectedValueOnce(new Error('DSP halt'));
     await expect(evidence(runtime, directory, 'fault', overlays, false)).rejects.toThrow('DSP halt');
+    expect(overlays.at(-1), 'a fault still leaves the overlay').toBe(path.join(directory, 'fault.overlay.bin'));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

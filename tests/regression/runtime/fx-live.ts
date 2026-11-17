@@ -266,13 +266,46 @@ export async function capture(runtime: Rt, file: string, selection?: number, tri
   return trig;
 }
 
-interface Metrics {
+export interface PcmMetrics {
+  ok: boolean;
   identical: boolean;
-  max_err_ulps: number;
   rms_db: number | null;
   rms_base: number;
   shift: number | null;
 }
+/** The `hook_ab compare` metrics of a render against the reference scaled by `gain`, from the onset on. The CLI exits 1 on a failed verdict; its JSON on stdout is still read. */
+export async function pcmMetrics(
+  base: string,
+  sample: string,
+  gain: number,
+  artifacts: string,
+  tag: string,
+  relBound?: number,
+): Promise<PcmMetrics> {
+  const args = ['run', '--no-sync', 'python', '-m', 'tools.patchkit.hook_ab', 'compare', base, sample];
+  args.push('--gain', String(gain), '--align-onset', '--json');
+  if (relBound !== undefined) args.push('--rel-bound', String(relBound));
+  let stdout: string;
+  try {
+    stdout = (await exec('uv', args, { cwd: root, timeout: 30_000 })).stdout;
+  } catch (error) {
+    const output = error as { stdout?: string; stderr?: string };
+    if (!output.stdout) {
+      record(artifacts, `pcm-${tag}`, { error: String(error), stderr: output.stderr });
+      throw error;
+    }
+    stdout = output.stdout;
+  }
+  const metrics = JSON.parse(stdout) as PcmMetrics;
+  record(artifacts, `pcm-${tag}`, metrics);
+  return metrics;
+}
+
+/**
+ * Asserts that a render equals the reference scaled by `gain`. The CLI verdict (`ok`: the largest error within
+ * `relBound` of the scaled reference peak, 2**-20 when unset) is the only error rule; this adds audibility, the gain
+ * in dB and the onset shift (hook_ab counts interleaved samples; the tolerance is 128 audio frames).
+ */
 export async function compare(
   base: string,
   sample: string,
@@ -280,42 +313,17 @@ export async function compare(
   artifacts: string,
   tag: string,
   identical = false,
-): Promise<void> {
-  let result: { stdout: string; stderr: string };
-  try {
-    result = await exec(
-      'uv',
-      [
-        'run',
-        '--no-sync',
-        'python',
-        '-m',
-        'tools.patchkit.hook_ab',
-        'compare',
-        base,
-        sample,
-        '--gain',
-        String(gain),
-        '--align-onset',
-        '--json',
-      ],
-      { cwd: root, timeout: 30_000 },
-    );
-  } catch (error) {
-    const output = error as { stdout?: string; stderr?: string };
-    record(artifacts, `pcm-${tag}`, { error: String(error), stdout: output.stdout, stderr: output.stderr });
-    throw error;
-  }
-  const metrics = JSON.parse(result.stdout) as Metrics;
-  record(artifacts, `pcm-${tag}`, metrics);
+  relBound?: number,
+): Promise<PcmMetrics> {
+  const metrics = await pcmMetrics(base, sample, gain, artifacts, tag, relBound);
   expect(metrics.rms_base, 'reference has sound').toBeGreaterThan(0);
-  expect(metrics.max_err_ulps).toBeLessThanOrEqual(2);
+  expect(metrics.ok, 'PCM equals the scaled reference within the error bound').toBe(true);
   expect(metrics.rms_db).not.toBeNull();
   expect(Math.abs(metrics.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
   expect(metrics.shift).not.toBeNull();
-  // hook_ab counts interleaved stereo samples; the onset tolerance is 128 audio frames.
   expect(Math.abs(metrics.shift!) / 2).toBeLessThanOrEqual(128);
   if (identical) expect(metrics.identical, 'dry PCM is bit-identical from onset').toBe(true);
+  return metrics;
 }
 
 /** Interleaved samples of an IEEE-float WAV (format 3). */
@@ -492,7 +500,7 @@ export async function evidence(
   requireAudible?: boolean,
 ): Promise<void> {
   const { session } = runtime;
-  await bounded(() => session.expectNoFault(tag));
+  // Capture the guard report and the overlay first, so that a fault still leaves its artifacts.
   const guard = await bounded(() => session.client.guardReport());
   const file = path.join(artifacts, `${tag}.overlay.bin`);
   const overlay = await rpc(session, 'card.overlay', { path: file });
@@ -504,12 +512,27 @@ export async function evidence(
     ? await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' })
     : undefined;
   record(artifacts, `${tag}-closing`, { guard, overlay, pcm, status: await bounded(() => session.status()) });
+  await bounded(() => session.expectNoFault(tag));
   await bounded(() => expectNoGuardHits(session));
   if (!pcm && requireAudible) throw new Error(`${tag}: the case requires audio but no PCM tap ran`);
   if (pcm) {
     expect(pcm.non_finite).toBe(0);
     if (requireAudible) expect(pcm.peak, 'input is audible').toBeGreaterThan(0.01);
   }
+}
+
+/** The per-case evidence closer of a fixture: remembers the epoch, then checks evidence, fault, guard and PCM. */
+export function evidenceCollector(
+  config: { requireAudible?: RequireAudible },
+  artifacts: () => string,
+  overlays: string[],
+  rememberEpoch: (epoch: unknown) => void,
+  close: typeof evidence = evidence,
+) {
+  return async (runtime: PatchedSession, tag: string, requireAudible?: boolean): Promise<void> => {
+    rememberEpoch((await bounded(() => runtime.session.status())).epoch);
+    await close(runtime, artifacts(), tag, overlays, audibleRequired(config, runtime, requireAudible));
+  };
 }
 
 /** Audio is required only when the call (`override`) or the suite sets `requireAudible`. */
@@ -546,9 +569,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
     epochs.add(epoch);
   };
   const slots = slotsFor(device);
-  const collectEvidence = (runtime: PatchedSession, tag: string, requireAudible?: boolean) => {
-    return evidence(runtime, artifacts, tag, overlays, audibleRequired(config, runtime, requireAudible));
-  };
+  const collectEvidence = evidenceCollector(config, () => artifacts, overlays, rememberEpoch);
   const fixture = withReusablePatchedSession(
     {
       ...options(device),

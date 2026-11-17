@@ -2,7 +2,7 @@ import path from 'node:path';
 import { button, stepWithProgress } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { withWaitApi, type TestRuntime } from '@digi/regression/support.ts';
-import { analysisJson, bounded, frames, pickSine, rpc, runToFrame, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
+import { compare, bounded, frames, pickSine, rpc, runToFrame, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { SEND, SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { withRouteFxSession } from '@digi/regression/runtime/fx-route-live.ts';
 import { inspectFxBoot, withPausedFxProtocol } from '@digi/regression/runtime/fx-session.ts';
@@ -16,29 +16,9 @@ import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const routeKey = `fx/route/${SEND}`;
 
-interface PcmMetrics {
-  identical: boolean;
-  rms_base: number;
-  rms_db: number | null;
-  max_err_ulps: number;
-  shift: number | null;
-}
-
 async function compareRoutePcm(base: string, sample: string, gain: number, artifacts: string, tag: string) {
-  const metrics = await analysisJson<PcmMetrics>(
-    'tools.patchkit.hook_ab',
-    ['compare', base, sample, '--gain', String(gain), '--align-onset', '--json'],
-    artifacts,
-    `pcm-${tag}`,
-  );
-  expect(metrics.rms_base).toBeGreaterThan(0);
-  expect(metrics.shift).not.toBeNull();
-  // Separate boots may move the onset by up to four 64-sample DSP sub-blocks.
-  expect(Math.abs(metrics.shift!)).toBeLessThanOrEqual(256);
-  expect(metrics.max_err_ulps).toBeLessThanOrEqual(2);
-  expect(metrics.rms_db).not.toBeNull();
-  expect(Math.abs(metrics.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
-  if (gain === 1) expect(metrics.identical).toBe(true);
+  // Separate boots may move the onset by up to four 64-sample DSP sub-blocks (128 frames).
+  await compare(base, sample, gain, artifacts, tag, gain === 1);
 }
 
 /** Native store reader observes the card after guest writes; no settings encoding in this test. */
