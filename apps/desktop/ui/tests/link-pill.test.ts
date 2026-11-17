@@ -1,7 +1,7 @@
 // The link pill of the Target row and the progress suffix (packages/workbench-core/src/transfer/link-core.ts), and the bar message that carries the suffix.
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { linkTag, viaSuffix } from '@digi/workbench-core/transfer/link-core.ts';
+import { linkHint, linkTag, viaSuffix } from '@digi/workbench-core/transfer/link-core.ts';
 import { applyUpload, samplesBar, type Uploads } from '../src/samples-core.ts';
 
 test('no pill and no suffix while the link is unknown', () => {
@@ -26,7 +26,32 @@ test('a SysEx link in USB AUDIO/MIDI with no bulk route says to set USB CONFIG',
   const t = linkTag({ state: 'sysex', wrongMode: true });
   assert.equal(t?.text, 'SYSEX');
   assert.equal(t?.tone, 'warn');
-  assert.equal(t?.title, 'Set USB CONFIG to USB MIDI on the device for Fast USB');
+  assert.equal(t?.title, linkHint({ state: 'sysex', wrongMode: true }));
+  assert.match(t?.title ?? '', /no Fast USB interface in USB AUDIO\/MIDI.*set USB CONFIG to USB MIDI/);
+});
+
+test('a SysEx link with a reason is an amber pill whose tooltip is the hint', () => {
+  const link = { state: 'sysex', reason: 'USB device x: boom' } as const;
+  const t = linkTag(link);
+  assert.equal(t?.text, 'SYSEX');
+  assert.equal(t?.tone, 'warn');
+  assert.equal(t?.title, 'Fast USB not used: USB device x: boom');
+  assert.equal(t?.title, linkHint(link));
+});
+
+test('linkHint gives one sentence for each way samples miss Fast USB', () => {
+  assert.equal(linkHint(undefined), null);
+  assert.equal(linkHint({ state: 'bulk' }), null);
+  assert.equal(
+    linkHint({ state: 'fallback', reason: 'timeout' }),
+    'Fast USB stopped during this run (timeout); the rest went over SysEx.',
+  );
+  assert.match(linkHint({ state: 'fallback' }) ?? '', /\(no reason logged\)/);
+  const failure = { name: 'usb-fast.dkm', result: -7, needs: 'usb-bulk' };
+  assert.equal(linkHint({ state: 'sysex', failure }), linkTag({ state: 'sysex', failure })?.title);
+  assert.match(linkHint({ state: 'sysex', wrongMode: true }) ?? '', /^This firmware has no Fast USB interface/);
+  assert.equal(linkHint({ state: 'sysex', reason: 'r' }), 'Fast USB not used: r');
+  assert.equal(linkHint({ state: 'sysex' }), 'Install the usb-fast module for Fast USB.');
 });
 
 test('a SysEx link with a usb-fast load failure names the module it needs', () => {

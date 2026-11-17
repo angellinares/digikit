@@ -559,6 +559,12 @@
   gap: 6px 12px;
   margin-bottom: 8px;
 }
+/* The reason a samples link is not Fast USB: a line of its own when it does not fit */
+.transfer-page .devhead .link-hint {
+  flex: 1 1 16rem;
+  min-width: 0;
+  white-space: normal;
+}
 /* Modules mode: the storage line takes a line of its own under the device line */
 .transfer-page .devhead .storage {
   flex-basis: 100%;

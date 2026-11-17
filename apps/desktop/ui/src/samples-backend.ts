@@ -11,6 +11,7 @@ import type { TransferApp } from '@digi/workbench-core/transfer/app.ts';
 import type { Host } from '@digi/workbench-core/host/host.ts';
 import { joinPath, type LocalEntry, type Prepare } from './samples-core';
 import type { LinkState } from '@digi/workbench-core/transfer/link-core.ts';
+import { logEvent } from './log-state';
 import {
   localFolder,
   localPath,
@@ -42,7 +43,8 @@ async function usbFastFailure(s: DkSession): Promise<LoadFailure | undefined> {
   }
 }
 
-const note = (why: string) => console.info(`[samples] ${why}`);
+/** The usb-fast module does not answer the nonce: it is not loaded, so the pill stays a plain SYSEX (no reason to show). */
+const NOT_LOADED = /did not take the nonce/;
 
 /** How many files are labelled per read of the folder (the first bytes of each are read; a larger folder keeps the rest unlabelled). */
 const LABELLED = 400;
@@ -98,8 +100,20 @@ export function createSamplesBackend(host: Host, app: TransferApp) {
         bulk?: BulkChoice;
         /** usb-fast is loaded but the device is in USB AUDIO/MIDI and no bulk route was found (firmware without core/usb-bulk-audio); read at each choice while there is no bulk link. */
         wrongMode?: boolean;
+        /** The last note of the last bulk choice (why no bulk link was chosen); undefined when the choice said nothing. */
+        reason?: string;
+        /** The last note written to the Log drawer for this session (the choice repeats at every refresh; the same text is logged once). */
+        logged?: string;
       }
     | undefined;
+
+  /** Every line goes to the console; the Log drawer gets it unless it repeats the last line of this session. */
+  const note = (why: string) => {
+    console.info(`[samples] ${why}`);
+    if (last && last.logged === why) return;
+    if (last) last.logged = why;
+    logEvent('transfer', 'info', `samples: ${why}`);
+  };
 
   /**
    * The samples backend of the device on the target. The session part (INFO, the storage) is kept per session. The bulk choice is made again whenever there
@@ -123,15 +137,27 @@ export function createSamplesBackend(host: Host, app: TransferApp) {
       last = { s, name: storage.name, runtime: fmtVersion(info.runtime), samples: storage.samples };
     }
     const had = last.bulk;
-    // only a run chooses again after a failure: a read between the failure and the next run keeps the fallback pill
-    if (forRun && had && last.opened?.backend.bulkState === 'fallback') {
+    // A run chooses the link fresh: the device ends an idle bulk session 21 s after the last nonce or write, and a new nonce opens a new session
+    // (this also covers an unplugged interface). A read keeps the cached link, so a read between a failure and the next run keeps the fallback pill.
+    if (forRun && had) {
       await Promise.resolve(had.link.close()).catch(() => {});
       last.bulk = undefined;
     }
     if (!last.bulk && !last.failure) last.failure = { usbFast: await usbFastFailure(s) };
     if (!last.bulk) {
       const env = app.env.bulk;
-      last.bulk = env && target().kind !== 'none' ? await chooseBulk(s, env, note) : undefined;
+      let choiceNote: string | undefined;
+      last.bulk =
+        env && target().kind !== 'none'
+          ? await chooseBulk(s, env, (line) => {
+              choiceNote = line;
+              note(line);
+            })
+          : undefined;
+      // The reason is the last note of the choice. A choice with no note (no candidate on the bus) or the nonce note (usb-fast not loaded) gives none:
+      // we cannot tell a missing interface from a module that is not loaded, so the pill stays a plain SYSEX.
+      last.reason =
+        choiceNote && !NOT_LOADED.test(choiceNote) ? choiceNote.replace(/^USB bulk link not used: /, '') : undefined;
       // chooseBulk finds the USB MIDI pair or the OUT-only interface of USB AUDIO/MIDI. A device in USB AUDIO/MIDI with neither (older firmware) stays on
       // SysEx and the pill says how to get Fast USB.
       last.wrongMode = !last.bulk && target().kind === 'midi' ? await s.usbFastWrongMode() : false;
@@ -151,7 +177,10 @@ export function createSamplesBackend(host: Host, app: TransferApp) {
         hashOf: (d) => conv.hash(d),
         bulk: last.bulk?.session,
         note,
-        onFallback: (reason) => setSampleLink({ state: 'fallback', reason }),
+        onFallback: (reason) => {
+          logEvent('transfer', 'error', `samples: Fast USB stopped, the rest goes over SysEx: ${reason}`);
+          setSampleLink({ state: 'fallback', reason });
+        },
       }),
       prepare: (name, bytes) => prepareUpload(conv, name, bytes),
       link: last.bulk ? 'bulk' : 'sysex',
@@ -165,7 +194,8 @@ export function createSamplesBackend(host: Host, app: TransferApp) {
     if (link === 'bulk') return { state: 'bulk' };
     const failure = last?.failure?.usbFast;
     if (failure) return { state: 'sysex', failure };
-    return last?.wrongMode ? { state: 'sysex', wrongMode: true } : { state: 'sysex' };
+    if (last?.wrongMode) return { state: 'sysex', wrongMode: true };
+    return last?.reason ? { state: 'sysex', reason: last.reason } : { state: 'sysex' };
   }
 
   /** Read the device's open folder, its free space and what the backend can do (the On device column of Samples mode). */

@@ -600,6 +600,7 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             // core/sdhc-large (large card commands for registered buffers) is in every flashed set
             if set == "device" {
                 want.push("core/usb-bulk");
+                want.push("core/usb-bulk-audio");
                 if dev.short == "dt2" {
                     want.push("core/plusdrive-write");
                 }

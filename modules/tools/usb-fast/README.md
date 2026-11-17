@@ -3,7 +3,7 @@
 File uploads on a USB bulk interface, several times faster than SysEx. A run-time module (`.dkm`) in C; it needs `core/usb-bulk` (the adapter that adds interface 2,
 EP2 OUT and IN, to the USB MIDI mode) and, on the Digitakt II, `core/plusdrive-write` for the +Drive. Plan: `docs/plans/usb-fast.md` section 5 and
 `docs/plans/usb-fast-hardware.md` (step 4). Selected, the device re-enumerates once at boot and offers the bulk interface; not selected, USB is stock and SysEx
-does everything as before.
+does everything as before. In USB AUDIO/MIDI mode macOS asks once to allow the accessory when it first sees the Fast USB interface; allow it. Windows stays on SysEx for now (no WinUSB descriptor yet).
 
 - **SysEx**: `USB_FAST_NONCE` (0x36, range `usb_fast` of `sdk/sdk.toml`): body 8 bytes, empty reply. `STATUS` (0x37) is a debug aid: 20 words, word 8 is `dk_usb_bulk_state` (the host reads its wrong-mode bit); body `'S' ...` is the speed mask (below). STATUS words 18 and 19 are the staging reservation in bytes and the ring slots of the live block, for the hardware A/B. The host sends random bytes, then asks INFO on each
   candidate USB device and keeps the one that returns them (the USB serial strings are the same on every unit).

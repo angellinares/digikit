@@ -18,4 +18,4 @@ stop: macOS keeps audio and MIDI, and the host sees one more interface. Plan: `d
   the README of core/usb-bulk.
 - **Exports** (symbols of this module, called by patchkit's link and by tests): `void ua_prepare(void)`, `void ua_connect(void)`, `void ua_disconnect(void)`, `volatile u32 usb_bulk_audio_state`.
   Used from core/usb-bulk (symbols of that module): `usb_bulk_port5_attach`, `usb_bulk_port5_connect`, `usb_bulk_port5_disconnect`, `usb_alias_delta`, `usb_ddr_base`, `usb_ddr_bytes`.
-- **Patch sets.** `device-audio-bulk` (`devices/digitakt-ii.toml`, `devices/digitone-ii.toml`) is the `device` set plus this module.
+- **Patch sets.** It is in the `device` and `device-introblank` sets (`devices/digitakt-ii.toml`, `devices/digitone-ii.toml`).
