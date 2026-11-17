@@ -203,7 +203,7 @@ for (const device of DEVICES) {
         console.info(
           `fx service counters: ${(await Promise.all(['fxp_ninit', 'fxp_nload', 'fxp_nsave', 'fxp_nsound'].map(async (n) => `${n}=${await cell(n)}`))).join(' ')}`,
         );
-        // no `fxp_ninit` check here: the firmware initialises the boot kit before fx.dks binds its hooks, and the service seeds that live kit on activation (`seeds`)
+        // the init hook is not observable in this test (boot init runs before fx.dks binds; Load Kit does not call the initialiser, finding 61); the service seeds a live kit on activation and tick
         expect(await word(session, sym('DKRT_FXP') + 24)).toBe(2);
         expect(await mark()).toBe(MARK);
         expect(isDefault(await values(), defaultsAB)).toBe(true);
@@ -282,11 +282,8 @@ for (const device of DEVICES) {
         for (const index of [0, 7, 8, 15]) expect(changed[index]).not.toBe(saved[index]);
         await note('changed');
         const loads = await cell('fxp_nload');
-        // Load Kit runs the stock kit initialiser for its fresh kit: the init hook is installed when the counter moves
-        const inits = await cell('fxp_ninit');
         const loaded = await ui().loadKit(2, 'k2');
         expect(await cell('fxp_nload')).toBeGreaterThan(loads);
-        expect(await cell('fxp_ninit'), 'the init hook ran for the fresh kit of Load Kit').toBeGreaterThan(inits);
         expect((await values()).slice(0, 16)).toEqual(saved.slice(0, 16));
         expect(loaded.file).toEqual(expectedRecord(effectIds, saved, fx.store_halfwords));
         expect(Math.abs((await stock()) - stockSaved)).toBeLessThanOrEqual(0x40);
