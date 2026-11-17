@@ -158,6 +158,7 @@ export function fieldsOf(kindId: number, a: number[]): Record<string, FieldValue
       f = Object.fromEntries(Object.entries(f).filter(([k]) => !k.startsWith('name')));
       if (name === 'MOD_LOAD' && a[0] === PROVIDER_IDX) {
         // a provider file: the first four characters of its name, then the service hash and the base word (the declare-check diagnosis for E_DECL_KIND)
+        // the name is 4 characters packed big-endian into the one word a[2] (first character in the top byte, NUL after a shorter name; `asciiOf` unpacks it)
         f.provider = true;
         f.name = asciiOf(a[2]!);
         f.result = signed(a[1]!);
