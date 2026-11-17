@@ -111,6 +111,15 @@ export async function ringEvents(
   return ofKind(await readSmallRing(session, plan), LOG_KIND[kind]);
 }
 
+/** Like `ringEvents`, without the events of providers (`services/*.dks`, which log with `PROVIDER_IDX` as their index): the events of modules only. */
+export async function moduleRingEvents(
+  session: Session,
+  plan: RuntimePlan,
+  kind: keyof typeof LOG_KIND,
+): Promise<DkLogEvent[]> {
+  return (await ringEvents(session, plan, kind)).filter((e) => e.args[0] !== PROVIDER_IDX);
+}
+
 /** Every event the device's log holds: over SysEx while the debug module is loaded, else the runtime's own small ring from memory. */
 export async function logEvents({ session, dk }: PatchedSession, plan: RuntimePlan): Promise<DkLogEvent[]> {
   return hasCap(await dk.info(), 'LOG') ? dk.readLog() : readSmallRing(session, plan);

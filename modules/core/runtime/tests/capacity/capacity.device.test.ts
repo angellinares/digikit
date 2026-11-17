@@ -6,7 +6,8 @@ import { cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts
 import { needsOf, parseDspSection, relocate } from '@digi/regression/runtime/dkm.ts';
 import { dspBytes } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
-import { bootEntries, COUPLED_ROOTS, expectBoot, SYMBOLS, type Entry } from './capacity-helpers.ts';
+import { neededServices } from '@digi/regression/runtime/service-files.ts';
+import { bootEntries, COUPLED_ROOTS, expectBoot, providerArena, SYMBOLS, type Entry } from './capacity-helpers.ts';
 import {
   ARENA_HDR,
   block,
@@ -77,7 +78,8 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
     'full set: every limit is filled to its last unit and the next module of each kind is refused',
     async () => {
       await rig.first();
-      const g = geometryOf(rig.device, rig.plan);
+      // M declares machines, so the card holds machines.dks
+      const g = { ...geometryOf(rig.device, rig.plan), providerArena: await providerArena(rig, 'full', ['machines']) };
       const entries = await synthEntries(rig, 'full', await fullSet(g, []));
       const got = await bootEntries(rig, 'full', entries);
       const mods = await expectBoot(rig, g, entries, got);
@@ -159,8 +161,9 @@ cardRigs('capacity, coupled', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, 
     'full set behind a real module: the reference keeps its ranges and its DSP bytes in L2, every row is used up',
     async () => {
       await rig.first();
-      const g = geometryOf(rig.device, rig.plan);
       const refFile = moduleArtifact(rig.device, REFERENCE);
+      const services = [...new Set(['machines', ...neededServices([refFile])])];
+      const g = { ...geometryOf(rig.device, rig.plan), providerArena: await providerArena(rig, 'coupled-full', services) };
       const [refNeeds] = await needsOf([refFile]);
       const fill = await synthEntries(rig, 'coupled-full', await fullSet(g, [usageOf(refNeeds!)]));
       const entries: Entry[] = [{ name: REFERENCE, file: refFile, want: LOADED }, ...fill];

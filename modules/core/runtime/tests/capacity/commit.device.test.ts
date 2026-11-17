@@ -9,10 +9,11 @@ import { dspBytes, word } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
 import { dynType } from '@digi/regression/runtime/project-kit.ts';
-import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
+import { moduleRingEvents } from '@digi/regression/runtime/runtime-menu.ts';
+import { neededServices } from '@digi/regression/runtime/service-files.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { LOADED } from '@digi/regression/runtime/synth.ts';
-import { bootEntries, COUPLED_ROOTS, SYMBOLS, type Entry } from './capacity-helpers.ts';
+import { bootEntries, COUPLED_ROOTS, providerArena, SYMBOLS, type Entry } from './capacity-helpers.ts';
 
 /**
  * The commit of a module (docs/plans/sdk.md 6.3), end to end on both devices, with the fixture test/commit-demo: a machine `cmach` with three
@@ -77,6 +78,8 @@ function replaceAll(buf: Buffer, from: Buffer, to: Buffer, lo = 0, hi = buf.leng
 /** Refused and left nothing behind: no module listed, no row, no DSP range, no arena block. */
 async function expectNothing(rig: CardRig, got: Awaited<ReturnType<typeof bootEntries>>, loaded: string[], rows: number) {
   const { mods, cap, rt } = got;
+  // the providers (services the module needs) hold arena blocks of their own: the baseline is a boot of the same services with no module
+  const baseline = await providerArena(rig, 'commit-baseline', neededServices([moduleArtifact(rig.device, ID)]));
   expect(
     mods.map((m) => m.name),
     'MODULES lists only the modules that loaded',
@@ -86,11 +89,11 @@ async function expectNothing(rig: CardRig, got: Awaited<ReturnType<typeof bootEn
     'the refused module wrote no machine, parameter or voice row',
   ).toEqual([rows, rows * 3, rows]);
   expect(
-    [cap.DSP_AREA!.used > 0, cap.ARENA!.used > 0],
-    'and holds no DSP range and no arena block unless an earlier module does',
+    [cap.DSP_AREA!.used > 0, cap.ARENA!.used > baseline],
+    'and holds no DSP range and no arena block beyond the providers unless an earlier module does',
   ).toEqual([rows > 0, rows > 0]);
   expect((await word(rt.session, planSymbol(rig.plan, 'DKRT_TABLE_BAD'))) >>> 24, 'the firmware tables are intact').toBe(0);
-  expect(await ringEvents(rt.session, rig.plan, 'MODULE_COMMIT'), 'a refused commit logs no MODULE_COMMIT').toHaveLength(rows);
+  expect(await moduleRingEvents(rt.session, rig.plan, 'MODULE_COMMIT'), 'a refused commit logs no MODULE_COMMIT').toHaveLength(rows);
 }
 
 cardRigs(
@@ -120,7 +123,7 @@ cardRigs(
       expect(got.mods.map((m) => m.name)).toEqual([ID]);
       const { session } = got.rt;
 
-      const [event, ...more] = await ringEvents(session, rig.plan, 'MODULE_COMMIT');
+      const [event, ...more] = await moduleRingEvents(session, rig.plan, 'MODULE_COMMIT');
       expect(event, 'a MODULE_COMMIT event').toBeDefined();
       expect(more, 'one commit').toEqual([]);
       const { commit, records } = await committedRecords(event!, (a) => session.client.memPeek(a), patchkit);

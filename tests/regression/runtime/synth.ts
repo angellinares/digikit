@@ -139,6 +139,8 @@ export interface Geometry {
   dspFirst: number;
   /** Bytes of the arena's one free block at the start (header included). */
   arenaFree: number;
+  /** Arena bytes the service files of the card (providers) hold before any module loads: measured by a boot without modules (`providerArena`); 0 on a card without services. */
+  providerArena: number;
 }
 
 /** `dynamic_first ..= last` of the device in the machines `types.toml`: the run-time machine type numbers. */
@@ -175,6 +177,7 @@ export function geometryOf(device: Device, plan: RuntimePlan): Geometry {
     typeFirst: first,
     dspFirst: -dspBase & 7,
     arenaFree: arenaHi - arenaLo,
+    providerArena: 0,
   };
 }
 
@@ -273,7 +276,7 @@ export async function fullSet(g: Geometry, refs: Usage[]): Promise<{ spec: Synth
     COLLECT_BLOCK +
     block(mSize.records) +
     COLLECT_BLOCK;
-  const fTotal = g.arenaFree - used - 16;
+  const fTotal = g.arenaFree - g.providerArena - used - 16;
   if (fTotal < CODE) throw new Error('the references leave no arena for F');
   return [
     { spec: m, want: LOADED },
