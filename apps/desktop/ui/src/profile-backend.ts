@@ -26,7 +26,7 @@ import {
   type PollInfo,
   type Snapshot,
 } from '@digi/workbench-core/profile/profile-core.ts';
-import type { LogNames } from './log-names';
+import type { LogNames } from '@digi/dk-session/log-names';
 
 /** The part of the session the pane uses. */
 export type ProfileSession = Pick<

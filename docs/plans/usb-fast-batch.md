@@ -45,7 +45,7 @@ Details and evidence: [finding 133](../findings/133-storage-concurrency.md).
 
 ## E5 and E6. Copy/write overlap and prepare-ahead
 
-**Status: done and measured (see Status above).** E5: SDK imports `dk_helper_run` and `dk_helper_wait` (I/O-step context; the runtime's helper task, E_BUSY while a run is uncollected, so the close read-back hash and a module never overlap); usb-fast stages a file above 512 KiB in two halves of the 1 MiB reservation and the helper copies the received frames into one half while `dk_files_write` of the other blocks the I/O task; `usb-fast.device.test.ts` case "copy/write overlap" (sizes below, at and above the half, with and without DEFER, same hash and same card contents). Hardware: DN2 9.8 MB 3.67 → 4.37 MB/s, DT2 3.53 → 4.01. E6: `uploadItems` of the desktop UI and `wb.mjs samples put` read and prepare file i+1 while file i is sent; the `prepared` event is still emitted when the file's turn comes, a failed read or prepare is reported on that file only, a stop or cancel discards the work ahead. Host tests in `apps/desktop/ui/tests/samples-core.test.ts`.
+**Status: done and measured (see Status above).** E5: SDK imports `dk_helper_run` and `dk_helper_wait` (I/O-step context; the runtime's helper task, E_BUSY while a run is uncollected, so the close read-back hash and a module never overlap); usb-fast stages a file above 512 KiB in two halves of the 1 MiB reservation and the helper copies the received frames into one half while `dk_files_write` of the other blocks the I/O task; `usb-fast.device.test.ts` case "copy/write overlap" (sizes below, at and above the half, with and without DEFER, same hash and same card contents). Hardware: DN2 9.8 MB 3.67 → 4.37 MB/s, DT2 3.53 → 4.01. E6: `uploadItems` of the desktop UI and `wb.mjs samples put` read and prepare file i+1 while file i is sent; the `prepared` event is still emitted when the file's turn comes, a failed read or prepare is reported on that file only, a stop or cancel discards the work ahead. Host tests in `packages/workbench-core/tests/sample-upload.test.ts`.
 
 ## A. Card command count per phase (emulator, DT2)
 
@@ -116,7 +116,7 @@ No kept tests for the tool.
 
 - `BulkSession.put(..., { defer })` sets DEFER and returns `{ hash, pending }`.
 - New `BulkSession.commit()`.
-- `uploadItems` (apps/desktop/ui/src/samples-core.ts):
+- `uploadItems` (packages/workbench-core/src/transfer/sample-upload.ts):
   - It sends files with DEFER.
   - A file whose END reply has `pending > 0` stays in state `verifying`, labelled "Saving…".
   - When a reply shows `pending == 0`, all files waiting in that state become `ok`.
@@ -131,7 +131,7 @@ No kept tests for the tool.
   - a many-insert twin of `a_power_cut_at_any_write_leaves_the_old_store_or_the_new_one` (every cut: old table, or new table with all N files);
   - same-path replace inside a batch.
 - dk-session `bulk.test.ts`: DEFER flag, 8-byte and 4-byte END replies, COMMIT and its E_PROTO fallback.
-- desktop `samples-core.test.ts`:
+- `packages/workbench-core/tests/sample-upload.test.ts`:
   - waiting files become `ok` only on `pending == 0`;
   - a COMMIT failure marks them `failed`;
   - the re-run skip after a loss.

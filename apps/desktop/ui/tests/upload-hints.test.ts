@@ -3,7 +3,7 @@
 import { expect, test } from 'vitest';
 import type { Prepared } from '@digi/dk-session/dksample';
 import type { SampleEntry, SamplesBackend } from '@digi/dk-session/samples';
-import { uploadItems, type UploadEvent } from '../src/samples-core.ts';
+import { uploadItems, type UploadEvent } from '@digi/workbench-core/transfer/sample-upload.ts';
 
 const prep = (name: string): Prepared => ({
   name,

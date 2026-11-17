@@ -18,7 +18,8 @@ import { transferEntry } from './log-core';
 import type { Host, LibBuildReport } from '@digi/workbench-core/host/host.ts';
 import { MidiPortTransport } from '@digi/workbench-core/host/midi-transport.ts';
 import { createSamplesBackend, type SamplesBackendApi } from './samples-backend';
-import { samplesBar, uploadLines } from './samples-core';
+import { uploadLines } from '@digi/workbench-core/transfer/sample-upload.ts';
+import { samplesBar } from '@digi/workbench-core/transfer/samples-core.ts';
 import {
   localEntries,
   localFolder,

@@ -6,13 +6,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./commit-records": "./src/commit-records.ts"
+    "./commit-records": "./src/commit-records.ts",
+    "./fakedevice": "./src/fakedevice.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@digi/control-client": "workspace:*"
+    "@digi/control-client": "workspace:*",
+    "@digi/dk-session": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.15.0",

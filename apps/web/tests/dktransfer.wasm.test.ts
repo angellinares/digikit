@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { ModuleState } from '@digi/dk-session';
 import { headerInfo, libraryModule, mergeView } from '@digi/workbench-core/modules/dktransfer.ts';
+import { hex, sha } from '@digi/test-support/fakedevice';
 import { dkm, needsOf } from './support/dkm.ts';
-import { hex, sha } from './support/fakedevice.ts';
 import { useFitWasm } from './fit-wasm.ts';
 
 await useFitWasm();

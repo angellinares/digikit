@@ -213,7 +213,7 @@ per-device data through anchors.
   requests in flight. Used by the desktop app (Tauri command) and a CLI (`mise run` task, also the repeatable bench). The session layer gets a
   `BulkLink` (`write(bytes)`, `read(timeout)`) beside the SysEx-shaped DkTransport, and a samples backend that uses bulk when the interface is present
   and falls back to SysEx otherwise.
-- **Batch upload** (`uploadItems`, `apps/desktop/ui/src/samples-core.ts`, `wb.mjs samples put`): the files go with DEFER (`BulkSession.put({ defer })` returns the hash and the
+- **Batch upload** (`uploadItems`, `packages/workbench-core/src/transfer/sample-upload.ts`, `wb.mjs samples put`): the files go with DEFER (`BulkSession.put({ defer })` returns the hash and the
   pending count; `commit()` sends COMMIT). A file whose END reply shows files pending stays `verifying`, labelled "Saving…"; when a reply shows 0 pending, or the COMMIT after
   the last file succeeds, the waiting files become `ok` (the device checked each at END, so there is no SysEx verify for them). A COMMIT error, or a bulk link that fell back to
   SysEx while files waited, makes them `failed` ("not saved, send again"); the next run's skip of files the device holds (`sameOnDevice`) then sends only those. An old device (4-byte END) gets the files as before, each with its SysEx verify.

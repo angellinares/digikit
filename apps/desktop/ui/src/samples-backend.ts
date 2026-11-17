@@ -9,7 +9,8 @@ import { openSamples, type SamplesBackend } from '@digi/dk-session/samples';
 import { chooseBulk, type BulkChoice } from '@digi/dk-session/bulk-select';
 import type { TransferApp } from '@digi/workbench-core/transfer/app.ts';
 import type { Host } from '@digi/workbench-core/host/host.ts';
-import { joinPath, type LocalEntry, type Prepare } from './samples-core';
+import { joinPath, type Prepare } from '@digi/workbench-core/transfer/sample-upload.ts';
+import type { LocalEntry } from '@digi/workbench-core/transfer/samples-core.ts';
 import type { LinkState } from '@digi/workbench-core/transfer/link-core.ts';
 import { logEvent } from './log-state';
 import {

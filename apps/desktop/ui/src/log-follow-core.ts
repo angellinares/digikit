@@ -19,7 +19,7 @@ import {
 } from '@digi/dk-session';
 import { CAP, LOG_KIND, LOG_LEVELS } from '@digi/dk-session/gen_proto';
 import type { LogInput, Origin } from './log-core.ts';
-import type { LogNames } from './log-names.ts';
+import type { LogNames } from '@digi/dk-session/log-names';
 import { hasLogcfg } from './log-level-core.ts';
 
 /** What the follower needs of a protocol session (a `DkSession` with `followSession`, or a fake). */

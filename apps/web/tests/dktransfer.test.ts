@@ -36,8 +36,8 @@ import { setFitReader } from '@digi/workbench-core/modules/fit.ts';
 import { nameHash, readProvides, serviceFileOf, type ServiceFile } from '@digi/workbench-core/modules/services.ts';
 import { fileHashHex } from '@digi/dk-session';
 import { parseSoftwareVersion } from '@digi/workbench-core/transfer/connection-core.ts';
+import { FakeDevice, concat, hex, sha } from '@digi/test-support/fakedevice';
 import { dkm, everythingFits, needsOf } from './support/dkm.ts';
-import { FakeDevice, concat, hex, sha } from './support/fakedevice.ts';
 
 setFitReader(everythingFits);
 

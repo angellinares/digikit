@@ -1,11 +1,12 @@
 // The Samples backend of the preview (replaces ../src/samples-backend.ts): the folder on the computer and the device's sample folders come
-// from sim.ts. Same exports as the real module; an upload is paced by `sim.speed` through the real `uploadFiles` of samples-core.ts.
+// from sim.ts. Same exports as the real module; an upload is paced by `sim.speed` through the real `uploadFiles` of workbench-core sample-upload.ts.
 import { noteActivity } from '@digi/workbench-core/transfer/activity.ts';
 import type { LinkState } from '@digi/workbench-core/transfer/link-core.ts';
 import type { DeviceInfo } from '@digi/workbench-core/transfer/transfer-state.ts';
 import { sourceKind, type Prepared } from '@digi/dk-session/dksample';
 import type { SampleEntry, SamplesBackend } from '@digi/dk-session/samples';
-import { joinPath, type LocalEntry, type Prepare } from '../src/samples-core';
+import { joinPath, type Prepare } from '@digi/workbench-core/transfer/sample-upload.ts';
+import type { LocalEntry } from '@digi/workbench-core/transfer/samples-core.ts';
 import {
   localFolder,
   localPath,

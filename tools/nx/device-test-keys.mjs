@@ -202,6 +202,9 @@ export const deviceInputs = (
           ...(recs.some((r) => r.dksampleWasm)
             ? [{ dependentTasksOutputFiles: 'apps/web/public/dksample.wasm', transitive: true }]
             : []),
+          ...(recs.some((r) => r.dkprofWasm)
+            ? [{ dependentTasksOutputFiles: 'apps/web/public/dkprof.wasm', transitive: true }]
+            : []),
           // an edit of the subject module reruns a test-only project
           ...(opts.subjects?.length ? [{ input: 'production', projects: opts.subjects }] : []),
           // fixture image modules that a record names are chosen by the test itself

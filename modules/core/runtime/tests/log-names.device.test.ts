@@ -6,7 +6,7 @@ import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installModules, moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { createLogNames } from '../../../../apps/desktop/ui/src/log-names.ts';
+import { createLogNames } from '@digi/dk-session/log-names';
 
 /**
  * Names in the workbench Log pane (docs/ADDRMAP.md "Workbench"), end to end in the emulator over the dk-session path that a device uses too: the
@@ -19,7 +19,7 @@ runtimeTests('the workbench names addresses of the runtime and of a module throu
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
   const device = session.options.device;
-  const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'log-names'), ['DKRT_STATE', 'DKRT_DSP', 'dyndsp_info']);
+  const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'log-names'), []);
   const shipMap = path.join(session.runDir, `runtime-${device}.addrmap.json`);
   const artifact = moduleArtifact(device, ID);
   const moduleMap = artifact.replace(/\.dkm$/, '.addrmap.json');
@@ -32,8 +32,10 @@ runtimeTests('the workbench names addresses of the runtime and of a module throu
   const wasm = path.join(path.dirname(new URL(import.meta.url).pathname), '../../../../apps/web/public/dkprof.wasm');
   expect(fs.existsSync(wasm), `${wasm}: run nx run dkprof:wasm`).toBe(true);
   const prof = await DkProf.create(new Uint8Array(fs.readFileSync(wasm)));
+  // the symbols the load table reads, as the ship map names them, and DKRT_STATE for the module record below
+  const { reads } = prof.loadTable({ maps: [JSON.parse(fs.readFileSync(shipMap, 'utf8'))] }) as { reads: { symbol: string }[] };
   const symbols = Object.fromEntries(
-    ['DKRT_STATE', 'DKRT_DSP', 'dyndsp_info'].map((name) => [name, planSymbol(plan, name)]),
+    [...new Set(['DKRT_STATE', ...reads.map((r) => r.symbol)])].map((name) => [name, planSymbol(plan, name)]),
   );
   const names = createLogNames({
     prof: async () => prof,

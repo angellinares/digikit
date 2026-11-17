@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
+    "@digi/test-support": "workspace:*",
     "typescript": "5.9.3"
   }
 }

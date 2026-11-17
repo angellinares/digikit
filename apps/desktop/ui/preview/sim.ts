@@ -8,7 +8,7 @@ import wasmUrl from '../../../web/public/patchkit.wasm?url';
 import { fitWarnings } from '@digi/workbench-core/modules/dktransfer.ts';
 import { noteActivity } from '@digi/workbench-core/transfer/activity.ts';
 import type { TransferApp } from '@digi/workbench-core/transfer/app.ts';
-import type { LocalEntry } from '../src/samples-core';
+import type { LocalEntry } from '@digi/workbench-core/transfer/samples-core.ts';
 import type { TransferRow, TransferView } from '@digi/workbench-core/transfer/transfer-core.ts';
 
 // the rows' fit verdicts come from the Rust rule in patchkit.wasm, as in the app

@@ -55,6 +55,7 @@ export const deviceTarget = (
     if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
     if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
     if (rec.dksampleWasm) dependsOn.push('dksample:wasm');
+    if (rec.dkprofWasm) dependsOn.push('dkprof:wasm');
   }
   const { inputs, patchkitLive } = deviceInputs(
     root,
