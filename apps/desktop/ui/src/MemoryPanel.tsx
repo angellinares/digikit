@@ -4,7 +4,7 @@
 // such as Machines, is one cell per slot instead); hover a
 // segment for the module and its amount.
 // The panel reads CAPACITY, MODULES and the local library (memory-backend.ts) over the session it is given, which is the target's one session
-// (target.ts): when its tab is shown, when a Transfer job ended or the emulator restarted (the same signal the Card panel reads), when
+// (target.ts): when its tab is shown, when a Transfer job ended or the emulator restarted (the same signal the Files page reads), when
 // the window gets the focus, and with its Refresh button. One read at a time (read-gate-core.ts); a read that fails is tried again a few
 // times with a growing gap (a device that is still booting after a restart). A panel whose tab is not shown reads nothing. Nothing pending or
 // ticked is shown.

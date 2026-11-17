@@ -208,6 +208,26 @@
   width: 14px;
   flex: none;
 }
+/* the Files page tree: a spacer per level, and the open/close button before a folder's name */
+.transfer-page .rows .indent {
+  flex: none;
+  margin-right: -10px;
+}
+.transfer-page .rows .twisty {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-3, #868b94);
+}
+.transfer-page .rows button.twisty {
+  cursor: pointer;
+}
 .transfer-page .rows .name {
   flex: 1 1 0;
   min-width: 0;

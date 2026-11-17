@@ -1,5 +1,5 @@
 // The desktop workbench's side of the Transfer pane (packages/workbench-core/src/transfer/env.ts): the library folder of built modules, the MIDI ports and
-// the emulator through the Host (host/host.ts), the samples mode and the Card panel. main.tsx builds it with `createDesktopApps`.
+// the emulator through the Host (host/host.ts), the samples mode and the card-folder strip of the Files page. main.tsx builds it with `createDesktopApps`.
 import { createComponent } from 'solid-js';
 import { EmuBulkLink } from '@digi/dk-session';
 import { listingChanged } from '@digi/workbench-core/transfer/refresh-core.ts';
@@ -166,7 +166,7 @@ export function createDesktopEnv(host: Host, app: () => TransferApp): TransferEn
       samples: samplesSlot(app, samples),
       reloadWithRuntime,
       onJobEnd() {
-        // the Card panel reads the folder now and again after the emulator's quiet period (the folder follows the card about 2 s later)
+        // the card-folder strip reads the folder now and again after the emulator's quiet period (the folder follows the card about 2 s later)
         bumpCardRefresh();
         window.setTimeout(bumpCardRefresh, 2500);
       },

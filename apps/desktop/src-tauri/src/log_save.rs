@@ -15,23 +15,20 @@ pub async fn log_save(
         .and_then(|v| v.to_str().ok())
         .map(unescape)
         .unwrap_or_else(|| "device-log.log".into());
-    // `x-kind`: `profile` for a dk.profile/1 file of the Profile pane; the Log drawer sends none
-    let profile = request
+    // `x-kind`: `profile` for a dk.profile/1 file of the Profile pane, `file` for any file of the Files page (no filter); the Log drawer sends none
+    let kind = request
         .headers()
         .get("x-kind")
-        .and_then(|v| v.to_str().ok())
-        == Some("profile");
-    let (title, filter, exts): (&str, &str, &[&str]) = if profile {
-        ("Save the profile", "Profile", &["json"])
-    } else {
-        ("Save the log", "Log", &["log", "txt"])
+        .and_then(|v| v.to_str().ok());
+    let (title, filter): (&str, Option<(&str, &[&str])>) = match kind {
+        Some("profile") => ("Save the profile", Some(("Profile", &["json"]))),
+        Some("file") => ("Save the file", None),
+        _ => ("Save the log", Some(("Log", &["log", "txt"]))),
     };
-    let dialog = app
-        .dialog()
-        .file()
-        .set_title(title)
-        .set_file_name(name)
-        .add_filter(filter, exts);
+    let mut dialog = app.dialog().file().set_title(title).set_file_name(name);
+    if let Some((label, exts)) = filter {
+        dialog = dialog.add_filter(label, exts);
+    }
     let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
         .await
         .map_err(|e| e.to_string())?;

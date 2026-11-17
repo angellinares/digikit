@@ -1,6 +1,6 @@
 // The live preview's entry: a small desktop shell (the sidebar of src/Console.tsx, its page switch and its panels) over a running emulator
 // (live.vite.config.ts). What the real Console does that the pages feel is kept: the faceplate stays mounted behind the other pages, the
-// Memory and Card panels are shown only on the Emulator page, and `status` is set once per display frame, as the runtime's pump sets it (a
+// Memory panels are shown only on the Emulator page, and `status` is set once per display frame, as the runtime's pump sets it (a
 // new object each time), so a panel that reads on every change of `status` is as busy here as in the app. The daemon is asked for the
 // status twice a second only: a real call per frame would load it more than the app's pump does.
 //   live.html?page=emulator|transfer|remote[&idle=1][&log=1]   window.__live: { page(name), frames() }
@@ -108,7 +108,7 @@ function Shell() {
               </div>
             </main>
             <Show when={!idle}>
-              <SidePanels host={host} visible={shown()} card session={emulatorSession} where={() => 'the emulator'} />
+              <SidePanels host={host} visible={shown()} session={emulatorSession} where={() => 'the emulator'} />
             </Show>
           </div>
           <Show when={page() === 'transfer'}>

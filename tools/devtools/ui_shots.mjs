@@ -700,13 +700,27 @@ const SCENES = [
   // ---- the Remote page against the Emulator page's faceplate: the same test pattern on the 128 x 64 screen ----
   { name: 'remote-wide', q: 'page=remote', size: WIDE, steps: async (p) => p.wait(800) },
   { name: 'remote-narrow', q: 'page=remote', size: MIN, steps: async (p) => p.wait(800) },
-  // ---- the Card panel of the Emulator page: the folder of the loaded device (preview/card-mock.ts) ----
-  { name: 'card-dn2', q: 'page=emulator&card=dn2', size: WIDE, steps: async (p) => p.wait(700) },
-  { name: 'card-dt2', q: 'page=emulator&card=dt2', size: WIDE, steps: async (p) => p.wait(700) },
+  // ---- the Files page: the demo store (target/fake-store.ts demoStore), and the emulator card-folder strip (preview/card-mock.ts) ----
+  {
+    // the failed module selected: header, load state and the info buttons
+    name: 'files-wide',
+    q: 'page=files',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      await p.eval(
+        `(() => { const li = [...document.querySelectorAll('.files-page li')].find((l) => l.querySelector('.nm')?.textContent.trim() === 'chorus.dkm'); li?.click(); return !!li; })()`,
+      );
+      await p.wait(500);
+    },
+  },
+  { name: 'files-narrow', q: 'page=files', size: MIN, steps: async (p) => p.wait(500) },
+  { name: 'card-dn2', q: 'page=files&card=dn2', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'card-dt2', q: 'page=files&card=dt2', size: WIDE, steps: async (p) => p.wait(700) },
   {
     // the Digitone II takes the chosen folder at once: no reload notice
     name: 'card-dn2-chosen',
-    q: 'page=emulator&card=dn2',
+    q: 'page=files&card=dn2',
     size: WIDE,
     steps: async (p) => {
       await p.click('Choose folder…');
@@ -716,7 +730,7 @@ const SCENES = [
   {
     // the Digitakt II builds its card from the folder: the notice and "Reload now"
     name: 'card-dt2-reload-notice',
-    q: 'page=emulator&card=dt2',
+    q: 'page=files&card=dt2',
     size: WIDE,
     steps: async (p) => {
       await p.click('Choose folder…');
@@ -725,7 +739,7 @@ const SCENES = [
   },
   {
     name: 'card-dt2-reloaded',
-    q: 'page=emulator&card=dt2',
+    q: 'page=files&card=dt2',
     size: WIDE,
     steps: async (p) => {
       await p.click('Choose folder…');
@@ -734,16 +748,16 @@ const SCENES = [
       await p.wait(700);
     },
   },
-  { name: 'card-dt2-saved-choice', q: 'page=emulator&card=dt2&chosen=1', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'card-dt2-saved-choice', q: 'page=files&card=dt2&chosen=1', size: WIDE, steps: async (p) => p.wait(700) },
   {
     name: 'card-dt2-missing-choice',
-    q: 'page=emulator&card=dt2&chosen=1&missing=1',
+    q: 'page=files&card=dt2&chosen=1&missing=1',
     size: WIDE,
     steps: async (p) => p.wait(700),
   },
   {
     name: 'card-dt2-use-default',
-    q: 'page=emulator&card=dt2&chosen=1',
+    q: 'page=files&card=dt2&chosen=1',
     size: WIDE,
     steps: async (p) => {
       await p.click('Use default');
@@ -752,7 +766,7 @@ const SCENES = [
   },
   {
     name: 'card-dt2-reload-notice-narrow',
-    q: 'page=emulator&card=dt2',
+    q: 'page=files&card=dt2',
     size: MIN,
     steps: async (p) => {
       await p.click('Choose folder…');
@@ -763,7 +777,7 @@ const SCENES = [
   {
     // a Digitone II with Pluck and Remote control loaded and one module that is not in the library ("other")
     name: 'memory-dn2',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
       await openMemory(p);
@@ -778,7 +792,7 @@ const SCENES = [
   },
   {
     name: 'memory-dn2-full',
-    q: 'page=emulator&card=dn2&mem=full',
+    q: 'page=files&card=dn2&mem=full',
     size: WIDE,
     steps: async (p) => {
       await openMemory(p);
@@ -787,7 +801,7 @@ const SCENES = [
   },
   {
     name: 'memory-dn2-dsp-full',
-    q: 'page=emulator&card=dn2&mem=dsp',
+    q: 'page=files&card=dn2&mem=dsp',
     size: WIDE,
     steps: async (p) => {
       await openMemory(p);
@@ -797,7 +811,7 @@ const SCENES = [
   // the Digitakt II has no page rows: no Pages bar
   {
     name: 'memory-dt2',
-    q: 'page=emulator&card=dt2&mem=pluck',
+    q: 'page=files&card=dt2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
       await openMemory(p);
@@ -806,17 +820,17 @@ const SCENES = [
   },
   {
     name: 'memory-empty',
-    q: 'page=emulator&card=dn2&mem=empty',
+    q: 'page=files&card=dn2&mem=empty',
     size: WIDE,
     steps: async (p) => {
       await openMemory(p);
       await p.wait(700);
     },
   },
-  { name: 'memory-narrow', q: 'page=emulator&card=dn2&mem=pluck', size: MIN, steps: async (p) => p.wait(700) }, // closed by default at this width
+  { name: 'memory-narrow', q: 'page=files&card=dn2&mem=pluck', size: MIN, steps: async (p) => p.wait(700) }, // closed by default at this width
   {
     name: 'memory-narrow-open',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: MIN,
     steps: async (p) => {
       await p.wait(400);
@@ -846,7 +860,7 @@ const SCENES = [
   },
   {
     name: 'memory-collapsed',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
       await p.wait(500);
@@ -858,7 +872,7 @@ const SCENES = [
   {
     // the emulator while recording: header, a full 60 s graph with the effect loaded at 19 s, the table, the DSP per block
     name: 'profile-emulator',
-    q: 'page=emulator&card=dn2&prof=rec',
+    q: 'page=files&card=dn2&prof=rec',
     size: [1440, 1100],
     steps: async (p) => {
       await p.wait(500);
@@ -904,7 +918,7 @@ const SCENES = [
   })),
   {
     name: 'side-memory',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
       await p.wait(400);
@@ -914,7 +928,7 @@ const SCENES = [
   },
   {
     name: 'side-metrics',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
       await p.wait(400);
@@ -935,7 +949,7 @@ const SCENES = [
   {
     // the column folded: a rail, and the faceplate has the width
     name: 'side-rail',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
       await p.wait(400);
@@ -945,7 +959,7 @@ const SCENES = [
   },
   {
     name: 'side-narrow',
-    q: 'page=emulator&card=dn2&mem=pluck',
+    q: 'page=files&card=dn2&mem=pluck',
     size: MIN,
     steps: async (p) => {
       await p.wait(400);
@@ -1119,7 +1133,7 @@ const SCENES = [
   // README shots: the site's modules and its device screens
   {
     name: 'readme-emulator',
-    q: 'page=emulator&card=dn2&frame=device-modules',
+    q: 'page=files&card=dn2&frame=device-modules',
     size: WIDE,
     steps: async (p) => p.wait(700),
   },

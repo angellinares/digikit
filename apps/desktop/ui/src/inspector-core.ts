@@ -1,9 +1,8 @@
 // The pure rules of the right-hand column's tabs (SidePanels.tsx, panel-open.ts).
 
-export type InspectorTab = 'card' | 'memory' | 'metrics' | 'profile';
-export const TABS: InspectorTab[] = ['card', 'memory', 'metrics', 'profile'];
+export type InspectorTab = 'memory' | 'metrics' | 'profile';
+export const TABS: InspectorTab[] = ['memory', 'metrics', 'profile'];
 export const TAB_LABEL: Record<InspectorTab, string> = {
-  card: 'Card',
   memory: 'Memory',
   metrics: 'Metrics',
   profile: 'Profile',

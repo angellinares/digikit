@@ -1,7 +1,7 @@
 # The emulated card as a folder (2026-10-22)
 
 Status: built on lane `tasks-images` (after the Transfer work, W3). Design agreed with Em: one host folder per device, the module store mirrored to it
-while the emulator runs, a Card panel on the Emulator page.
+while the emulator runs, a card-folder strip on the Files page (emulator target).
 
 ## What it does
 
@@ -21,13 +21,13 @@ while the emulator runs, a Card panel on the Emulator page.
 - **Where:** all of it runs in the emulator (`packages/emulator/plusdrive/src/mirror.rs`, `packages/emulator/control/src/cardmirror.rs` and the controller).
   The app starts no process. The store's place on the card comes from the device profile (`[card.store]`).
 - **Front door:** `card.folder` (`{folder, continuous, files, last_sync, behind, error}`) and `card.sync` over `emu_call` or the control socket (docs/CONTROL.md).
-- **Card panel** (`apps/desktop/ui/src/CardPanel.tsx`): collapsible, beside the faceplate on the Emulator page: the device and the folder, "Choose folder...", "Use default", "Show in Finder" (a native command that
-  opens only the controller's folder, through the official `tauri-plugin-opener`), the module files with sizes, the time of the last sync, "Sync now". It reads
-  after every Transfer job and on a 2 s poll while visible.
+- **Card-folder strip** (`apps/desktop/ui/src/CardPanel.tsx`): shown on the Files page when the target is the emulator: the device and the folder, "Choose folder...", "Use default", "Show in Finder" (a native command that
+  opens only the controller's folder, through the official `tauri-plugin-opener`), the time of the last sync, "Sync now", "Reset card changes", "Reload now". It reads
+  after every Transfer job and on a 2 s poll while visible. The file list is the Files page tree, read over SysEx.
 
 ## The folder follows the device (2026-10-23)
 
-Bug: in the desktop workbench Em tested the DN2, then opened the DT2 firmware (Open...). The faceplate switched, but the Card panel still showed `plus_drive/dn2` and
+Bug: in the desktop workbench Em tested the DN2, then opened the DT2 firmware (Open...). The faceplate switched, but the card-folder strip still showed `plus_drive/dn2` and
 Sync now mirrored into it. Root cause: the launcher gave `--mirror-dir plus_drive/<device>` once at process start, and the controller kept one `Mirror` for the whole
 process; a load of another device did not touch it. The DT2 card of an Open... also came from the remembered card, not from `plus_drive/dt2/`.
 
@@ -38,10 +38,10 @@ process; a load of another device did not touch it. The DT2 card of an Open... a
   `packages/emulator/control/tests/device_folders.rs` fails without it).
 - **The card of a load comes from the device's folder** (`default_card`, `cards::ensure_card(device, ...)`; the DN2 takes only `.mmcfs/` and `digikit/`): the Python card build of the
   launcher is gone from the default path. A card the user chose with "Choose samples" stays; a card built from the device's folder is built again at a load (cached by content), so a
-  folder chosen in the Card panel applies at the next load (`restart` is that load).
-- **Choice:** the Card panel's "Choose folder..." (native dialog, `local_pick_folder`) sends `card.folder_set {dir}`; the choice is per device and kept in
+  folder chosen in the card-folder strip applies at the next load (`restart` is that load).
+- **Choice:** the strip's "Choose folder..." (native dialog, `local_pick_folder`) sends `card.folder_set {dir}`; the choice is per device and kept in
   `<app data>/dev.digiemu.panel/card-folders.json` (the controller reads and writes it; the app starts no process). "Use default" removes it. A saved folder that is gone falls back to
-  the default and the panel says so. The DN2 mirrors to the new folder at once; the DT2 shows "Reload now" (the Restart path).
+  the default and the strip says so. The DN2 mirrors to the new folder at once; the DT2 shows "Reload now" (the Restart path).
 - **Tests:** `devicefolders.rs` (order of choice, first-load folder and default; the file), `cards.rs` (`device_files`, keys), `packages/emulator/control/tests/device_folders.rs` (each device to its folder; a
   choice per device, saved, applied as the device needs; the flush; a load builds the card from the folder), `apps/desktop/ui/tests/card.test.ts`, the launcher tests.
 - **[O]** The DN2's immediate mirror pass replaces files of the chosen folder that have the card's path but other bytes (the old file goes to `out/plusdrive/backup/`).
@@ -61,12 +61,12 @@ build; the mirror removes it.
 ## Tests
 
 `plusdrive_format::mirror` (a store image written, mirrored, replaced, deleted, emptied; a blank start removes nothing; a torn store is an error to retry; the
-folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the panel's texts), `modules/core/runtime/tests/transfer-live.device.test.ts` on DT2 and
+folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the strip's texts), `modules/core/runtime/tests/transfer-live.device.test.ts` on DT2 and
 DN2 (explicit/full-only runtime acceptance) (a free-running daemon with `--mirror-dir`: install through `dktransfer`, the file appears in the folder with the card's sha256, `card.folder` lists it,
 delete and `card.sync` remove it).
 
 ## Open
 
-- **[O]** The GUI (the Card panel, the exit on window close) is built and type-checked but not run by the lane.
+- **[O]** The GUI (the card-folder strip, the exit on window close) is built and type-checked but not run by the lane.
 - **[O]** A user edit in the mirrored `digikit/` files is overwritten by the next pass that finds the card's file different (the old file is in the backup).
 - **[O]** The DN2 starts on an empty card each session: the files in `plus_drive/dn2/digikit/modules/` are not loaded back (import is not part of this change).
