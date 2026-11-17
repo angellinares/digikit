@@ -8,7 +8,7 @@ A take-over (mode switch in RAM) failed on about 1 in 15 to 1 in 200 switches an
 
 ## Design
 
-- New core module `core/usb-bulk-audio` (`modules/core/adapters/usb-bulk-audio/`): the boot hook on the USB init function (`cf.usb.hook.init`, `ua_tramp.s`), `ua_prepare`, and the port 5 connect and disconnect wrappers. New patch set `device-audio-bulk` = the `device` set plus this module, in `devices/digitakt-ii.toml` and `devices/digitone-ii.toml`.
+- New core module `core/usb-bulk-audio` (`modules/core/adapters/usb-bulk-audio/`): the boot hook on the USB init function (`cf.usb.hook.init`, `ua_tramp.s`), `ua_prepare`, and the port 5 connect and disconnect wrappers. The module is in the default `device` and `device-introblank` sets of `devices/digitakt-ii.toml` and `devices/digitone-ii.toml`.
 - `ua_prepare` checks the stock configuration (length 0x148, header `09 02 xx xx 05`), copies it, appends interface 5, repoints port entry 5, and calls `usb_bulk_port5_attach()`. It is idempotent and ISR-safe. If a check fails it refuses and touches nothing.
 - `core/usb-bulk` exports `usb_bulk_port5_attach`, `usb_bulk_port5_connect` and `usb_bulk_port5_disconnect`. The receive ring gate is "bulk-capable port": port 2 (pair) or port 5 attached (OUT only). Every EP2 control write in port 5 touches only the RX half (mask `0x0000ffff`). EP2 IN is audio feedback and is never queued.
 - `usb_bulk_state()` has the bit `DK_USB_BULK_OUT_ONLY`. `usb_bulk_send` returns E_STATE in that mode.
@@ -32,7 +32,7 @@ A take-over (mode switch in RAM) failed on about 1 in 15 to 1 in 200 switches an
 ## Open [O]
 
 - Hardware recheck on both devices after the merge with main's SDK S2b-2.
-- Windows stays on SysEx (see Next, item 6).
+- Windows stays on SysEx (see Next, item 5).
 - Long-run stability and bus reset during a transfer.
 - macOS asks once to allow the accessory: the workbench should say so.
 
@@ -48,9 +48,7 @@ Agreed with Em on 2026-11-13.
    Why: the speed word is debug-service territory.
 4. Stay a `.dkm` tool; split a bulk-link service only when a second consumer of the framed stream exists (for example live sample streaming).
    Why: a service without a second consumer adds a layer and no value.
-5. Move `core/usb-bulk-audio` from the `device-audio-bulk` patch set into the default device set after real use on both devices.
-   Why: the separate set is only a safety net until use proves the patch.
-6. Windows: a WinUSB (MS OS 2.0) descriptor for interface 5 needs a control-request hook; until then Windows stays on SysEx.
+5. Windows: a WinUSB (MS OS 2.0) descriptor for interface 5 needs a control-request hook; until then Windows stays on SysEx.
    Why: without the descriptor Windows does not bind a driver to the bulk interface.
-7. Faster sample packs: the per-file store cost (DN2 table rewrite per commit, DT2 about 195 ms per file).
+6. Faster sample packs: the per-file store cost (DN2 table rewrite per commit, DT2 about 195 ms per file).
    Why: it is the main limit now, not the USB link.
