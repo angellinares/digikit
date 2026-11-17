@@ -77,6 +77,10 @@ export function validateRuntimePlan(
   }
 }
 
+const shipMaps = new WeakMap<RuntimePlan, string>();
+/** The address map of the image of `plan` (`<plan>.addrmap.json`, written beside the plan by `patchkit apply --addrmap`), remembered for every plan prepared here. */
+export const shipMapOf = (plan: RuntimePlan): string | undefined => shipMaps.get(plan);
+
 export interface PreparedRuntimePlan {
   plan: RuntimePlan;
   planFile: string;
@@ -198,6 +202,7 @@ export async function prepareOfflineWith(
   fs.writeFileSync(path.join(artifacts, 'patch.log'), `${patch.stdout}\n${patch.stderr}`);
   const plan: RuntimePlan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
   for (const symbol of symbols) planSymbol(plan, symbol);
+  shipMaps.set(plan, planFile.replace(/\.plan\.json$/, '.addrmap.json'));
   if (selection) {
     const moduleIds = plan.modules.map((module) => module.split('@', 1)[0]!);
     if (

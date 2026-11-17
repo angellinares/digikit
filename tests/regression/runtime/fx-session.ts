@@ -13,7 +13,7 @@ import { plusdriveBinary } from './card-kit.ts';
 import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { boundService, neededServices, SERVICE_MODULES } from './service-files.ts';
-import { bindServiceSymbols, rememberShipMap } from './service-symbols.ts';
+import { bindServiceSymbols } from './service-symbols.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { moduleResultsNote } from './runtime-menu.ts';
 import { pollEmulated } from './waits.ts';
@@ -265,7 +265,6 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
           { modules },
         );
         planSymbol(prepared.plan, 'DKRT_BOOT');
-        rememberShipMap(prepared.plan, prepared.planFile);
         profile = await analysisJson<FxProfile>(
           'tools.patchkit.pk_digikit_fxroutes',
           ['profile', '--device', device],
